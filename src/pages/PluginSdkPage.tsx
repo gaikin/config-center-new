@@ -20,20 +20,20 @@ runtime.onDomChange({
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>Plugin SDK 交付</Typography.Title>
+      <Typography.Title level={4}>运行时配置包导出</Typography.Title>
       <Typography.Paragraph type="secondary">
-        运行时闭环由插件端负责。管理端仅导出配置快照，供插件 SDK 加载执行。
+        运行时由脚本 SDK 执行，管理端仅导出配置快照供 SDK 加载。
       </Typography.Paragraph>
 
-      <Card title="配置快照（可供插件端加载）">
+      <Card title="当前发布配置包">
         <Space style={{ marginBottom: 8 }}>
           <Button
             onClick={async () => {
               await navigator.clipboard.writeText(bundleText);
-              msgApi.success("配置快照已复制");
+              msgApi.success("配置包已复制。");
             }}
           >
-            复制 JSON
+            复制配置文本
           </Button>
         </Space>
         <Input.TextArea value={bundleText} rows={18} readOnly />
@@ -41,7 +41,7 @@ runtime.onDomChange({
 
       <Divider />
 
-      <Card title="插件端接入示例">
+      <Card title="脚本 SDK 接入示例">
         <Input.TextArea value={sdkExample} rows={8} readOnly />
       </Card>
     </div>

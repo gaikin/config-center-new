@@ -3,9 +3,24 @@ import { useMemo, useState } from "react";
 import type { InterfaceDefinition } from "../types";
 import { useAppStore } from "../store/useAppStore";
 import { createId } from "../utils";
+import { idRule, maxLenRule, requiredRule } from "../validation/formRules";
 
 const methodOptions: InterfaceDefinition["method"][] = ["GET", "POST", "PUT", "DELETE"];
 const authOptions: InterfaceDefinition["auth_type"][] = ["NONE", "TOKEN", "AKSK", "CUSTOM"];
+
+const methodLabel: Record<InterfaceDefinition["method"], string> = {
+  GET: "查询（GET）",
+  POST: "提交（POST）",
+  PUT: "更新（PUT）",
+  DELETE: "删除（DELETE）"
+};
+
+const authLabel: Record<InterfaceDefinition["auth_type"], string> = {
+  NONE: "无鉴权",
+  TOKEN: "令牌鉴权",
+  AKSK: "密钥鉴权",
+  CUSTOM: "自定义鉴权"
+};
 
 export function InterfacesPage() {
   const { interfaces, upsertInterface, publishInterface, offlineInterface } = useAppStore();
@@ -16,9 +31,9 @@ export function InterfacesPage() {
 
   const statusTag = useMemo(
     () => ({
-      DRAFT: <Tag color="default">DRAFT</Tag>,
-      PUBLISHED: <Tag color="green">PUBLISHED</Tag>,
-      OFFLINE: <Tag color="red">OFFLINE</Tag>
+      DRAFT: <Tag color="default">草稿</Tag>,
+      PUBLISHED: <Tag color="green">已发布</Tag>,
+      OFFLINE: <Tag color="red">已下线</Tag>
     }),
     []
   );
@@ -32,7 +47,7 @@ export function InterfacesPage() {
       path: "",
       method: "POST",
       auth_type: "TOKEN",
-      owner: "admin",
+      owner: "运营管理员",
       response_path: "data",
       status: "DRAFT",
       query_mapping: [],
@@ -52,32 +67,33 @@ export function InterfacesPage() {
       {holder}
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          接口子项管理
+          接口配置
         </Typography.Title>
         <Button type="primary" onClick={openCreate}>
-          新增接口
+          新建接口
         </Button>
       </Space>
+
       <Alert
         style={{ marginBottom: 12 }}
         type="info"
         showIcon
-        message="平台统一策略"
-        description="timeout_ms / retry_count 由平台统一控制，不在前端暴露。被规则引用的发布接口不可直接下线。"
+        message="平台策略"
+        description="超时与重试次数由平台统一控制，不在页面暴露。"
       />
 
       <Table<InterfaceDefinition>
         rowKey="interface_id"
         dataSource={interfaces}
         columns={[
-          { title: "Interface ID", dataIndex: "interface_id", width: 220 },
-          { title: "Name", dataIndex: "interface_name" },
-          { title: "Path", render: (_, row) => `${row.method} ${row.path}` },
-          { title: "Owner", dataIndex: "owner" },
-          { title: "Status", render: (_, row) => statusTag[row.status] },
+          { title: "接口ID", dataIndex: "interface_id", width: 220 },
+          { title: "名称", dataIndex: "interface_name" },
+          { title: "路径", render: (_, row) => `${methodLabel[row.method]} ${row.path}` },
+          { title: "负责人", dataIndex: "owner" },
+          { title: "状态", render: (_, row) => statusTag[row.status] },
           {
-            title: "Actions",
-            width: 260,
+            title: "操作",
+            width: 280,
             render: (_, row) => (
               <Space>
                 <Button type="link" onClick={() => openEdit(row)}>
@@ -86,12 +102,8 @@ export function InterfacesPage() {
                 <Button
                   type="link"
                   onClick={() => {
-                    try {
-                      publishInterface(row.interface_id);
-                      msgApi.success("接口已发布");
-                    } catch (e) {
-                      msgApi.error(String((e as Error).message));
-                    }
+                    publishInterface(row.interface_id);
+                    msgApi.success("接口已发布。");
                   }}
                 >
                   发布
@@ -102,9 +114,9 @@ export function InterfacesPage() {
                   onClick={() => {
                     try {
                       offlineInterface(row.interface_id);
-                      msgApi.success("接口已下线");
-                    } catch (e) {
-                      msgApi.error(String((e as Error).message));
+                      msgApi.success("接口已下线。");
+                    } catch (error) {
+                      msgApi.error(String((error as Error).message));
                     }
                   }}
                 >
@@ -117,7 +129,7 @@ export function InterfacesPage() {
       />
 
       <Modal
-        title={editing ? "编辑接口" : "新增接口"}
+        title={editing ? "编辑接口" : "新建接口"}
         open={open}
         width={760}
         onCancel={() => setOpen(false)}
@@ -125,34 +137,36 @@ export function InterfacesPage() {
           const values = await form.validateFields();
           upsertInterface(values);
           setOpen(false);
-          msgApi.success("保存成功");
+          msgApi.success("保存成功。");
         }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="interface_id" label="interface_id" rules={[{ required: true }]}>
+          <Form.Item name="interface_id" label="接口ID" rules={[requiredRule("接口ID"), idRule("接口ID", "if-")]}>
             <Input disabled={Boolean(editing)} />
           </Form.Item>
-          <Form.Item name="interface_name" label="interface_name" rules={[{ required: true }]}>
+          <Form.Item name="interface_name" label="接口名称" rules={[requiredRule("接口名称"), maxLenRule("接口名称", 80)]}>
             <Input />
           </Form.Item>
-          <Form.Item name="domain" label="domain" rules={[{ required: true }]}>
+          <Form.Item name="domain" label="服务域" rules={[requiredRule("服务域"), maxLenRule("服务域", 80)]}>
             <Input />
           </Form.Item>
-          <Form.Item name="path" label="path" rules={[{ required: true }]}>
+          <Form.Item name="path" label="路径" rules={[requiredRule("路径"), maxLenRule("路径", 200)]}>
             <Input />
           </Form.Item>
-          <Space style={{ width: "100%" }}>
-            <Form.Item name="method" label="method" rules={[{ required: true }]} style={{ minWidth: 160 }}>
-              <Select options={methodOptions.map((x) => ({ label: x, value: x }))} />
+
+          <Space style={{ width: "100%" }} align="start">
+            <Form.Item name="method" label="请求方法" rules={[requiredRule("请求方法")]} style={{ minWidth: 160 }}>
+              <Select options={methodOptions.map((item) => ({ label: methodLabel[item], value: item }))} />
             </Form.Item>
-            <Form.Item name="auth_type" label="auth_type" rules={[{ required: true }]} style={{ minWidth: 160 }}>
-              <Select options={authOptions.map((x) => ({ label: x, value: x }))} />
+            <Form.Item name="auth_type" label="鉴权类型" rules={[requiredRule("鉴权类型")]} style={{ minWidth: 160 }}>
+              <Select options={authOptions.map((item) => ({ label: authLabel[item], value: item }))} />
             </Form.Item>
-            <Form.Item name="owner" label="owner" rules={[{ required: true }]} style={{ minWidth: 160 }}>
+            <Form.Item name="owner" label="负责人" rules={[requiredRule("负责人"), maxLenRule("负责人", 60)]} style={{ minWidth: 160 }}>
               <Input />
             </Form.Item>
           </Space>
-          <Form.Item name="response_path" label="response_path" rules={[{ required: true }]}>
+
+          <Form.Item name="response_path" label="响应路径" rules={[requiredRule("响应路径"), maxLenRule("响应路径", 120)]}>
             <Input />
           </Form.Item>
         </Form>

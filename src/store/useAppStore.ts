@@ -1,11 +1,33 @@
 import { create } from "zustand";
+import {
+  seedHints,
+  seedInterfaces,
+  seedMenus,
+  seedOperations,
+  seedOrchestrations,
+  seedTemplates
+} from "../mock/seeds";
 import type {
+  ConfigTemplate,
   HintRule,
   InterfaceDefinition,
   MenuScope,
   OperationDefinition,
   OrchestrationDefinition
 } from "../types";
+import { createId } from "../utils";
+
+interface TemplateCreateInput {
+  templateId: string;
+  menuScopeIds: string[];
+  customTitle?: string;
+  customContent?: string;
+  riskLevel?: HintRule["risk_level"];
+  relation?: HintRule["relation"];
+  previewMode?: boolean;
+  floatingButton?: boolean;
+  publishStatus?: HintRule["status"];
+}
 
 interface AppState {
   menus: MenuScope[];
@@ -13,13 +35,17 @@ interface AppState {
   hints: HintRule[];
   operations: OperationDefinition[];
   orchestrations: OrchestrationDefinition[];
+  templates: ConfigTemplate[];
   upsertMenu: (menu: MenuScope) => void;
   upsertInterface: (def: InterfaceDefinition) => void;
   publishInterface: (id: string) => void;
   offlineInterface: (id: string) => void;
   upsertHint: (hint: HintRule) => void;
+  publishHint: (id: string) => void;
   upsertOperation: (op: OperationDefinition) => void;
+  publishOperation: (id: string) => void;
   upsertOrchestration: (orchestration: OrchestrationDefinition) => void;
+  createFromTemplate: (input: TemplateCreateInput) => { hintId: string; operationId: string; orchestrationId: string };
   exportPluginBundle: () => {
     interfaces: InterfaceDefinition[];
     hints: HintRule[];
@@ -28,109 +54,15 @@ interface AppState {
   };
 }
 
-const seedMenus: MenuScope[] = [
-  { id: "menu-open-account", zone: "zone-open", menu: "menu-open-account", enabledHint: true, enabledOperation: true },
-  { id: "menu-loan-review", zone: "zone-loan", menu: "menu-loan-review", enabledHint: true, enabledOperation: true }
-];
-
-const seedInterfaces: InterfaceDefinition[] = [
-  {
-    interface_id: "if-customer-core",
-    interface_name: "customer-core",
-    domain: "internal-core",
-    path: "/customer/core",
-    method: "POST",
-    auth_type: "TOKEN",
-    owner: "admin",
-    response_path: "data.customerNo",
-    status: "PUBLISHED",
-    query_mapping: [],
-    body_mapping: []
-  }
-];
-
-const seedOrchestrations: OrchestrationDefinition[] = [
-  {
-    orchestration_id: "orc-open-account-auto-fill",
-    orchestration_name: "open-account-auto-fill",
-    status: "ENABLED",
-    nodes: [
-      {
-        node_id: "node-get-customer-no",
-        node_type: "page_get",
-        order: 1,
-        enabled: true,
-        output_key: "vars.customerNo",
-        config: { xpath: "/form/customerNo" }
-      },
-      {
-        node_id: "node-api",
-        node_type: "api_call",
-        order: 2,
-        enabled: true,
-        output_key: "vars.api",
-        config: { interface_id: "if-customer-core" }
-      },
-      {
-        node_id: "node-template-name",
-        node_type: "js_script",
-        order: 3,
-        enabled: true,
-        output_key: "vars.customerName",
-        config: { mode: "template", template: "{{vars.api.data.customerName}}" }
-      },
-      {
-        node_id: "node-set-name",
-        node_type: "page_set",
-        order: 4,
-        enabled: true,
-        config: { xpath: "/form/customerName", value_source_type: "context", value_path: "vars.customerName" }
-      }
-    ]
-  }
-];
-
-const seedOperations: OperationDefinition[] = [
-  {
-    operation_id: "op-open-account-fill",
-    operation_name: "open-account-auto-fill",
-    preview_mode: true,
-    floating_button: true,
-    orchestration_id: "orc-open-account-auto-fill"
-  }
-];
-
-const seedHints: HintRule[] = [
-  {
-    id: "hint-ky-001",
-    title: "Regulatory reminder",
-    content: "Validate customerNo and idCard before submit.",
-    risk_level: "HIGH",
-    relation: "AND",
-    operation_id: "op-open-account-fill",
-    menu_scope_ids: ["menu-open-account"],
-    strategy: { ips: [], persons: [], orgs: [] },
-    conditions: [
-      {
-        id: "c-1",
-        left: { type: "page", xpath: "/form/customerNo" },
-        operator: "not_empty",
-        right: { type: "fixed", value: "" }
-      },
-      {
-        id: "c-2",
-        left: { type: "page", xpath: "/form/idCard" },
-        left_preprocessors: [{ id: "prefix_extract", options: { length: 4 } }],
-        operator: "eq",
-        right: { type: "fixed", value: "6222" }
-      }
-    ]
-  }
-];
+function nowIso() {
+  return new Date().toISOString();
+}
 
 function mapUpdate<T, K extends keyof T>(list: T[], key: K, next: T) {
   const idx = list.findIndex((x) => x[key] === next[key]);
-  if (idx === -1) return [next, ...list];
+  if (idx === -1) {
+    return [next, ...list];
+  }
   const clone = [...list];
   clone[idx] = next;
   return clone;
@@ -142,43 +74,124 @@ export const useAppStore = create<AppState>((set, get) => ({
   hints: seedHints,
   operations: seedOperations,
   orchestrations: seedOrchestrations,
+  templates: seedTemplates,
   upsertMenu: (menu) => set((state) => ({ menus: mapUpdate(state.menus, "id", menu) })),
   upsertInterface: (def) =>
     set((state) => {
-      const next = { ...def, status: def.status ?? "DRAFT" };
+      const next = { ...def, status: def.status ?? "DRAFT", updated_at: nowIso() };
       return { interfaces: mapUpdate(state.interfaces, "interface_id", next) };
     }),
   publishInterface: (id) =>
     set((state) => ({
-      interfaces: state.interfaces.map((it) => (it.interface_id === id ? { ...it, status: "PUBLISHED" } : it))
+      interfaces: state.interfaces.map((it) =>
+        it.interface_id === id ? { ...it, status: "PUBLISHED", updated_at: nowIso() } : it
+      )
     })),
   offlineInterface: (id) =>
     set((state) => {
       const isReferenced = state.hints.some((hint) =>
         hint.conditions.some(
-          (c) => (c.left.type === "interface" && c.left.interface_id === id) || (c.right.type === "interface" && c.right.interface_id === id)
+          (condition) =>
+            (condition.left.type === "interface" && condition.left.interface_id === id) ||
+            (condition.right.type === "interface" && condition.right.interface_id === id)
         )
       );
       if (isReferenced) {
-        throw new Error("Interface is referenced by published hint rules.");
+        throw new Error("接口已被规则引用，请先解除引用后再下线。");
       }
       return {
-        interfaces: state.interfaces.map((it) => (it.interface_id === id ? { ...it, status: "OFFLINE" } : it))
+        interfaces: state.interfaces.map((it) =>
+          it.interface_id === id ? { ...it, status: "OFFLINE", updated_at: nowIso() } : it
+        )
       };
     }),
-  upsertHint: (hint) => set((state) => ({ hints: mapUpdate(state.hints, "id", hint) })),
-  upsertOperation: (op) => set((state) => ({ operations: mapUpdate(state.operations, "operation_id", op) })),
-  upsertOrchestration: (orchestration) =>
+  upsertHint: (hint) =>
+    set((state) => {
+      const next = { ...hint, status: hint.status ?? "DRAFT", updated_at: nowIso() };
+      return { hints: mapUpdate(state.hints, "id", next) };
+    }),
+  publishHint: (id) =>
     set((state) => ({
-      orchestrations: mapUpdate(state.orchestrations, "orchestration_id", orchestration)
+      hints: state.hints.map((it) => (it.id === id ? { ...it, status: "PUBLISHED", updated_at: nowIso() } : it))
     })),
+  upsertOperation: (op) =>
+    set((state) => {
+      const next = { ...op, status: op.status ?? "DRAFT", updated_at: nowIso() };
+      return { operations: mapUpdate(state.operations, "operation_id", next) };
+    }),
+  publishOperation: (id) =>
+    set((state) => ({
+      operations: state.operations.map((it) =>
+        it.operation_id === id ? { ...it, status: "PUBLISHED", updated_at: nowIso() } : it
+      )
+    })),
+  upsertOrchestration: (orchestration) =>
+    set((state) => {
+      const next = { ...orchestration, updated_at: nowIso() };
+      return { orchestrations: mapUpdate(state.orchestrations, "orchestration_id", next) };
+    }),
+  createFromTemplate: (input) => {
+    const { templateId, menuScopeIds, customTitle, customContent } = input;
+    const state = get();
+    const template = state.templates.find((item) => item.template_id === templateId);
+    if (!template) {
+      throw new Error(`未找到模板：${templateId}`);
+    }
+
+    const orchestrationId = createId("orc");
+    const operationId = createId("op");
+    const hintId = createId("hint");
+
+    const orchestration: OrchestrationDefinition = {
+      orchestration_id: orchestrationId,
+      orchestration_name: template.orchestration_seed.orchestration_name,
+      status: "ENABLED",
+      updated_at: nowIso(),
+      nodes: template.orchestration_seed.nodes.map((node, index) => ({
+        ...node,
+        node_id: createId(`node-${index + 1}`)
+      }))
+    };
+
+    const operation: OperationDefinition = {
+      operation_id: operationId,
+      orchestration_id: orchestrationId,
+      status: input.publishStatus ?? "PUBLISHED",
+      updated_at: nowIso(),
+      ...template.operation_seed
+    };
+    operation.preview_mode = input.previewMode ?? operation.preview_mode;
+    operation.floating_button = input.floatingButton ?? operation.floating_button;
+
+    const hint: HintRule = {
+      id: hintId,
+      title: customTitle ?? template.hint_seed.title,
+      content: customContent ?? template.hint_seed.content,
+      risk_level: input.riskLevel ?? template.hint_seed.risk_level,
+      relation: input.relation ?? template.hint_seed.relation,
+      conditions: template.hint_seed.conditions.map((condition) => ({ ...condition, id: createId("cond") })),
+      operation_id: operationId,
+      menu_scope_ids: menuScopeIds,
+      status: input.publishStatus ?? "PUBLISHED",
+      strategy: { ips: [], persons: [], orgs: [] },
+      updated_at: nowIso()
+    };
+
+    set((current) => ({
+      orchestrations: [orchestration, ...current.orchestrations],
+      operations: [operation, ...current.operations],
+      hints: [hint, ...current.hints]
+    }));
+
+    return { hintId, operationId, orchestrationId };
+  },
   exportPluginBundle: () => {
     const state = get();
     return {
-      interfaces: state.interfaces,
-      hints: state.hints,
-      operations: state.operations,
-      orchestrations: state.orchestrations
+      interfaces: state.interfaces.filter((it) => it.status === "PUBLISHED"),
+      hints: state.hints.filter((it) => it.status === "PUBLISHED"),
+      operations: state.operations.filter((it) => it.status === "PUBLISHED"),
+      orchestrations: state.orchestrations.filter((it) => it.status === "ENABLED")
     };
   }
 }));

@@ -26,10 +26,10 @@ export function MenuScopesPage() {
     <div>
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          菜单级启停
+          菜单范围管理
         </Typography.Title>
         <Button type="primary" onClick={openCreate}>
-          新增菜单范围
+          新建范围
         </Button>
       </Space>
 
@@ -37,19 +37,20 @@ export function MenuScopesPage() {
         rowKey="id"
         dataSource={menus}
         columns={[
-          { title: "Menu Scope ID", dataIndex: "id" },
-          { title: "专区", dataIndex: "zone" },
-          { title: "业务菜单", dataIndex: "menu" },
+          { title: "范围ID", dataIndex: "id", width: 240 },
+          { title: "专区", dataIndex: "zone", width: 160 },
+          { title: "菜单", dataIndex: "menu" },
           {
-            title: "智能提示",
-            render: (_, row) => (row.enabledHint ? <Tag color="green">ENABLED</Tag> : <Tag>DISABLED</Tag>)
+            title: "提示能力",
+            render: (_, row) => (row.enabledHint ? <Tag color="green">启用</Tag> : <Tag>停用</Tag>)
           },
           {
-            title: "智能作业",
-            render: (_, row) => (row.enabledOperation ? <Tag color="green">ENABLED</Tag> : <Tag>DISABLED</Tag>)
+            title: "作业能力",
+            render: (_, row) => (row.enabledOperation ? <Tag color="green">启用</Tag> : <Tag>停用</Tag>)
           },
           {
             title: "操作",
+            width: 120,
             render: (_, row) => (
               <Button type="link" onClick={() => openEdit(row)}>
                 编辑
@@ -60,7 +61,7 @@ export function MenuScopesPage() {
       />
 
       <Modal
-        title={editing ? "编辑菜单范围" : "新增菜单范围"}
+        title={editing ? "编辑范围" : "新建范围"}
         open={open}
         onCancel={() => setOpen(false)}
         onOk={async () => {
@@ -70,19 +71,19 @@ export function MenuScopesPage() {
         }}
       >
         <Form layout="vertical" form={form}>
-          <Form.Item name="id" label="ID" rules={[{ required: true }]}>
+          <Form.Item name="id" label="范围ID" rules={[{ required: true }]}>
             <Input disabled={Boolean(editing)} />
           </Form.Item>
           <Form.Item name="zone" label="专区" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="menu" label="业务菜单" rules={[{ required: true }]}>
+          <Form.Item name="menu" label="菜单" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="enabledHint" label="启用智能提示" valuePropName="checked">
+          <Form.Item name="enabledHint" label="启用提示能力" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <Form.Item name="enabledOperation" label="启用智能作业" valuePropName="checked">
+          <Form.Item name="enabledOperation" label="启用作业能力" valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

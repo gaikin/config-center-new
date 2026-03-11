@@ -1,4 +1,5 @@
 export type InterfaceStatus = "DRAFT" | "PUBLISHED" | "OFFLINE";
+export type RecordStatus = "DRAFT" | "PUBLISHED";
 export type ValueType = "string" | "number" | "boolean" | "array" | "object";
 export type ConditionRelation = "AND" | "OR";
 export type Operator =
@@ -53,6 +54,7 @@ export interface InterfaceDefinition {
   response_path: string;
   status: InterfaceStatus;
   version?: number;
+  updated_at?: string;
   query_mapping: InterfaceParamMapping[];
   body_mapping: InterfaceParamMapping[];
 }
@@ -80,11 +82,13 @@ export interface HintRule {
   conditions: ConditionExpression[];
   operation_id?: string;
   menu_scope_ids: string[];
+  status: RecordStatus;
   strategy: {
     ips: string[];
     persons: string[];
     orgs: string[];
   };
+  updated_at?: string;
 }
 
 export interface OrchestrationNode {
@@ -102,6 +106,8 @@ export interface OperationDefinition {
   preview_mode: boolean;
   floating_button: boolean;
   orchestration_id: string;
+  status: RecordStatus;
+  updated_at?: string;
 }
 
 export interface OrchestrationDefinition {
@@ -109,6 +115,20 @@ export interface OrchestrationDefinition {
   orchestration_name: string;
   status: "ENABLED" | "DISABLED";
   nodes: OrchestrationNode[];
+  updated_at?: string;
+}
+
+export interface ConfigTemplate {
+  template_id: string;
+  template_name: string;
+  category: "REGULATION" | "RISK" | "GUIDE";
+  description: string;
+  hint_seed: Pick<HintRule, "title" | "content" | "risk_level" | "relation" | "conditions">;
+  operation_seed: Pick<OperationDefinition, "operation_name" | "preview_mode" | "floating_button">;
+  orchestration_seed: {
+    orchestration_name: string;
+    nodes: Array<Omit<OrchestrationNode, "node_id">>;
+  };
 }
 
 export interface RuntimeContext {
