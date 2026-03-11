@@ -1,0 +1,26 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { ConfigProvider, theme } from "antd";
+import { BrowserRouter } from "react-router-dom";
+import "antd/dist/reset.css";
+import App from "./App";
+import { GlobalStyle } from "./styles/global";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <ConfigProvider
+      theme={{
+        algorithm: theme.defaultAlgorithm,
+        token: {
+          colorPrimary: "#1d4ed8",
+          borderRadius: 10
+        }
+      }}
+    >
+      <BrowserRouter>
+        <GlobalStyle />
+        <App />
+      </BrowserRouter>
+    </ConfigProvider>
+  </React.StrictMode>
+);
