@@ -1,20 +1,23 @@
-import { Suspense, lazy } from "react";
+﻿import { Suspense, lazy } from "react";
 import { Spin } from "antd";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 
 const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })));
-const RuleWizardPage = lazy(() => import("./pages/RuleWizardPage").then((m) => ({ default: m.RuleWizardPage })));
-const TemplateCenterPage = lazy(() =>
-  import("./pages/TemplateCenterPage").then((m) => ({ default: m.TemplateCenterPage }))
+const PageResourcesPage = lazy(() =>
+  import("./pages/PageResourcesPage").then((m) => ({ default: m.PageResourcesPage }))
 );
-const MenuScopesPage = lazy(() => import("./pages/MenuScopesPage").then((m) => ({ default: m.MenuScopesPage })));
+const RulesPage = lazy(() => import("./pages/RulesPage").then((m) => ({ default: m.RulesPage })));
+const JobScenesPage = lazy(() => import("./pages/JobScenesPage").then((m) => ({ default: m.JobScenesPage })));
 const InterfacesPage = lazy(() => import("./pages/InterfacesPage").then((m) => ({ default: m.InterfacesPage })));
-const HintsPage = lazy(() => import("./pages/HintsPage").then((m) => ({ default: m.HintsPage })));
-const OrchestrationsPage = lazy(() =>
-  import("./pages/OrchestrationsPage").then((m) => ({ default: m.OrchestrationsPage }))
+const PreprocessorsPage = lazy(() =>
+  import("./pages/PreprocessorsPage").then((m) => ({ default: m.PreprocessorsPage }))
 );
-const PluginSdkPage = lazy(() => import("./pages/PluginSdkPage").then((m) => ({ default: m.PluginSdkPage })));
+const GovernancePage = lazy(() => import("./pages/GovernancePage").then((m) => ({ default: m.GovernancePage })));
+const AuditMetricsPage = lazy(() =>
+  import("./pages/AuditMetricsPage").then((m) => ({ default: m.AuditMetricsPage }))
+);
+const RolesPage = lazy(() => import("./pages/RolesPage").then((m) => ({ default: m.RolesPage })));
 
 export default function App() {
   return (
@@ -22,13 +25,14 @@ export default function App() {
       <Suspense fallback={<Spin style={{ margin: "24px 0" }} />}>
         <Routes>
           <Route path="/" element={<DashboardPage />} />
-          <Route path="/wizard" element={<RuleWizardPage />} />
-          <Route path="/templates" element={<TemplateCenterPage />} />
-          <Route path="/scopes" element={<MenuScopesPage />} />
+          <Route path="/page-resources" element={<PageResourcesPage />} />
+          <Route path="/rules" element={<RulesPage />} />
+          <Route path="/job-scenes" element={<JobScenesPage />} />
           <Route path="/interfaces" element={<InterfacesPage />} />
-          <Route path="/hints" element={<HintsPage />} />
-          <Route path="/orchestrations" element={<OrchestrationsPage />} />
-          <Route path="/plugin-sdk" element={<PluginSdkPage />} />
+          <Route path="/preprocessors" element={<PreprocessorsPage />} />
+          <Route path="/governance" element={<GovernancePage />} />
+          <Route path="/audit-metrics" element={<AuditMetricsPage />} />
+          <Route path="/roles" element={<RolesPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

@@ -1,162 +1,317 @@
-export type InterfaceStatus = "DRAFT" | "PUBLISHED" | "OFFLINE";
-export type RecordStatus = "DRAFT" | "PUBLISHED";
-export type ValueType = "string" | "number" | "boolean" | "array" | "object";
-export type ConditionRelation = "AND" | "OR";
-export type Operator =
-  | "eq"
-  | "ne"
-  | "gt"
-  | "lt"
-  | "gte"
-  | "lte"
-  | "contains"
-  | "not_contains"
-  | "in"
-  | "not_in"
-  | "regex_match"
-  | "is_empty"
-  | "not_empty";
+export type LifecycleState = "DRAFT" | "ACTIVE" | "DISABLED" | "EXPIRED";
 
-export type PreprocessorConfig = {
-  id: "prefix_extract" | "to_number" | string;
-  options?: Record<string, unknown>;
-};
+export type PromptMode = "SILENT" | "FLOATING";
+export type PromptCloseMode = "AUTO_CLOSE" | "MANUAL_CLOSE" | "TIMER_THEN_MANUAL";
+export type ExecutionMode =
+  | "AUTO_WITHOUT_PROMPT"
+  | "AUTO_AFTER_PROMPT"
+  | "PREVIEW_THEN_EXECUTE"
+  | "FLOATING_BUTTON";
 
-export type MappingSourceType = "fixed" | "page" | "context";
-export type NodeType = "page_get" | "page_set" | "api_call" | "js_script" | "custom";
+export type RuleLogicType = "AND" | "OR";
+export type RuleOperandSourceType = "PAGE_FIELD" | "INTERFACE_FIELD" | "CONST" | "CONTEXT";
+export type RuleOperator = "EQ" | "NE" | "GT" | "GE" | "LT" | "LE" | "CONTAINS" | "NOT_CONTAINS" | "IN" | "EXISTS";
 
-export interface MenuScope {
-  id: string;
-  zone: string;
-  menu: string;
-  enabledHint: boolean;
-  enabledOperation: boolean;
+export interface PageSite {
+  id: number;
+  code: string;
+  name: string;
+  status: LifecycleState;
 }
 
-export interface InterfaceParamMapping {
-  param_name: string;
-  source_type: MappingSourceType;
-  source_value: string;
+export interface PageMenu {
+  id: number;
+  siteId: number;
+  zoneName: string;
+  menuName: string;
+  menuCode: string;
+  status: LifecycleState;
+  ownerOrgId: string;
+}
+
+export interface PageResource {
+  id: number;
+  menuId: number;
+  name: string;
+  status: LifecycleState;
+  ownerOrgId: string;
+  currentVersion: number;
+  elementCount: number;
+  detectRulesSummary: string;
+  updatedAt: string;
+}
+
+export interface PageElement {
+  id: number;
+  pageResourceId: number;
+  logicName: string;
+  selector: string;
+  selectorType: "XPATH" | "CSS";
   required: boolean;
-  value_type?: ValueType;
-  default_value?: string;
-  test_value?: string;
+  updatedAt: string;
 }
 
 export interface InterfaceDefinition {
-  interface_id: string;
-  interface_name: string;
-  domain: string;
-  path: string;
+  id: number;
+  name: string;
   method: "GET" | "POST" | "PUT" | "DELETE";
-  auth_type: "NONE" | "TOKEN" | "AKSK" | "CUSTOM";
-  owner: string;
-  response_path: string;
-  status: InterfaceStatus;
-  version?: number;
-  updated_at?: string;
-  query_mapping: InterfaceParamMapping[];
-  body_mapping: InterfaceParamMapping[];
+  url: string;
+  status: LifecycleState;
+  ownerOrgId: string;
+  currentVersion: number;
+  timeoutMs: number;
+  retryTimes: number;
+  paramSourceSummary: string;
+  responsePath: string;
+  maskSensitive: boolean;
+  updatedAt: string;
 }
 
-export type ValueSource =
-  | { type: "fixed"; value: unknown }
-  | { type: "page"; xpath: string }
-  | { type: "interface"; interface_id: string; response_path: string };
-
-export interface ConditionExpression {
-  id: string;
-  left: ValueSource;
-  operator: Operator;
-  right: ValueSource;
-  left_preprocessors?: PreprocessorConfig[];
-  right_preprocessors?: PreprocessorConfig[];
+export interface PreprocessorDefinition {
+  id: number;
+  name: string;
+  processorType: "BUILT_IN" | "SCRIPT";
+  category: "STRING" | "NUMBER" | "DATE" | "JSON";
+  status: LifecycleState;
+  ownerOrgId: string;
+  usedByCount: number;
+  updatedAt: string;
 }
 
-export interface HintRule {
-  id: string;
-  title: string;
-  content: string;
-  risk_level: "LOW" | "MEDIUM" | "HIGH";
-  relation: ConditionRelation;
-  conditions: ConditionExpression[];
-  operation_id?: string;
-  menu_scope_ids: string[];
-  status: RecordStatus;
-  strategy: {
-    ips: string[];
-    persons: string[];
-    orgs: string[];
-  };
-  updated_at?: string;
+export interface RuleDefinition {
+  id: number;
+  name: string;
+  pageResourceId: number;
+  pageResourceName: string;
+  priority: number;
+  promptMode: PromptMode;
+  closeMode: PromptCloseMode;
+  closeTimeoutSec?: number;
+  hasConfirmButton: boolean;
+  sceneId?: number;
+  sceneName?: string;
+  status: LifecycleState;
+  currentVersion: number;
+  ownerOrgId: string;
+  updatedAt: string;
 }
 
-export interface OrchestrationNode {
-  node_id: string;
-  node_type: NodeType;
-  order: number;
+export interface RuleOperand {
+  sourceType: RuleOperandSourceType;
+  key: string;
+  constValue?: string;
+  preprocessorIds: number[];
+}
+
+export interface RuleConditionGroup {
+  id: number;
+  ruleId: number;
+  logicType: RuleLogicType;
+  parentGroupId?: number;
+  updatedAt: string;
+}
+
+export interface RuleCondition {
+  id: number;
+  ruleId: number;
+  groupId: number;
+  left: RuleOperand;
+  operator: RuleOperator;
+  right?: RuleOperand;
+  updatedAt: string;
+}
+
+export interface RulePreviewInput {
+  pageFields: Record<string, string>;
+  interfaceFields: Record<string, string>;
+  context: Record<string, string>;
+}
+
+export interface RulePreviewTrace {
+  conditionId: number;
+  expression: string;
+  leftValue: string;
+  rightValue: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface RulePreviewResult {
+  ruleId: number;
+  matched: boolean;
+  summary: string;
+  traces: RulePreviewTrace[];
+}
+
+export type JobNodeType = "page_get" | "api_call" | "js_script" | "page_set";
+
+export interface JobSceneDefinition {
+  id: number;
+  name: string;
+  pageResourceId: number;
+  pageResourceName: string;
+  executionMode: ExecutionMode;
+  status: LifecycleState;
+  currentVersion: number;
+  nodeCount: number;
+  manualDurationSec: number;
+  riskConfirmed: boolean;
+  updatedAt: string;
+}
+
+export interface JobNodeDefinition {
+  id: number;
+  sceneId: number;
+  nodeType: JobNodeType;
+  name: string;
+  orderNo: number;
   enabled: boolean;
-  output_key?: string;
-  config: Record<string, unknown>;
+  configJson: string;
+  updatedAt: string;
 }
 
-export interface OperationDefinition {
-  operation_id: string;
-  operation_name: string;
-  preview_mode: boolean;
-  floating_button: boolean;
-  orchestration_id: string;
-  status: RecordStatus;
-  updated_at?: string;
+export interface JobExecutionSummary {
+  id: number;
+  sceneId: number;
+  sceneName: string;
+  triggerSource: ExecutionLogItem["triggerSource"];
+  result: ExecutionLogItem["result"];
+  fallbackToManual: boolean;
+  detail: string;
+  startedAt: string;
+  finishedAt: string;
 }
 
-export interface OrchestrationDefinition {
-  orchestration_id: string;
-  orchestration_name: string;
-  status: "ENABLED" | "DISABLED";
-  nodes: OrchestrationNode[];
-  updated_at?: string;
+export interface JobNodeRunLog {
+  id: number;
+  executionId: number;
+  nodeId: number;
+  nodeName: string;
+  nodeType: JobNodeType;
+  status: "SUCCESS" | "FAILED" | "SKIPPED";
+  latencyMs: number;
+  detail: string;
+  createdAt: string;
 }
 
-export interface ConfigTemplate {
-  template_id: string;
-  template_name: string;
-  category: "REGULATION" | "RISK" | "GUIDE";
-  description: string;
-  hint_seed: Pick<HintRule, "title" | "content" | "risk_level" | "relation" | "conditions">;
-  operation_seed: Pick<OperationDefinition, "operation_name" | "preview_mode" | "floating_button">;
-  orchestration_seed: {
-    orchestration_name: string;
-    nodes: Array<Omit<OrchestrationNode, "node_id">>;
-  };
+export interface JobScenePreviewField {
+  key: string;
+  fieldName: string;
+  originalValue: string;
+  nextValue: string;
+  source: string;
+  abnormal: boolean;
 }
 
-export interface RuntimeContext {
-  ip: string;
-  person_id: string;
-  org_id: string;
-  is_new_employee: boolean;
-  menu_scope_id: string;
+export interface GovernancePendingSummary {
+  draftCount: number;
+  expiringSoonCount: number;
+  validationFailedCount: number;
+  conflictCount: number;
+  riskConfirmPendingCount: number;
 }
 
-export interface RuntimeInput {
-  context: RuntimeContext;
-  pageValues: Record<string, string>;
+export interface GovernancePendingItem {
+  id: number;
+  resourceType: "PAGE_RESOURCE" | "RULE" | "JOB_SCENE" | "INTERFACE" | "PREPROCESSOR";
+  resourceId: number;
+  resourceName: string;
+  status: LifecycleState;
+  ownerOrgId: string;
+  pendingType: "DRAFT" | "EXPIRING_SOON" | "VALIDATION_FAILED" | "CONFLICT" | "RISK_CONFIRM";
+  updatedAt: string;
 }
 
-export interface RuntimeLog {
-  id: string;
-  timestamp: string;
-  event: string;
+export interface GovernanceAuditLog {
+  id: number;
+  action: "PUBLISH" | "DISABLE" | "ROLLBACK" | "RISK_CONFIRM" | "ROLE_UPDATE" | "DEFER" | "VALIDATE" | "RESOLVE";
+  resourceType: string;
+  resourceId?: number;
+  resourceName: string;
+  operator: string;
+  createdAt: string;
+}
+
+export interface ValidationItem {
+  key: string;
+  label: string;
+  passed: boolean;
   detail: string;
 }
 
-export interface RuntimeResult {
-  mergedHints: Array<{ id: string; title: string; content: string; risk_level: string }>;
-  operationResults: Array<{
-    operation_id: string;
-    status: "SUCCESS" | "FAILED" | "CANCELLED";
-    message: string;
-  }>;
-  finalPageValues: Record<string, string>;
+export interface ValidationReport {
+  pass: boolean;
+  items: ValidationItem[];
+}
+
+export interface TriggerLogItem {
+  id: number;
+  ruleName: string;
+  pageResourceName: string;
+  triggerResult: "HIT" | "MISS" | "FAILED";
+  reason: string;
+  operator: string;
+  createdAt: string;
+}
+
+export interface ExecutionLogItem {
+  id: number;
+  sceneName: string;
+  triggerSource: "PROMPT_CONFIRM" | "FLOATING_BUTTON" | "AUTO" | "MANUAL_RETRY";
+  result: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
+  latencyMs: number;
+  reason: string;
+  createdAt: string;
+}
+
+export interface FailureReasonMetric {
+  reason: string;
+  count: number;
+  ratio: number;
+}
+
+export interface MetricsOverview {
+  executionSuccessRate: number;
+  avgSavedSeconds: number;
+  expiredResourceCount: number;
+  expiringSoonResourceCount: number;
+}
+
+export type ActionType =
+  | "VIEW"
+  | "CONFIG"
+  | "VALIDATE"
+  | "PUBLISH"
+  | "DISABLE"
+  | "DEFER"
+  | "ROLLBACK"
+  | "AUDIT_VIEW"
+  | "RISK_CONFIRM"
+  | "ROLE_MANAGE";
+
+export interface RoleItem {
+  id: number;
+  name: string;
+  roleType:
+    | "BUSINESS_OPERATOR"
+    | "BUSINESS_CONFIG"
+    | "BUSINESS_MANAGER"
+    | "BUSINESS_AUDITOR"
+    | "BUSINESS_SUPER_ADMIN"
+    | "PLATFORM_SUPPORT";
+  status: "ACTIVE" | "DISABLED";
+  orgScopeId: string;
+  actions: ActionType[];
+  memberCount: number;
+  updatedAt: string;
+}
+
+export interface DashboardOverview {
+  pageResourceCount: number;
+  activeRuleCount: number;
+  activeSceneCount: number;
+  activeInterfaceCount: number;
+  roleCount: number;
+  pendingCount: number;
+  metrics: MetricsOverview;
 }

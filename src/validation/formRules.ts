@@ -1,9 +1,9 @@
-import type { Rule } from "antd/es/form";
+﻿import type { Rule } from "antd/es/form";
 
 export function requiredRule(label: string): Rule {
   return {
     required: true,
-    message: `请填写${label}`
+    message: `请输入${label}`
   };
 }
 
@@ -29,7 +29,7 @@ export const xpathLikeRule: Rule = {
     if (value.startsWith("/") || value.startsWith("#") || value.startsWith(".")) {
       return Promise.resolve();
     }
-    return Promise.reject(new Error("定位表达式需以 '/'（XPath）或 '#/.'（CSS兜底）开头。"));
+    return Promise.reject(new Error("定位表达式需以 '/'（XPath）或 '#/.'（CSS）开头。"));
   }
 };
 

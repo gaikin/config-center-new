@@ -1,25 +1,31 @@
-import { Layout, Menu, Typography } from "antd";
+﻿import { MenuOutlined } from "@ant-design/icons";
+import { Button, Drawer, Layout, Menu, Typography } from "antd";
 import styled from "styled-components";
 import { Link, useLocation } from "react-router-dom";
+import { useState } from "react";
 
 const { Header, Sider, Content } = Layout;
 
 const navItems = [
   { key: "/", label: "总览" },
-  { key: "/wizard", label: "配置向导" },
-  { key: "/templates", label: "模板中心" },
-  { key: "/scopes", label: "菜单范围" },
-  { key: "/interfaces", label: "接口配置" },
-  { key: "/hints", label: "提示规则" },
-  { key: "/orchestrations", label: "作业编排" },
-  { key: "/plugin-sdk", label: "运行时配置包" }
+  { key: "/page-resources", label: "页面资源中心" },
+  { key: "/rules", label: "规则中心" },
+  { key: "/job-scenes", label: "作业场景中心" },
+  { key: "/interfaces", label: "接口定义中心" },
+  { key: "/preprocessors", label: "预处理器中心" },
+  { key: "/governance", label: "治理工作台" },
+  { key: "/audit-metrics", label: "审计与指标中心" },
+  { key: "/roles", label: "角色管理" }
 ];
 
 const HeaderBar = styled(Header)`
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(90deg, #0f172a 0%, #1f3a8a 100%);
+  background: linear-gradient(95deg, #0f172a 0%, #1e3a8a 55%, #0ea5a4 100%);
   color: #fff;
   padding: 0 20px;
 `;
@@ -34,38 +40,80 @@ const ContentWrap = styled(Content)`
   margin: 16px;
   padding: 16px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 `;
 
+const StyledSider = styled(Sider)`
+  @media (max-width: 1024px) {
+    display: none;
+  }
+`;
+
+const MobileNavButton = styled(Button)`
+  display: none;
+
+  @media (max-width: 1024px) {
+    display: inline-flex;
+  }
+`;
+
+function getSelectedKey(pathname: string) {
+  const matched = navItems.find((item) => {
+    if (item.key === "/") {
+      return pathname === "/";
+    }
+    return pathname.startsWith(item.key);
+  });
+  return matched?.key ?? "/";
+}
+
+function renderMenuItems() {
+  return navItems.map((item) => ({
+    key: item.key,
+    label: <Link to={item.key}>{item.label}</Link>
+  }));
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const selected = navItems.find((item) => location.pathname === item.key)?.key ?? location.pathname;
+  const selected = getSelectedKey(location.pathname);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <HeaderBar>
         <LogoBlock>
-          <Typography.Text style={{ color: "#fff", fontWeight: 700 }}>营小助配置中心</Typography.Text>
-          <Typography.Text style={{ color: "rgba(255,255,255,0.75)", fontSize: 12 }}>
-            智能提示 + 智能作业 + 脚本 SDK
+          <Typography.Text style={{ color: "#fff", fontWeight: 700 }}>营小助配置中心（新版）</Typography.Text>
+          <Typography.Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 12 }}>
+            页面资源 + 规则 + 作业场景 + 治理
           </Typography.Text>
         </LogoBlock>
+        <MobileNavButton icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)}>
+          导航
+        </MobileNavButton>
       </HeaderBar>
       <Layout>
-        <Sider width={232} theme="light">
-          <Menu
-            mode="inline"
-            selectedKeys={[selected]}
-            items={navItems.map((item) => ({
-              key: item.key,
-              label: <Link to={item.key}>{item.label}</Link>
-            }))}
-            style={{ height: "100%", borderInlineEnd: 0 }}
-          />
-        </Sider>
+        <StyledSider width={248} theme="light">
+          <Menu mode="inline" selectedKeys={[selected]} items={renderMenuItems()} style={{ height: "100%", borderInlineEnd: 0 }} />
+        </StyledSider>
         <ContentWrap>{children}</ContentWrap>
       </Layout>
+      <Drawer
+        title="配置中心导航"
+        placement="left"
+        width={248}
+        onClose={() => setDrawerOpen(false)}
+        open={drawerOpen}
+      >
+        <Menu
+          mode="inline"
+          selectedKeys={[selected]}
+          items={renderMenuItems()}
+          onClick={() => setDrawerOpen(false)}
+          style={{ borderInlineEnd: 0 }}
+        />
+      </Drawer>
     </Layout>
   );
 }

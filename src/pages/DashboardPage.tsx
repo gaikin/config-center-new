@@ -1,82 +1,110 @@
-import { Button, Card, Col, List, Row, Space, Statistic, Tag, Typography } from "antd";
-import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAppStore } from "../store/useAppStore";
+﻿import { Card, Col, List, Row, Statistic, Tag, Typography } from "antd";
+import { useEffect, useState } from "react";
+import { configCenterService } from "../services/configCenterService";
+import type { DashboardOverview } from "../types";
 
 export function DashboardPage() {
-  const navigate = useNavigate();
-  const { menus, interfaces, hints, operations, orchestrations, templates } = useAppStore();
+  const [loading, setLoading] = useState(true);
+  const [overview, setOverview] = useState<DashboardOverview | null>(null);
 
-  const metrics = useMemo(
-    () => ({
-      menuEnabled: menus.filter((x) => x.enabledHint || x.enabledOperation).length,
-      interfacePublished: interfaces.filter((x) => x.status === "PUBLISHED").length,
-      hintPublished: hints.filter((x) => x.status === "PUBLISHED").length,
-      operationPublished: operations.filter((x) => x.status === "PUBLISHED").length,
-      orchestrationEnabled: orchestrations.filter((x) => x.status === "ENABLED").length,
-      templateCount: templates.length
-    }),
-    [menus, interfaces, hints, operations, orchestrations, templates]
-  );
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        setLoading(true);
+        const data = await configCenterService.getDashboardOverview();
+        if (active) {
+          setOverview(data);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div>
       <Typography.Title level={4}>配置中心总览</Typography.Title>
       <Typography.Paragraph type="secondary">
-        {"当前为前端实现阶段，数据使用本地写死。核心流程面向业务人员：模板选用 -> 向导配置 -> 发布生效。"}
+        当前页面基于 mock 数据模拟新版 Admin Web 主工作台，覆盖页面资源、规则、作业场景、治理和角色管理。
       </Typography.Paragraph>
-
-      <Space style={{ marginBottom: 12 }}>
-        <Button type="primary" onClick={() => navigate("/wizard")}>进入配置向导</Button>
-        <Button onClick={() => navigate("/templates")}>打开模板中心</Button>
-      </Space>
 
       <Row gutter={[12, 12]}>
         <Col xs={24} sm={12} lg={8}>
-          <Card><Statistic title="已启用菜单" value={metrics.menuEnabled} /></Card>
+          <Card loading={loading}>
+            <Statistic title="页面资源数" value={overview?.pageResourceCount ?? 0} />
+          </Card>
         </Col>
         <Col xs={24} sm={12} lg={8}>
-          <Card><Statistic title="已发布接口" value={metrics.interfacePublished} /></Card>
+          <Card loading={loading}>
+            <Statistic title="生效规则数" value={overview?.activeRuleCount ?? 0} />
+          </Card>
         </Col>
         <Col xs={24} sm={12} lg={8}>
-          <Card><Statistic title="已发布提示规则" value={metrics.hintPublished} /></Card>
+          <Card loading={loading}>
+            <Statistic title="生效作业场景数" value={overview?.activeSceneCount ?? 0} />
+          </Card>
         </Col>
         <Col xs={24} sm={12} lg={8}>
-          <Card><Statistic title="已发布作业" value={metrics.operationPublished} /></Card>
+          <Card loading={loading}>
+            <Statistic title="生效接口定义数" value={overview?.activeInterfaceCount ?? 0} />
+          </Card>
         </Col>
         <Col xs={24} sm={12} lg={8}>
-          <Card><Statistic title="已启用编排" value={metrics.orchestrationEnabled} /></Card>
+          <Card loading={loading}>
+            <Statistic title="角色总数" value={overview?.roleCount ?? 0} />
+          </Card>
         </Col>
         <Col xs={24} sm={12} lg={8}>
-          <Card><Statistic title="模板数量" value={metrics.templateCount} /></Card>
+          <Card loading={loading}>
+            <Statistic title="待处理事项" value={overview?.pendingCount ?? 0} />
+          </Card>
         </Col>
       </Row>
 
       <Row gutter={12} style={{ marginTop: 16 }}>
         <Col xs={24} lg={12}>
-          <Card title="执行原则">
-            <List
-              size="small"
-              dataSource={[
-                "智能作业只能由命中的提示规则触发。",
-                "一个作业只能绑定一个编排定义。",
-                "编排节点失败策略固定为停止（STOP）。",
-                "发布与生效范围一体化提交。",
-                "运行时执行防抖与频控策略。"
-              ]}
-              renderItem={(item) => <List.Item>{item}</List.Item>}
-            />
+          <Card title="核心指标" loading={loading}>
+            <Row gutter={[12, 12]}>
+              <Col span={12}>
+                <Statistic title="作业成功率" value={overview?.metrics.executionSuccessRate ?? 0} suffix="%" />
+              </Col>
+              <Col span={12}>
+                <Statistic title="平均节省时长" value={overview?.metrics.avgSavedSeconds ?? 0} suffix="秒" />
+              </Col>
+              <Col span={12}>
+                <Statistic title="已失效对象" value={overview?.metrics.expiredResourceCount ?? 0} />
+              </Col>
+              <Col span={12}>
+                <Statistic title="即将到期" value={overview?.metrics.expiringSoonResourceCount ?? 0} />
+              </Col>
+            </Row>
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="当前能力基线">
-            <Space wrap>
-              <Tag color="blue">提示联动作业</Tag>
-              <Tag color="green">注入前预览</Tag>
-              <Tag color="purple">悬浮重复触发</Tag>
-              <Tag color="gold">模板化配置</Tag>
-              <Tag color="red">审计可追溯</Tag>
-            </Space>
+          <Card title="当前基线">
+            <List
+              size="small"
+              dataSource={[
+                "发布前强校验作为主防线，运行时仅保留最小技术防护。",
+                "规则和作业场景分开建模、分开版本化、分开治理。",
+                "提示入口统一为确认按钮，复杂场景由悬浮入口承接。",
+                "治理工作台默认进入待处理视图。",
+                "平台只承诺基础校验，真实联调在外部环境完成。"
+              ]}
+              renderItem={(item) => <List.Item>{item}</List.Item>}
+            />
+            <div style={{ marginTop: 10 }}>
+              <Tag color="blue">Mock Data</Tag>
+              <Tag color="green">Admin Web P0</Tag>
+              <Tag color="gold">TDSQL Baseline</Tag>
+            </div>
           </Card>
         </Col>
       </Row>
