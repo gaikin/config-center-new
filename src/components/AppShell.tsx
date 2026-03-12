@@ -9,10 +9,10 @@ const { Header, Sider, Content } = Layout;
 const navItems = [
   { key: "/", label: "总览" },
   { key: "/page-resources", label: "页面资源中心" },
-  { key: "/rules", label: "规则中心" },
-  { key: "/job-scenes", label: "作业场景中心" },
-  { key: "/interfaces", label: "接口定义中心" },
+  { key: "/interfaces", label: "API注册" },
   { key: "/preprocessors", label: "预处理器中心" },
+  { key: "/rules", label: "智能提示" },
+  { key: "/job-scenes", label: "智能作业" },
   { key: "/governance", label: "治理工作台" },
   { key: "/audit-metrics", label: "审计与指标中心" },
   { key: "/roles", label: "角色管理" }
@@ -86,7 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <LogoBlock>
           <Typography.Text style={{ color: "#fff", fontWeight: 700 }}>营小助配置中心（新版）</Typography.Text>
           <Typography.Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 12 }}>
-            页面资源 + 规则 + 作业场景 + 治理
+            Phase 0-5 | WP-A~WP-F 实施导航
           </Typography.Text>
         </LogoBlock>
         <MobileNavButton icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)}>
@@ -100,7 +100,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <ContentWrap>{children}</ContentWrap>
       </Layout>
       <Drawer
-        title="配置中心导航"
+        title="实施导航"
         placement="left"
         width={248}
         onClose={() => setDrawerOpen(false)}

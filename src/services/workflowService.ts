@@ -1,4 +1,4 @@
-﻿import {
+import {
   seedJobExecutions,
   seedJobNodeRunLogs,
   seedJobNodes,
@@ -69,10 +69,29 @@ function preprocessValue(value: string, preprocessorIds: number[]): string {
   return current;
 }
 
+function deriveInterfaceFieldKey(path?: string) {
+  if (!path) {
+    return "";
+  }
+  const normalized = path
+    .replace(/^\$\./, "")
+    .replace(/\[\d+\]/g, "")
+    .trim();
+  if (!normalized) {
+    return "";
+  }
+  const segments = normalized.split(".").filter(Boolean);
+  return segments[segments.length - 1] ?? "";
+}
+
 function resolveOperand(operand: RuleOperand | undefined, input: RulePreviewInput): string {
   if (!operand) {
     return "";
   }
+  const preprocessorIds =
+    operand.preprocessorIds.length > 0
+      ? operand.preprocessorIds
+      : (operand.preprocessorConfigs ?? []).map((item) => item.preprocessorId);
   let raw = "";
   if (operand.sourceType === "CONST") {
     raw = operand.constValue ?? operand.key;
@@ -81,13 +100,22 @@ function resolveOperand(operand: RuleOperand | undefined, input: RulePreviewInpu
   } else if (operand.sourceType === "CONTEXT") {
     raw = input.context[operand.key] ?? "";
   } else if (operand.sourceType === "INTERFACE_FIELD") {
+    const byBindingPath = deriveInterfaceFieldKey(operand.interfaceBinding?.outputPath);
     const fallback: Record<string, string> = {
       risk_score: "86",
-      risk_level: "HIGH"
+      score: "86",
+      risk_level: "HIGH",
+      riskLevel: "HIGH",
+      decision_code: "PASS"
     };
-    raw = input.interfaceFields[operand.key] ?? fallback[operand.key] ?? "";
+    raw =
+      input.interfaceFields[operand.key] ??
+      input.interfaceFields[byBindingPath] ??
+      fallback[operand.key] ??
+      fallback[byBindingPath] ??
+      "";
   }
-  return preprocessValue(raw, operand.preprocessorIds);
+  return preprocessValue(raw, preprocessorIds);
 }
 
 function compareValues(operator: RuleOperator, left: string, right: string): boolean {

@@ -11,6 +11,7 @@ export type ExecutionMode =
 export type RuleLogicType = "AND" | "OR";
 export type RuleOperandSourceType = "PAGE_FIELD" | "INTERFACE_FIELD" | "CONST" | "CONTEXT";
 export type RuleOperator = "EQ" | "NE" | "GT" | "GE" | "LT" | "LE" | "CONTAINS" | "NOT_CONTAINS" | "IN" | "EXISTS";
+export type RuleOperandValueType = "STRING" | "NUMBER" | "BOOLEAN" | "OBJECT" | "ARRAY";
 
 export interface PageSite {
   id: number;
@@ -51,16 +52,44 @@ export interface PageElement {
   updatedAt: string;
 }
 
+export type ApiValueType = "STRING" | "NUMBER" | "BOOLEAN" | "OBJECT" | "ARRAY";
+export type ApiValueSourceType = "CONST" | "PAGE_ELEMENT" | "API_OUTPUT" | "CONTEXT";
+
+export interface ApiInputParam {
+  id: string;
+  name: string;
+  description: string;
+  valueType: ApiValueType;
+  required: boolean;
+  sourceType: ApiValueSourceType;
+  sourceValue: string;
+}
+
+export interface ApiOutputParam {
+  id: string;
+  name: string;
+  path: string;
+  description: string;
+  valueType: ApiValueType;
+  children?: ApiOutputParam[];
+}
+
 export interface InterfaceDefinition {
   id: number;
   name: string;
+  description: string;
   method: "GET" | "POST" | "PUT" | "DELETE";
+  testPath: string;
+  prodPath: string;
   url: string;
   status: LifecycleState;
   ownerOrgId: string;
   currentVersion: number;
   timeoutMs: number;
   retryTimes: number;
+  bodyTemplateJson: string;
+  inputConfigJson: string;
+  outputConfigJson: string;
   paramSourceSummary: string;
   responsePath: string;
   maskSensitive: boolean;
@@ -101,6 +130,18 @@ export interface RuleOperand {
   key: string;
   constValue?: string;
   preprocessorIds: number[];
+  valueType?: RuleOperandValueType;
+  displayValue?: string;
+  interfaceBinding?: {
+    interfaceId?: number;
+    interfaceName?: string;
+    outputPath?: string;
+    inputConfig?: string;
+  };
+  preprocessorConfigs?: Array<{
+    preprocessorId: number;
+    params?: string;
+  }>;
 }
 
 export interface RuleConditionGroup {
