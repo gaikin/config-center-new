@@ -14,6 +14,7 @@ import {
   Typography,
   message
 } from "antd";
+import { DeleteOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../services/configCenterService";
 import { workflowService } from "../services/workflowService";
@@ -79,6 +80,9 @@ type SelectedOperand = {
   conditionId: string;
   side: OperandSide;
 };
+
+const OPERAND_PILL_WIDTH = 320;
+const LOGIC_OPERATOR_WIDTH = 92;
 
 const statusColor: Record<LifecycleState, string> = {
   DRAFT: "default",
@@ -726,6 +730,9 @@ export function RulesPage() {
           display: "inline-flex",
           alignItems: "center",
           gap: 8,
+          width: OPERAND_PILL_WIDTH,
+          minWidth: OPERAND_PILL_WIDTH,
+          maxWidth: OPERAND_PILL_WIDTH,
           borderRadius: 16,
           border: `1px solid ${summary.warning ? "var(--cc-source-warning, #FDA29B)" : summary.visual.border}`,
           background: summary.warning ? "var(--cc-source-warning-bg, #FEF3F2)" : summary.visual.bg,
@@ -736,8 +743,17 @@ export function RulesPage() {
           outline: selected ? "2px solid var(--cc-source-selected, #84CAFF)" : "none"
         }}
       >
-        <span style={{ fontSize: 12, fontWeight: 600 }}>{summary.visual.label}</span>
-        <span style={{ fontSize: 13, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, flexShrink: 0 }}>{summary.visual.label}</span>
+        <span
+          style={{
+            fontSize: 13,
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          }}
+        >
           {summary.mainText}
         </span>
       </button>
@@ -915,11 +931,11 @@ export function RulesPage() {
                     }}
                     bodyStyle={{ padding: 10 }}
                   >
-                    <Space wrap align="center" style={{ rowGap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", width: "100%", minWidth: 0, overflow: "hidden" }}>
                       <Tag color="blue">条件 {index + 1}</Tag>
                       {renderOperandPill(condition.id, "left", condition.left)}
                       <Select
-                        style={{ width: 120 }}
+                        style={{ width: LOGIC_OPERATOR_WIDTH, minWidth: LOGIC_OPERATOR_WIDTH, maxWidth: LOGIC_OPERATOR_WIDTH }}
                         value={condition.operator}
                         options={operatorOptions}
                         onChange={(value) =>
@@ -931,10 +947,16 @@ export function RulesPage() {
                       ) : (
                         renderOperandPill(condition.id, "right", condition.right)
                       )}
-                      <Button danger size="small" onClick={() => removeCondition(condition.id)}>
-                        删除
-                      </Button>
-                    </Space>
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        aria-label="delete-condition"
+                        style={{ marginLeft: "auto", flexShrink: 0 }}
+                        onClick={() => removeCondition(condition.id)}
+                      />
+                    </div>
                   </Card>
                 ))}
               </Space>

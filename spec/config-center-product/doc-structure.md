@@ -23,4 +23,5 @@
 1. `prd-analysis.md`：平台总纲（保留）
 2. `sentinel-prd.md`：智能提示产品文档（已创建）
 3. `job-prd.md`：智能作业产品文档（已创建）
+4. `ui-spec-sentinel-rules-editor.md`：智能提示条件编辑区 UI 规范（独立文档）
 
