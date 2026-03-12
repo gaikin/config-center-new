@@ -1,231 +1,539 @@
-﻿﻿# 营小助配置中心架构设计
+﻿# 营小助配置中心架构设计
 
-> 来源：`spec/config-center-product/prd-analysis.md`
-> 用户规模：约 10,000
-> 架构形态：服务端、前端配置、JSSDK 三端分离
-> 部署形态：行内 Docker 部署（三项目独立）
-> 更新日期：2026-03-11
+> 来源文档：`spec/config-center-product/prd-analysis.md`、`spec/config-center-product/plan.md`、`spec/config-center-product/permission-model.md`  
+> 用户规模：约 10,000 内部用户  
+> 当前仓库状态：当前工作区主要承载 `config-center-admin-web` 原型前端  
+> 目标架构形态：控制面、运行面、治理面解耦，Admin Web / Backend / JSSDK 三端分离  
+> 部署形态：行内 Docker 独立部署，统一接入行内中间件与认证体系  
+> 更新日期：2026-03-12
+> 数据库基线：`TDSQL`（默认按 `TDSQL-MySQL` 单库或普通集群场景设计；若实际为 TDSQL-PG，仅切换 DDL 方言，不改变对象模型）
+> 关联专题：`spec/config-center-product/api-design.md`、`spec/config-center-product/tdsql-ddl-draft.md`
 
-## 1. 架构设计（10,000 用户规模，三端分离）
+## 1. 架构定位
 
-### 1.1 规模假设与设计目标
-1. 服务对象约 10,000 内部用户，峰值并发按 8%-12% 估算（800-1,200 在线）。
-2. 高峰请求以 JSSDK 规则判定与日志上报为主，配置端为中低并发。
-3. 架构目标：控制面与运行面解耦，三端独立发布，日志与指标可观测，支持水平扩展。
+营小助配置中心不是单一的提示后台，也不是孤立的作业引擎，而是一套面向银行内网页面的智能辅助与治理平台。
 
-### 1.2 三端分离逻辑
-1. 前端配置端（Admin Web）：规则配置、接口配置、编排配置、发布生效范围、运营看板。
-2. 服务端（Backend）：配置管理 API、运行时决策 API、编排执行、日志采集、指标聚合、权限鉴权。
-3. JSSDK 端（Runtime SDK）：DOM 监听、规则触发、提示渲染、作业触发、预览交互、埋点回传。
-4. 数据层：PostgreSQL（配置与事务数据）、Redis（缓存与频控）、对象存储（归档日志）、消息队列（异步日志/指标）。
-5. 发布与部署：三项目独立构建、独立发布、独立回滚。
+架构设计必须同时支撑以下三类能力：
 
-### 1.3 项目目录建议（三仓独立）
+1. 公共支撑层：页面资源、接口定义、预处理器、角色与权限、版本与审计。
+2. 智能提示层：页面识别、规则匹配、提示渲染、关闭控制、提示确认入口。
+3. 智能作业层：场景编排、节点执行、预览确认、页面注入、失败降级、二次触发。
 
-```text
-config-center-backend/
-  src/
-    api/                          # controller / route / dto
-    application/                  # 用例编排、事务边界
-    domain/                       # 规则/编排/发布/权限领域模型
-    infrastructure/               # db/cache/mq/外部接口适配
-    modules/
-      auth-rbac/
-      config-center/
-      runtime-decision/
-      orchestration/
-      log-ingest/
-      metrics/
-  migrations/
-  scripts/
-  Dockerfile
+同时，架构必须遵守新版产品边界：
 
-config-center-admin-web/
-  src/
-    pages/
-    features/
-      rule-designer/
-      orchestration-designer/
-      interface-config/
-      publish-scope/
-      template-center/
-    shared/
-    api-client/                   # 由 OpenAPI 生成
-  nginx/
-  Dockerfile
+1. 不替代业务系统原生审批流和最终确认动作。
+2. 不依赖运行时业务冲突仲裁作为主防线，冲突必须在发布前消解。
+3. 不以开放脚本自由度为目标，自定义脚本只作为受控增强项。
+4. 不把平台内置完整联调测试能力作为 P0 能力承诺。
+5. 出现异常时必须支持降级到人工路径，不能阻断业务继续办理。
 
-config-center-jssdk/
-  src/
-    context-collector/
-    trigger-engine/
-    rule-runtime/
-    ui-renderer/
-    job-runner/
-    telemetry/
-  dist/
-  scripts/
-  Dockerfile                      # 基于 TypeScript + Vite library mode 构建并发布静态资源容器
+## 2. 设计目标与非目标
+
+### 2.1 设计目标
+
+1. 支撑 10,000 内部用户规模下的稳定运行，运行面与控制面解耦，支持水平扩展。
+2. 让业务角色成为主要配置者和治理者，技术角色聚焦平台支撑和异常排查。
+3. 以发布前强校验、版本替换、责任人绑定、风险确认和全链路留痕作为治理底线。
+4. 形成 `页面资源 -> 规则触发 -> 提示引导 -> 作业执行 -> 审计治理` 的完整技术闭环。
+5. 支撑首批试点页面快速落地，并可按菜单、组织范围和模板能力逐步扩面。
+
+### 2.2 非目标
+
+1. 不建设通用低代码平台或高自由度画布产品。
+2. 不支持以单页面、单规则、单场景为常规模式的细粒度 ACL 授权体系。
+3. 不把提示中心做成多按钮、多动作分发平台。
+4. 不把真实链路联调和页面注入最终验证放进平台内核能力中。
+
+## 3. 总体架构视图
+
+### 3.1 分层与分面
+
+总体采用“三层能力 + 三个平面”的组合架构：
+
+1. 能力层：公共支撑层、智能提示层、智能作业层。
+2. 平面划分：控制面、运行面、治理面。
+3. 端形态：Admin Web、Backend、JSSDK。
+
+其中：
+
+1. 控制面负责页面、规则、作业、接口、预处理器和角色配置，以及发布、停用、回滚、风险确认。
+2. 运行面负责页面识别、规则判断、提示渲染、作业执行、失败降级和运行时快照消费。
+3. 治理面负责状态变更审计、触发日志、执行日志、指标聚合、待处理视图和问题定位。
+
+### 3.2 总体架构图
+
+```mermaid
+graph TD
+    U1[业务配置角色 / 业务管理角色 / 审计角色] --> AW[Admin Web]
+    U2[业务操作角色 / 审核角色] --> BS[银行业务页面]
+    BS --> SDK[JSSDK Runtime]
+
+    AW --> GW[统一网关 / SSO / 鉴权入口]
+    SDK --> GW
+
+    GW --> CP[控制面 API]
+    GW --> RP[运行面 API]
+    GW --> GP[治理面 API]
+
+    CP --> CFG[配置域服务]
+    CP --> PUB[发布与校验服务]
+    CP --> IAM[角色与权限服务]
+
+    RP --> SNAP[运行时快照服务]
+    RP --> RULE[规则决策服务]
+    RP --> EXEC[作业执行服务]
+
+    GP --> AUDIT[审计与日志服务]
+    GP --> METRIC[指标聚合服务]
+
+    CFG --> DB[(TDSQL)]
+    PUB --> PG
+    IAM --> PG
+    RULE --> REDIS[(Redis)]
+    SNAP --> REDIS
+    EXEC --> MQ[(MQ)]
+    AUDIT --> MQ
+    AUDIT --> OSS[(对象存储 / 日志归档)]
+    METRIC --> PG
+    SDK --> MQ
 ```
 
-### 1.4 核心模块划分
+### 3.3 技术关键点
 
-### 1.4.0 前端技术栈基线（按当前 package.json）
-1. 框架：`React 18` + `TypeScript` + `Vite 7`。
-2. UI：`antd 5`。
-3. 路由：`react-router-dom 6`。
-4. 状态管理：`zustand 5`。
-5. 样式方案：`styled-components 6`（与 antd 主题能力配合）。
-6. 构建脚本：`vite` 开发，`tsc --noEmit && vite build` 生产构建。
-7. 架构约束：配置端设计与实现需以上述技术栈为准，不引入平行框架。
+1. 控制面与运行面解耦，避免配置事务链路影响页面现场响应。
+2. 发布动作不直接给运行面读控制面配置，而是生成运行时快照或运行视图。
+3. JSSDK 以“轻逻辑 + 强约束”为原则，复杂判断和执行状态由服务端统一管理。
+4. 治理日志和运行日志分流采集，通过 MQ 异步削峰，避免阻塞现场操作。
 
-### 1.4.1 服务端项目模块（单仓模块化，可按需拆分）
-1. `auth-rbac-service`：统一认证、资源授权、发布与生效范围校验。
-2. `config-service`：规则、接口子项、编排、模板、发布单管理（控制面）。
-3. `runtime-decision-service`：运行时取值、条件计算、命中决策、触发顺序控制（运行面）。
-4. `orchestration-service`：编排实例管理、节点串行执行、失败 `STOP`、预览快照生成。
-5. `log-ingest-service`：事件日志、条件日志、参数日志、编排日志接入与脱敏。
-6. `metrics-service`：按“自然日 + 业务菜单”聚合命中率、采纳率、注入成功率等指标。
-7. `gateway-adapter`：限流、熔断、鉴权透传、TraceID 注入、灰度路由（可独立网关或内嵌入口层）。
+## 4. 部署与项目划分
 
-### 1.4.2 前端配置端模块
-1. 向导流引擎：创建规则 -> 绑定作业 -> 设置生效范围 -> 发布。
-2. 规则设计器：条件表达式、OR/AND、预处理器链可视化配置。
-3. 接口子项管理：状态流转、参数映射、发布前校验、引用关系查看。
-4. 编排设计器：节点拖拽编排、输入输出映射、测试运行。
-5. 模板中心：高频业务模板、示例、默认值快速填充。
-6. 校验与帮助系统：实时校验、错误定位、修复建议。
+### 4.1 目标三端划分
 
-### 1.4.3 JSSDK 模块
-1. `context-collector`：页面上下文采集、菜单识别、角色信息读取。
-2. `trigger-engine`：DOM 监听、防抖频控、去重。
-3. `rule-runtime`：规则执行、命中判定、触发来源标记。
-4. `ui-renderer`：提示弹窗、合窗、悬浮按钮、预览窗口。
-5. `job-runner`：作业触发、编排调用、注入仲裁、一次性写入。
-6. `telemetry`：埋点日志、链路追踪、异常上报。
+1. `config-center-admin-web`
+   面向业务配置、业务治理和审计查看。
+2. `config-center-backend`
+   承载控制面、运行面、治理面 API 以及统一领域服务。
+3. `config-center-jssdk`
+   注入业务页面，负责页面上下文采集、提示展示、执行入口承接和埋点回传。
 
-### 1.5 数据模型设计（PostgreSQL 主模型）
+### 4.2 当前工作区与目标关系
 
-### 1.5.1 主数据与权限域
-| 表名 | 关键字段 | 说明 | 关键索引 |
-| --- | --- | --- | --- |
-| `user_account` | `id`, `employee_no`, `status` | 平台用户 | `employee_no` 唯一 |
-| `role` | `id`, `role_code`, `scope_type` | 角色定义 | `role_code` 唯一 |
-| `permission` | `id`, `resource`, `action` | 权限点 | `(resource,action)` 唯一 |
-| `user_role_rel` | `user_id`, `role_id` | 用户角色关系 | `(user_id,role_id)` 唯一 |
-| `role_permission_rel` | `role_id`, `permission_id` | 角色权限关系 | `(role_id,permission_id)` 唯一 |
+当前仓库实际是配置端原型工程，技术栈已明确为：
 
-### 1.5.2 配置域
-| 表名 | 关键字段 | 说明 | 关键索引 |
-| --- | --- | --- | --- |
-| `rule` | `id`, `rule_code`, `category`, `status` | 规则主表 | `rule_code` 唯一 |
-| `rule_version` | `id`, `rule_id`, `version_no`, `is_current` | 规则版本 | `(rule_id,version_no)` 唯一 |
-| `rule_scope` | `rule_version_id`, `org_id`, `system_id`, `menu_id`, `role_id` | 生效范围 | `(rule_version_id,org_id,system_id,menu_id,role_id)` |
-| `rule_condition` | `id`, `rule_version_id`, `left_source`, `op`, `right_source`, `logic_group` | 条件表达式 | `rule_version_id` |
-| `rule_preprocessor` | `condition_id`, `side`, `processor_code`, `order_no` | 左右值预处理链 | `(condition_id,side,order_no)` |
-| `smart_job` | `id`, `job_code`, `trigger_mode`, `preview_enabled` | 智能作业定义 | `job_code` 唯一 |
-| `job_orchestration_binding` | `job_id`, `orchestration_id` | 一作业一编排 | `job_id` 唯一 |
-| `orchestration` | `id`, `orchestration_code`, `status` | 编排定义 | `orchestration_code` 唯一 |
-| `orchestration_node` | `id`, `orchestration_id`, `node_type`, `order_no`, `enabled` | 节点定义 | `(orchestration_id,order_no)` |
-| `interface_config` | `id`, `interface_id`, `status`, `owner_id`, `version` | 接口子项 | `interface_id` 唯一 |
-| `interface_param_mapping` | `interface_id`, `param_name`, `source_type`, `required`, `value_type` | 参数映射 | `(interface_id,param_name)` |
-| `config_template` | `id`, `template_code`, `scene_type`, `status` | 高频模板 | `template_code` 唯一 |
-| `publish_record` | `id`, `resource_type`, `resource_id`, `version_no`, `scope_snapshot`, `publisher_id` | 发布记录 | `(resource_type,resource_id,version_no)` |
+1. `React 18`
+2. `TypeScript 5`
+3. `Vite 7`
+4. `antd 5`
+5. `react-router-dom 6`
+6. `zustand 5`
+7. `styled-components 6`
 
-### 1.5.3 运行域与日志域
-| 表名 | 关键字段 | 说明 | 关键索引 |
-| --- | --- | --- | --- |
-| `orchestration_instance` | `id`, `job_id`, `orchestration_id`, `trigger_source`, `status` | 编排实例 | `(job_id,created_at)` |
-| `orchestration_node_instance` | `instance_id`, `node_id`, `status`, `input_snapshot`, `output_snapshot` | 节点执行快照 | `(instance_id,node_id)` |
-| `event_log` | `id`, `trace_id`, `event_type`, `menu_id`, `user_id`, `occurred_at` | 统一事件日志 | `(menu_id,occurred_at)`, `(trace_id)` |
-| `condition_eval_log` | `trace_id`, `rule_version_id`, `condition_id`, `result`, `reason` | 条件判定日志 | `(rule_version_id,occurred_at)` |
-| `api_call_log` | `trace_id`, `interface_id`, `request_masked`, `response_masked`, `status_code` | 接口调用日志 | `(interface_id,occurred_at)` |
-| `metric_daily_menu` | `stat_date`, `menu_id`, `hit_cnt`, `adopt_cnt`, `inject_success_cnt` | 日聚合指标 | `(stat_date,menu_id)` 唯一 |
+当前 `src` 目录中已存在 `pages`、`components`、`services`、`store`、`runtime`、`validation` 等目录，可继续作为 Admin Web 的演进基础。
 
-### 1.5.4 数据设计关键点
-1. 所有配置实体采用“主表 + 版本表 + 发布记录”模式，避免覆盖式更新。
-2. 日志表按时间分区（建议按日或按月），支持冷热分层迁移。
-3. 所有表统一包含审计字段（强制要求），禁止例外。
-4. `scope_snapshot` 使用 JSONB 存储发布时快照，保证可追溯。
+### 4.3 Docker 部署建议
 
-### 1.5.5 审计字段规范（全表强制）
-1. 适用范围：所有业务主表、关系表、日志表、统计表。
-2. 强制字段：
- - `created_at`：创建时间（timestamp, not null）
- - `created_by`：创建人（varchar, not null）
- - `updated_at`：更新时间（timestamp, not null）
- - `updated_by`：更新人（varchar, not null）
-3. 约束要求：
- - 禁止物理删除核心配置数据，默认采用软删除。
- - 更新操作必须同时更新 `updated_at/updated_by
-4. 索引建议：
- - 高频查询表增加 `(updated_at)` 组合索引。
- - 关系表增加业务唯一键 + `is_deleted` 过滤索引，防止脏重复。
+1. `config-center-backend:<version>`
+   后端 API 容器，建议起步 3 副本。
+2. `config-center-admin-web:<version>`
+   管理端静态资源容器，建议起步 2 副本。
+3. `config-center-jssdk:<version>`
+   SDK 静态资源分发容器，建议起步 2 副本，并保留最近 2 个稳定版本。
+4. TDSQL、Redis、MQ、对象存储优先复用行内统一中间件能力。
+5. 三端独立构建、独立发布、独立回滚，避免跨端强耦合上线。
 
-### 1.6 代码规范建议（全栈统一）
+## 5. 控制面、运行面、治理面模块划分
 
-### 1.6.1 通用规范
-1. 全仓 TypeScript，`strict=true`，禁止 `any`（仅白名单例外）。
-2. API 契约先行：REST 使用 OpenAPI，事件使用 AsyncAPI；三仓通过契约版本号对齐。
-3. 统一错误码：`{code, message, details, traceId}`，禁止直接抛裸字符串。
-4. 日志标准字段：`traceId`, `spanId`, `userId`, `orgId`, `menuId`, `ruleVersion`, `latencyMs`。
-5. 提交规范：Conventional Commits；分支建议 `feature/*`, `fix/*`, `refactor/*`。
-6. 三仓发布版本建议：`backend`、`admin-web`、`jssdk` 分别独立语义化版本，禁止跨仓隐式依赖未发布变更。
+### 5.1 Admin Web 模块
 
-### 1.6.2 服务端规范
-1. 采用分层结构：`controller -> application -> domain -> infrastructure`。
-2. 事务边界仅在 application 层定义，domain 层保持纯业务逻辑。
-3. 配置变更必须走 migration，不允许手工改线上表结构。
-4. 关键链路单测覆盖率建议 >= 80%，规则引擎与编排执行需有属性测试/边界测试。
+1. 页面资源中心
+   负责站点、专区、菜单、页面、元素建档与版本管理。
+2. 规则中心
+   负责规则创建、单层条件配置（全局 AND/OR）、提示配置与优先级设置。
+3. 作业场景中心
+   负责场景基础信息、节点编排、执行方式、预览模板和基础校验。
+4. 接口定义中心
+   负责接口版本、参数来源、出参路径、统一策略和引用关系展示。
+5. 预处理器中心
+   负责内置预处理能力配置与受控扩展管理。
+6. 治理工作台
+   默认进入待处理视图，承接发布、停用、延期、回滚、冲突处理和风险确认。
+7. 角色管理模块
+   负责角色复制、停用/恢复、组织范围配置、操作类型授权和人员批量分配。
+8. 审计与指标中心
+   提供治理日志、触发日志、执行日志和核心指标查询。
 
-### 1.6.3 前端配置端规范
-1. 页面按领域划分目录，组件分为 `page`, `feature`, `shared` 三层。
-2. 路由统一基于 `react-router-dom 6`，按业务域拆分路由与懒加载边界。
-3. 状态管理默认使用 `zustand`，按领域拆分 store；禁止单一巨型全局 store。
-4. 视觉与交互统一基于 `antd` 组件能力，页面定制样式使用 `styled-components`。
-5. 表单校验采用 schema 驱动（如 Zod/Yup）并映射到 antd 字段错误态，支持字段级定位。
-6. 关键交互埋点必须与后端指标口径一致（自然日 + 菜单维度）。
+### 5.2 Backend 模块
 
-### 1.6.5 前端目录细化建议（React + Vite + antd）
-```text
-src/
-  app/
-    router/                       # react-router 路由入口与守卫
-    providers/                    # 全局 Provider（主题、状态、鉴权）
-  pages/                          # 页面容器
-  features/                       # 业务特性模块（规则设计/接口配置/编排等）
-  components/                     # 跨域复用组件
-  stores/                         # zustand stores（按领域拆分）
-  services/                       # API 请求封装与错误处理
-  styles/                         # styled-components 主题与全局样式
-  types/                          # 前端本地类型定义
-  utils/                          # 工具函数
+#### 5.2.1 控制面服务
+
+1. `page-resource-service`
+   维护页面资源、页面版本、元素映射和资源共享关系。
+2. `rule-service`
+   维护规则、规则版本、条件组、提示配置和作业绑定关系。
+3. `job-scene-service`
+   维护作业场景、场景版本、节点定义、执行方式和预览配置。
+4. `interface-service`
+   维护接口定义、参数来源、响应映射和统一调用策略。
+5. `preprocessor-service`
+   维护内置预处理器与受控扩展元数据。
+6. `publish-validation-service`
+   负责发布前强校验、冲突扫描、依赖检查和例外确认。
+7. `role-permission-service`
+   负责角色模板、组织范围、操作类型授权、人员绑定和权限校验。
+
+#### 5.2.2 运行面服务
+
+1. `runtime-snapshot-service`
+   负责发布后生成运行时快照，按页面、组织范围、角色和版本投放给运行面。
+2. `runtime-decision-service`
+   负责规则匹配、优先级排序、提示触发判定和提示关闭后的上下文控制。
+3. `scene-execution-service`
+   负责作业实例创建、节点串行执行、预览结果生成、页面注入请求和失败处理。
+4. `runtime-guard-service`
+   负责最小化技术防护，例如重复写入拒绝、脏上下文拒绝和运行时异常隔离。
+
+#### 5.2.3 治理面服务
+
+1. `governance-audit-service`
+   记录发布、停用、延期、回滚、角色调整、风险确认等治理动作。
+2. `trigger-log-service`
+   记录规则命中、未命中、字段缺失、接口异常、提示关闭等现场日志。
+3. `execution-log-service`
+   记录作业实例、节点输入输出、耗时、失败原因和重试情况。
+4. `metrics-service`
+   聚合执行成功率、平均节省时长、失败原因分布、已失效数量和即将到期数量等指标。
+
+### 5.3 JSSDK 模块
+
+1. `context-collector`
+   采集站点、菜单、页面、字段值、用户上下文与必要角色信息。
+2. `page-detector`
+   基于页面快照规则完成页面识别，优先稳定业务标识，URL 仅作兜底。
+3. `rule-runtime-client`
+   拉取运行时快照、调用决策接口、管理页面停留期间的本地上下文状态。
+4. `prompt-renderer`
+   负责静默提示、浮窗提示、关闭行为和“确认”按钮交互。
+5. `scene-trigger-client`
+   负责提示确认触发、悬浮按钮二次触发和执行实例生命周期承接。
+6. `preview-renderer`
+   负责预览确认页呈现字段对照、勾选写入和异常标识。
+7. `telemetry-client`
+   负责触发、执行、关闭、失败、降级等事件上报。
+
+## 6. 关键架构决策
+
+### 6.1 页面资源作为唯一页面底座
+
+1. 页面、元素、识别规则必须统一在页面资源域维护。
+2. 规则和作业场景都只引用页面资源，不直接私有维护选择器。
+3. 页面结构变化时，只允许在页面资源层修复，不允许在规则或作业层各自打补丁。
+
+### 6.2 规则和作业场景分开建模
+
+1. 规则回答“什么时候触发”。
+2. 作业场景回答“触发后做什么”。
+3. 两者独立版本化、独立治理，通过绑定关系协同。
+4. 规则名称、作业场景名称均要求全局唯一，不单独建设业务编码字段。
+
+### 6.3 发布后生成运行时快照
+
+1. 运行面不直接读取控制面草稿数据。
+2. 发布动作生成按范围裁剪后的运行时快照，供 JSSDK 和运行面服务读取。
+3. 快照中只保留现场执行所需最小信息，避免泄露不必要的治理元数据。
+4. 快照支持版本号和 ETag，用于缓存、灰度和快速回退。
+
+### 6.4 冲突在发布前消解，运行时只做技术防护
+
+1. 同页同字段写入冲突必须在发布前扫描并阻断。
+2. 运行时若因缓存滞后、灰度残留或脏上下文导致重复写入尝试，只做拒绝、留痕和降级。
+3. 运行面不承担业务仲裁职责，避免线上出现不可解释行为。
+
+### 6.5 平台只提供基础校验，不承诺完整测试能力
+
+1. 规则配置采用行内编辑与保存前校验，不提供独立规则预览面板。
+2. 作业场景仅支持基础校验，不内置完整真实链路联调能力。
+3. 外部系统联调、页面真实注入验证和最终结果确认必须在真实业务环境完成。
+
+## 7. 数据模型建议
+
+### 7.1 公共支撑层
+
+| 表名 | 关键字段 | 说明 |
+| --- | --- | --- |
+| `page_site` | `id`, `name`, `status` | 监控网站或业务系统定义 |
+| `page_menu` | `id`, `site_id`, `zone_name`, `menu_name`, `status` | 专区与业务菜单 |
+| `page_resource` | `id`, `menu_id`, `name`, `status`, `owner_org_id` | 页面资源主表 |
+| `page_resource_version` | `id`, `page_resource_id`, `version_no`, `state` | 页面资源版本 |
+| `page_element` | `id`, `page_resource_version_id`, `logic_name`, `selector`, `selector_type` | 页面元素与逻辑名映射 |
+| `interface_definition` | `id`, `name`, `status`, `owner_org_id` | 接口定义主表 |
+| `interface_version` | `id`, `interface_definition_id`, `version_no`, `state` | 接口版本 |
+| `interface_param` | `id`, `interface_version_id`, `param_name`, `source_type`, `required` | 接口参数来源配置 |
+| `preprocessor_definition` | `id`, `name`, `processor_type`, `status` | 预处理器定义，优先内置能力 |
+| `resource_share_record` | `id`, `resource_type`, `resource_id`, `share_mode`, `target_org_id` | 资源共享或复制关系 |
+
+### 7.2 规则与提示层
+
+| 表名 | 关键字段 | 说明 |
+| --- | --- | --- |
+| `rule` | `id`, `name`, `status`, `owner_org_id` | 规则主表，名称全局唯一 |
+| `rule_version` | `id`, `rule_id`, `version_no`, `state`, `priority` | 规则版本，状态采用待发布/生效中/已停用/已失效 |
+| `rule_condition_group` | `id`, `rule_version_id`, `parent_group_id`, `logic_type` | 条件组（数据层保留分组能力；当前前端仅开放单层） |
+| `rule_condition` | `id`, `group_id`, `left_source`, `operator`, `right_source` | 条件定义 |
+| `rule_preprocessor_binding` | `id`, `condition_id`, `side`, `preprocessor_id`, `order_no` | 左右值预处理链 |
+| `rule_prompt_config` | `id`, `rule_version_id`, `prompt_mode`, `close_mode`, `content` | 提示模式、关闭策略、文案 |
+| `rule_scene_binding` | `id`, `rule_version_id`, `job_scene_id`, `trigger_mode` | 规则与作业场景绑定 |
+
+### 7.3 作业场景层
+
+| 表名 | 关键字段 | 说明 |
+| --- | --- | --- |
+| `job_scene` | `id`, `name`, `status`, `owner_org_id` | 作业场景主表，名称全局唯一 |
+| `job_scene_version` | `id`, `job_scene_id`, `version_no`, `state`, `execution_mode` | 场景版本与执行方式 |
+| `job_node` | `id`, `job_scene_version_id`, `node_type`, `order_no`, `enabled` | 顺序节点定义 |
+| `job_node_mapping` | `id`, `job_node_id`, `mapping_type`, `source_ref`, `target_ref` | 节点输入输出映射 |
+| `job_preview_template` | `id`, `job_scene_version_id`, `field_name`, `source_ref`, `writable` | 预览确认字段对照 |
+| `risk_confirmation_record` | `id`, `job_scene_version_id`, `confirmer_id`, `confirmed_at`, `scope_snapshot` | 自动执行风险确认记录 |
+| `manual_time_baseline` | `id`, `job_scene_version_id`, `manual_duration_sec` | 人工作业时长基线 |
+
+### 7.4 治理与权限层
+
+| 表名 | 关键字段 | 说明 |
+| --- | --- | --- |
+| `org_role` | `id`, `name`, `role_type`, `status`, `org_scope_id`, `source_role_id` | 组织内角色定义，支持复制 |
+| `org_role_action` | `id`, `role_id`, `action_type` | 角色拥有的操作类型 |
+| `org_role_member` | `id`, `role_id`, `user_id`, `status` | 角色与人员绑定 |
+| `publish_task` | `id`, `resource_type`, `resource_id`, `target_version_id`, `status` | 发布任务 |
+| `validation_record` | `id`, `publish_task_id`, `validation_type`, `result`, `details` | 发布前校验结果 |
+| `governance_audit_log` | `id`, `resource_type`, `resource_id`, `action_type`, `operator_id` | 治理动作审计日志 |
+
+### 7.5 运行与指标层
+
+| 表名 | 关键字段 | 说明 |
+| --- | --- | --- |
+| `runtime_snapshot` | `id`, `page_resource_id`, `owner_org_id`, `bundle_version`, `etag` | 运行时快照 |
+| `runtime_execution_instance` | `id`, `job_scene_version_id`, `trigger_source`, `status`, `trace_id` | 作业执行实例 |
+| `runtime_node_instance` | `id`, `execution_instance_id`, `job_node_id`, `status`, `input_snapshot`, `output_snapshot` | 节点执行快照 |
+| `trigger_log` | `id`, `trace_id`, `rule_version_id`, `page_resource_id`, `result`, `reason` | 规则触发日志 |
+| `execution_log` | `id`, `trace_id`, `execution_instance_id`, `node_id`, `result`, `reason`, `latency_ms` | 执行日志 |
+| `metric_daily_org_menu` | `stat_date`, `org_id`, `menu_id`, `exec_success_cnt`, `avg_saved_sec`, `expired_cnt`, `soon_expire_cnt` | 核心运营指标日聚合 |
+
+### 7.6 数据设计原则
+
+1. 规则、页面、接口、作业场景都采用“主表 + 版本表 + 发布记录”模式。
+2. 所有生效中对象修改时都创建新的待发布版本，禁止直接覆盖生效版本。
+3. 规则和作业场景不设置业务编码字段，统一由系统内部主键和版本号管理。
+4. 已使用角色和核心配置不做物理删除，统一采用软删除或停用。
+5. 日志表按时间分区，热存与归档分离。
+6. 所有业务表统一包含 `created_at`、`created_by`、`updated_at`、`updated_by`、`is_deleted` 等审计字段。
+7. 当前不考虑分布式场景；核心主数据表可按 DBA 评审结果补充外键约束，日志大表与高变化配置表仍优先通过应用层校验和治理日志保证一致性。
+
+## 8. 关键流程设计
+
+### 8.1 发布流程
+
+```mermaid
+sequenceDiagram
+    participant Admin as Admin Web
+    participant Control as 控制面服务
+    participant Validate as 发布与校验服务
+    participant Snapshot as 运行时快照服务
+    participant Governance as 审计服务
+
+    Admin->>Control: 提交待发布版本
+    Control->>Validate: 执行强校验
+    Validate-->>Control: 校验结果/冲突结果
+    alt 校验通过
+        Control->>Snapshot: 生成运行时快照
+        Snapshot-->>Control: 快照版本号
+        Control->>Governance: 记录发布审计与范围快照
+        Control-->>Admin: 发布成功，版本切换为生效中
+    else 校验失败
+        Control-->>Admin: 返回阻断项与修复建议
+    end
 ```
 
-### 1.6.4 JSSDK 规范
-1. SDK 对外 API 保持语义化版本管理，禁止破坏性变更直接发布。
-2. DOM 操作必须幂等，重复触发必须遵循防抖与频控策略。
-3. 页面注入前必须走冲突仲裁器，不允许直接覆盖人工值。
-4. SDK 包体与运行时性能纳入 CI 门禁（体积、初始化耗时、长任务监控）。
+发布前必须至少校验：
 
-### 1.7 行内 Docker 部署建议（三项目独立）
-1. 镜像产物：
- - `config-center-backend:<version>`（后端 API 容器）
- - `config-center-admin-web:<version>`（Nginx 静态站点容器）
- - `config-center-jssdk:<version>`（Nginx 静态 SDK 资源容器）
-2. 运行拓扑：
- - 入口层 Nginx/网关 -> `backend` 多副本容器（建议起步 3 副本）
- - `admin-web` 2 副本容器（静态资源）
- - `jssdk` 2 副本容器（内网静态分发）
- - PostgreSQL / Redis / MQ 使用行内统一中间件服务或独立容器集群
-3. 伸缩策略（建议起步）：
- - backend：CPU > 60% 或 P95 超阈值触发扩容
- - admin-web / jssdk：按带宽与连接数扩容
-4. 发布策略：
- - 三项目独立流水线，支持独立灰度与独立回滚
- - `jssdk` 必须保留最近 2 个稳定版本，业务系统可按版本锁定
+1. 责任人是否存在。
+2. 组织范围是否完整。
+3. 生效时间和失效时间是否完整。
+4. 同页同字段写入是否冲突。
+5. 依赖页面、接口、预处理器是否有效。
+6. 作业场景是否填写人工作业时长。
+7. 自动执行类场景是否完成风险确认。
 
-### 1.8 你的落地顺序建议（全栈单人/小团队最优）
-1. 先完成 `backend` 的 OpenAPI 契约和核心数据模型（规则/编排/发布）。
-2. 再实现 `admin-web` 主流程（向导 + 发布生效范围），API 客户端由契约自动生成。
-3. 第三步实现 `jssdk` 主链路并对接 `runtime-decision` 与 `orchestration` API。
-4. 最后补齐日志采集、指标聚合、RBAC 细粒度控制，并做 10k 规模压测。
+### 8.2 页面现场运行流程
+
+```mermaid
+sequenceDiagram
+    participant Page as 业务页面
+    participant SDK as JSSDK
+    participant Runtime as 运行面 API
+    participant Exec as 作业执行服务
+    participant Audit as 日志服务
+
+    Page->>SDK: 页面加载/DOM变化
+    SDK->>Runtime: 按页面与范围获取运行时快照
+    Runtime-->>SDK: 规则与场景快照
+    SDK->>Runtime: 提交上下文判定请求
+    Runtime-->>SDK: 命中规则与提示结果
+    SDK->>Page: 展示静默提示或浮窗提示
+    alt 用户点击确认
+        SDK->>Exec: 创建执行实例
+        Exec-->>SDK: 返回预览结果或执行结果
+        SDK->>Page: 展示预览确认或直接注入
+    else 用户关闭提示
+        SDK->>Audit: 记录关闭日志
+    end
+    SDK->>Audit: 上报触发/执行/失败/降级日志
+```
+
+### 8.3 二次触发与失败降级
+
+1. 悬浮按钮仅在当前页面存在可执行场景时展示。
+2. 每次悬浮按钮触发都新建执行实例，不复用旧上下文。
+3. 接口失败、元素缺失、权限异常、页面变化等问题发生时，统一返回可理解错误并允许回退手工路径。
+4. 失败默认停止后续节点，不静默吞错。
+
+## 9. 生命周期治理设计
+
+### 9.1 主状态模型
+
+规则、作业场景、页面资源、接口定义等核心对象统一采用以下主状态：
+
+1. `待发布`
+2. `生效中`
+3. `已停用`
+4. `已失效`
+
+实现要求：
+
+1. 新建对象默认进入待发布。
+2. 发布成功后进入生效中。
+3. 生效中对象可手工停用，进入已停用。
+4. 到达失效时间或因替代退出时进入已失效。
+5. 已停用和已失效对象如需重新使用，应基于当前或历史版本重新生成待发布版本。
+
+### 9.2 版本替换机制
+
+1. 生效中对象发生修改时，不直接更新当前线上版本。
+2. 控制面自动创建新的待发布版本。
+3. 新版本发布成功后，替代旧版本成为生效版本。
+4. 回滚本质上是选定历史版本重新生成待发布版本并发布，不允许直接覆盖历史记录。
+
+### 9.3 待处理视图支撑
+
+治理工作台默认进入待处理视图，重点聚焦：
+
+1. 待发布对象
+2. 即将到期对象
+3. 校验不通过对象
+4. 存在冲突对象
+5. 待风险确认对象
+
+## 10. 权限与安全架构
+
+### 10.1 权限模型实现边界
+
+权限体系以 [permission-model.md](./permission-model.md) 为准，架构上只落实三个核心点：
+
+1. 资源边界按组织范围控制。
+2. 权限边界按操作类型控制。
+3. 角色与人员、组织范围、操作类型的变更必须留痕。
+
+### 10.2 标准角色映射建议
+
+后端权限服务应直接支持以下标准角色模板：
+
+1. 业务操作角色
+2. 业务配置角色
+3. 业务管理角色
+4. 业务审计角色
+5. 业务超管角色
+6. 平台支持角色
+
+角色复制后形成组织内独立角色，不影响模板和原角色。
+
+### 10.3 安全控制点
+
+1. 敏感字段、接口返回和日志内容必须按角色脱敏展示。
+2. 页面侧不暴露密钥、完整治理元数据和不必要配置细节。
+3. `js_script` 与自定义预处理器必须纳入受控发布、审计和灰度策略。
+4. 自动执行场景必须绑定责任人、适用范围、有效期和风险确认记录。
+5. 平台支持角色不参与业务发布和业务风险承担。
+
+## 11. 可观测性与指标架构
+
+### 11.1 必须记录的日志类型
+
+1. 治理日志：发布、停用、延期、回滚、角色调整、风险确认。
+2. 触发日志：页面识别结果、规则命中与未命中原因、提示关闭、确认点击。
+3. 执行日志：执行实例、节点输入输出、耗时、失败原因、降级结果。
+
+### 11.2 指标口径
+
+架构默认优先支撑以下核心指标：
+
+1. 作业执行成功率
+2. 平均节省时长
+3. 失败原因分布
+4. 已失效规则/场景数量
+5. 即将到期规则/场景数量
+
+命中次数、提示展示次数等指标可以记录，但不作为 P0 核心价值指标。
+
+### 11.3 存储与查询建议
+
+1. 治理类日志保留高可查性，优先入库 TDSQL 或专用日志库。
+2. 高吞吐运行日志通过 MQ 异步消费，按时间分区落库和归档。
+3. 归档日志进入对象存储，支持按 traceId、规则版本、场景版本回查。
+4. 指标聚合作业按自然日和组织/菜单维度离线汇总。
+
+## 12. 容量、性能与稳定性建议
+
+### 12.1 容量假设
+
+1. 约 10,000 内部用户。
+2. 峰值在线按 8% - 12% 估算，约 800 - 1,200 在线用户。
+3. 高峰压力主要来自页面初始化、规则快照拉取、决策请求和日志上报。
+
+### 12.2 性能设计要点
+
+1. 运行时快照按页面、组织范围和角色裁剪，减小下发体积。
+2. 快照读路径优先走 Redis 或边缘缓存，控制面写路径走 TDSQL。
+3. 日志采集异步化，避免现场操作受阻。
+4. 预处理器以内置能力优先，减少高成本脚本执行。
+5. JSSDK DOM 操作必须幂等，避免重复注入和重复弹窗。
+
+### 12.3 稳定性设计要点
+
+1. 页面识别失败时，优先降级为仅记录日志，不误触发规则。
+2. 接口超时或依赖异常时，统一返回失败原因并允许手工继续办理。
+3. 发布快照必须支持快速回滚，避免错误配置长时间影响现场。
+4. SDK 保留最近稳定快照和版本信息，便于短时网络波动下受控运行。
+
+## 13. 推荐落地顺序
+
+结合新版 [plan.md](./plan.md)，推荐按以下顺序落地：
+
+1. 先完成页面资源、接口定义、预处理器、角色管理等公共支撑层建模。
+2. 再完成规则与提示主链路，确保页面识别、条件判断、提示渲染和关闭行为一致。
+3. 第三步完成作业场景、执行方式、预览确认和悬浮按钮二次触发。
+4. 第四步完成发布前强校验、生命周期治理、待处理视图和风险确认流程。
+5. 最后完成外部环境联调、灰度发布、回滚演练和指标运营收口。
+
+## 14. 本版需要特别替换的旧口径
+
+为避免架构文档继续沿用旧版本方案，本版明确替换以下旧口径：
+
+1. 不再使用 rule_name / scene_name 之外的业务编码字段作为主标识，规则和场景仅保留名称字段。
+2. 不再使用运行时业务冲突仲裁作为主方案，改为发布前强校验 + 运行时最小技术防护。
+3. 不再将“节点拖拽 + 测试运行”定义为主编排模式，改为“流程图式主视图 + 结构化表单编辑 + 基础校验”。
+4. 不再以命中率、采纳率作为 P0 核心价值指标，改为执行成功率、平均节省时长、失败原因分布、已失效数量、即将到期数量。
+5. 不再把 RBAC 设计成细粒度资源 ACL，改为组织范围控制资源边界、操作类型控制权限边界的简化模型。
+6. 规则编辑交互从多层条件组收敛为单层条件表格，所有条件共享全局 AND/OR，预处理器采用行内下拉多选。
+7. 作业场景中心当前不展示执行实例与手工预览，编排交互采用左（节点库）-中（画布）-右（属性）布局，并提供自动排版能力。
+
+
+
+

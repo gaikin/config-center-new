@@ -1,0 +1,575 @@
+﻿# 营小助配置中心 API 设计清单（Draft）
+
+> 来源文档：`spec/config-center-product/architecture.md`、`spec/config-center-product/plan.md`、`spec/config-center-product/permission-model.md`  
+> 文档目标：沉淀控制面、运行面、治理面的接口边界，作为后续 OpenAPI 设计与联调评审基线  
+> 更新日期：2026-03-12
+> 数据库基线：TDSQL（默认按 TDSQL-MySQL 兼容版设计）
+
+## 1. 设计范围
+
+本清单覆盖三类 API：
+
+1. 控制面 API：面向 Admin Web，用于页面、规则、作业场景、接口、预处理器、角色和发布治理。
+2. 运行面 API：面向 JSSDK，用于页面识别、运行时快照、规则判定、作业执行和提示生命周期管理。
+3. 治理面 API：面向管理端与审计端，用于待处理视图、审计日志、触发日志、执行日志和指标查询。
+
+本清单不覆盖：
+
+1. 行内统一认证、SSO 或用户中心接口细节。
+2. 外部业务系统接口本身的契约细节。
+3. MQ 事件协议和对象存储归档协议细节。
+
+## 2. 通用约定
+
+### 2.1 路径前缀
+
+1. 控制面：`/api/control/*`
+2. 运行面：`/api/runtime/*`
+3. 治理面：`/api/governance/*`
+
+### 2.2 鉴权与上下文
+
+所有 API 统一透传以下上下文：
+
+1. `Authorization`
+2. `X-Trace-Id`
+3. `X-User-Id`
+4. `X-Org-Id`
+5. `X-Role-Ids`
+
+控制面与治理面接口由网关完成登录态校验；运行面接口由 JSSDK 使用业务页面会话或短期令牌访问。
+
+### 2.3 统一响应结构
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "traceId": "4f7a0d4c2f2f4a40a2d2b147b93d4120",
+  "data": {}
+}
+```
+
+错误结构：
+
+```json
+{
+  "code": "PUBLISH_VALIDATION_FAILED",
+  "message": "发布校验未通过",
+  "traceId": "4f7a0d4c2f2f4a40a2d2b147b93d4120",
+  "details": [
+    {
+      "type": "FIELD_CONFLICT",
+      "target": "loan_apply.amount",
+      "reason": "同页同字段存在重复写入"
+    }
+  ]
+}
+```
+
+### 2.4 分页与过滤
+
+列表接口统一支持：
+
+1. `pageNo`
+2. `pageSize`
+3. `keyword`
+4. `status`
+5. `ownerOrgId`
+6. `updatedAtFrom`
+7. `updatedAtTo`
+
+治理面接口额外支持：
+
+1. `pendingType`
+2. `effectiveDateFrom`
+3. `effectiveDateTo`
+4. `executionMode`
+5. `hasConflict`
+6. `needRiskConfirmation`
+
+### 2.5 状态与值域建议
+
+数据库与接口层建议统一使用英文状态值，由前端映射中文展示：
+
+1. `DRAFT`
+2. `ACTIVE`
+3. `DISABLED`
+4. `EXPIRED`
+
+执行方式统一使用：
+
+1. `AUTO_WITHOUT_PROMPT`
+2. `AUTO_AFTER_PROMPT`
+3. `PREVIEW_THEN_EXECUTE`
+4. `FLOATING_BUTTON`
+
+提示方式统一使用：
+
+1. `SILENT`
+2. `FLOATING`
+
+提示关闭方式统一使用：
+
+1. `AUTO_CLOSE`
+2. `MANUAL_CLOSE`
+3. `TIMER_THEN_MANUAL`
+
+## 3. 控制面 API
+
+### 3.1 页面资源中心
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `GET` | `/api/control/page-sites` | 查询站点列表 | 查看 |
+| `GET` | `/api/control/page-menus` | 查询专区/菜单树 | 查看 |
+| `POST` | `/api/control/page-resources` | 新建页面资源 | 配置 |
+| `GET` | `/api/control/page-resources` | 页面资源列表 | 查看 |
+| `GET` | `/api/control/page-resources/{pageId}` | 页面资源详情 | 查看 |
+| `POST` | `/api/control/page-resources/{pageId}/versions` | 基于当前内容生成待发布版本 | 配置 |
+| `PUT` | `/api/control/page-resources/{pageId}/versions/{versionId}` | 更新页面版本草稿 | 配置 |
+| `POST` | `/api/control/page-resources/{pageId}/versions/{versionId}/clone` | 从历史版本复制草稿 | 配置 |
+| `POST` | `/api/control/page-resources/{pageId}/share` | 发起共享或复制 | 配置 |
+
+新建页面资源请求示例：
+
+```json
+{
+  "menuId": 1001001,
+  "name": "个人贷款申请页",
+  "pageDetectRules": [
+    {
+      "type": "BUSINESS_MARKER",
+      "expr": "data-menu-code=loan_apply"
+    },
+    {
+      "type": "URL",
+      "expr": "/loan/apply"
+    }
+  ],
+  "elements": [
+    {
+      "logicName": "customer_no",
+      "selectorType": "CSS",
+      "selector": "#customerNo"
+    }
+  ],
+  "ownerOrgId": "branch-001"
+}
+```
+
+### 3.2 规则中心
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `POST` | `/api/control/rules` | 新建规则 | 配置 |
+| `GET` | `/api/control/rules` | 规则列表 | 查看 |
+| `GET` | `/api/control/rules/{ruleId}` | 规则详情 | 查看 |
+| `POST` | `/api/control/rules/{ruleId}/versions` | 新建规则待发布版本 | 配置 |
+| `PUT` | `/api/control/rules/{ruleId}/versions/{versionId}` | 更新规则版本 | 配置 |
+| `POST` | `/api/control/rules/{ruleId}/versions/{versionId}/preview` | 规则预览 | 校验 |
+| `POST` | `/api/control/rules/{ruleId}/versions/{versionId}/bind-scene` | 绑定作业场景 | 配置 |
+| `POST` | `/api/control/rules/{ruleId}/versions/{versionId}/unbind-scene` | 解绑作业场景 | 配置 |
+
+规则版本请求核心字段：
+
+```json
+{
+  "name": "贷款申请风险提示",
+  "pageResourceId": 2001001,
+  "priority": 900,
+  "prompt": {
+    "promptMode": "FLOATING",
+    "closeMode": "MANUAL_CLOSE",
+    "content": "申请金额超过风险阈值，请先复核客户授信信息。"
+  },
+  "conditionGroups": [
+    {
+      "logicType": "AND",
+      "conditions": [
+        {
+          "leftSource": {
+            "type": "PAGE_FIELD",
+            "ref": "apply_amount"
+          },
+          "operator": "GT",
+          "rightSource": {
+            "type": "FIXED",
+            "value": "500000"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+规则预览请求示例：
+
+```json
+{
+  "manualInputs": {
+    "apply_amount": "600000",
+    "customer_level": "A"
+  }
+}
+```
+
+规则预览响应重点：
+
+1. 只返回解析结果、条件命中结果和提示/作业联动判断。
+2. 明确标识 `previewOnly=true`。
+3. 不回填线上样例值、历史值或最近取值结果。
+
+### 3.3 作业场景中心
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `POST` | `/api/control/job-scenes` | 新建作业场景 | 配置 |
+| `GET` | `/api/control/job-scenes` | 作业场景列表 | 查看 |
+| `GET` | `/api/control/job-scenes/{sceneId}` | 作业场景详情 | 查看 |
+| `POST` | `/api/control/job-scenes/{sceneId}/versions` | 新建场景待发布版本 | 配置 |
+| `PUT` | `/api/control/job-scenes/{sceneId}/versions/{versionId}` | 更新场景版本 | 配置 |
+| `POST` | `/api/control/job-scenes/{sceneId}/versions/{versionId}/validate` | 基础校验 | 校验 |
+| `POST` | `/api/control/job-scenes/{sceneId}/versions/{versionId}/risk-confirm` | 自动执行风险确认 | 风险确认 |
+
+场景版本请求核心字段：
+
+```json
+{
+  "name": "贷款申请自动查数预填",
+  "pageResourceId": 2001001,
+  "executionMode": "PREVIEW_THEN_EXECUTE",
+  "manualDurationSec": 45,
+  "nodes": [
+    {
+      "nodeType": "page_get",
+      "orderNo": 1,
+      "config": {
+        "fields": ["customer_no"]
+      }
+    },
+    {
+      "nodeType": "api_call",
+      "orderNo": 2,
+      "config": {
+        "interfaceId": 3001001
+      }
+    },
+    {
+      "nodeType": "page_set",
+      "orderNo": 3,
+      "config": {
+        "mappings": [
+          {
+            "source": "api.credit_amount",
+            "target": "credit_amount"
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+基础校验返回重点：
+
+1. 节点顺序是否合法。
+2. 节点输入输出引用是否完整。
+3. 页面元素、接口、预处理器引用是否有效。
+4. 仅表示配置有效，不代表真实业务环境验证通过。
+
+### 3.4 接口定义中心
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `POST` | `/api/control/interfaces` | 新建接口定义 | 配置 |
+| `GET` | `/api/control/interfaces` | 接口列表 | 查看 |
+| `GET` | `/api/control/interfaces/{interfaceId}` | 接口详情 | 查看 |
+| `POST` | `/api/control/interfaces/{interfaceId}/versions` | 新建接口版本 | 配置 |
+| `PUT` | `/api/control/interfaces/{interfaceId}/versions/{versionId}` | 更新接口版本 | 配置 |
+| `POST` | `/api/control/interfaces/{interfaceId}/versions/{versionId}/validate` | 校验接口定义完整性 | 校验 |
+| `GET` | `/api/control/interfaces/{interfaceId}/references` | 查询引用关系 | 查看 |
+
+接口版本关键字段：
+
+1. `method`
+2. `url`
+3. `requestParams`
+4. `responseMappings`
+5. `timeoutMs`
+6. `retryPolicy`
+7. `maskFields`
+
+### 3.5 预处理器中心
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `GET` | `/api/control/preprocessors` | 预处理器列表 | 查看 |
+| `POST` | `/api/control/preprocessors` | 新建预处理器定义 | 配置 |
+| `PUT` | `/api/control/preprocessors/{processorId}` | 更新预处理器定义 | 配置 |
+| `POST` | `/api/control/preprocessors/{processorId}/validate` | 预处理器基础校验 | 校验 |
+
+备注：
+
+1. P0 以平台内置预处理器为主。
+2. 自定义脚本类预处理器必须打上 `isScript=true` 标记，走更严格治理路径。
+
+### 3.6 角色管理模块
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `GET` | `/api/control/roles` | 角色列表 | 查看 |
+| `POST` | `/api/control/roles` | 新建角色 | 角色授权管理 |
+| `GET` | `/api/control/roles/{roleId}` | 角色详情 | 查看 |
+| `PUT` | `/api/control/roles/{roleId}` | 更新角色 | 角色授权管理 |
+| `POST` | `/api/control/roles/{roleId}/clone` | 复制角色 | 角色授权管理 |
+| `POST` | `/api/control/roles/{roleId}/disable` | 停用角色 | 角色授权管理 |
+| `POST` | `/api/control/roles/{roleId}/enable` | 恢复角色 | 角色授权管理 |
+| `POST` | `/api/control/roles/{roleId}/members:batch-bind` | 批量分配人员 | 角色授权管理 |
+| `POST` | `/api/control/roles/{roleId}/actions` | 配置操作类型权限 | 角色授权管理 |
+| `POST` | `/api/control/roles/{roleId}/scopes` | 配置组织范围 | 角色授权管理 |
+
+### 3.7 发布与治理动作
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `POST` | `/api/control/publish/validate` | 发布前强校验 | 校验 |
+| `POST` | `/api/control/publish/tasks` | 创建发布任务 | 发布 |
+| `GET` | `/api/control/publish/tasks/{taskId}` | 发布任务详情 | 查看 |
+| `POST` | `/api/control/resources/{resourceType}/{resourceId}/disable` | 停用资源 | 停用 |
+| `POST` | `/api/control/resources/{resourceType}/{resourceId}/expire` | 延期或重设失效时间 | 延期 |
+| `POST` | `/api/control/resources/{resourceType}/{resourceId}/rollback` | 回滚资源 | 回滚 |
+
+发布前强校验请求示例：
+
+```json
+{
+  "resourceType": "RULE",
+  "resourceId": 4001001,
+  "targetVersionId": 4001002
+}
+```
+
+返回重点：
+
+1. `passed`
+2. `blockingItems`
+3. `warnings`
+4. `conflictSummary`
+5. `dependencySummary`
+
+## 4. 运行面 API
+
+### 4.1 页面识别与运行时快照
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/runtime/page-context/resolve` | 根据站点、URL、菜单、业务标识解析页面资源 |
+| `GET` | `/api/runtime/pages/{pageId}/bundle` | 获取页面运行时快照包 |
+
+`resolve` 请求示例：
+
+```json
+{
+  "siteCode": "kaiyang",
+  "menuCode": "loan_apply",
+  "url": "https://bank-inner/loan/apply",
+  "markers": {
+    "data-menu-code": "loan_apply"
+  }
+}
+```
+
+`bundle` 响应核心字段：
+
+1. `bundleVersion`
+2. `pageResourceId`
+3. `etag`
+4. `rules`
+5. `sceneRefs`
+6. `floatingEntryAvailable`
+
+### 4.2 规则判定与提示生命周期
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/runtime/decisions/evaluate` | 提交页面上下文，获取规则命中和提示结果 |
+| `POST` | `/api/runtime/prompts/{traceId}/close` | 记录提示关闭 |
+| `POST` | `/api/runtime/prompts/{traceId}/confirm` | 记录提示确认并准备触发作业 |
+
+判定请求示例：
+
+```json
+{
+  "pageResourceId": 2001001,
+  "bundleVersion": "b-20260312-001",
+  "context": {
+    "fields": {
+      "apply_amount": "600000",
+      "customer_no": "C20260001"
+    }
+  }
+}
+```
+
+判定响应示例：
+
+```json
+{
+  "traceId": "rt-20260312-0001",
+  "matchedRules": [
+    {
+      "ruleId": 4001001,
+      "ruleVersionId": 4001002,
+      "priority": 900,
+      "prompt": {
+        "promptMode": "FLOATING",
+        "closeMode": "MANUAL_CLOSE",
+        "content": "申请金额超过风险阈值，请先复核客户授信信息。",
+        "confirmAction": {
+          "enabled": true,
+          "buttonText": "确认",
+          "sceneId": 5001001
+        }
+      }
+    }
+  ]
+}
+```
+
+### 4.3 作业执行
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/runtime/executions` | 创建执行实例 |
+| `GET` | `/api/runtime/executions/{executionId}` | 查询执行状态 |
+| `GET` | `/api/runtime/executions/{executionId}/preview` | 获取预览确认结果 |
+| `POST` | `/api/runtime/executions/{executionId}/confirm-write` | 确认写入页面 |
+| `POST` | `/api/runtime/executions/{executionId}/cancel` | 取消执行 |
+| `POST` | `/api/runtime/executions/{executionId}/retry` | 重试执行，创建新实例 |
+
+创建执行实例请求示例：
+
+```json
+{
+  "sceneId": 5001001,
+  "triggerSource": "PROMPT_CONFIRM",
+  "pageResourceId": 2001001,
+  "traceId": "rt-20260312-0001",
+  "context": {
+    "fields": {
+      "customer_no": "C20260001"
+    }
+  }
+}
+```
+
+执行状态响应重点：
+
+1. `status`
+2. `executionMode`
+3. `nodeResults`
+4. `needPreviewConfirm`
+5. `fallbackAvailable`
+6. `errorMessage`
+
+### 4.4 悬浮按钮二次触发
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/runtime/pages/{pageId}/available-scenes` | 查询当前页面可手动触发场景 |
+| `POST` | `/api/runtime/pages/{pageId}/floating-trigger` | 通过悬浮按钮触发场景 |
+
+要求：
+
+1. 每次触发必须创建新的执行实例。
+2. 不复用旧实例上下文。
+3. 若没有可执行场景，则前端不展示悬浮入口。
+
+### 4.5 运行时事件上报
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/runtime/events` | 批量上报运行事件 |
+
+事件类型建议：
+
+1. `PAGE_RESOLVED`
+2. `RULE_MATCHED`
+3. `PROMPT_CLOSED`
+4. `PROMPT_CONFIRMED`
+5. `EXECUTION_STARTED`
+6. `EXECUTION_SUCCEEDED`
+7. `EXECUTION_FAILED`
+8. `EXECUTION_FALLBACK`
+
+## 5. 治理面 API
+
+### 5.1 待处理视图与工作台
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `GET` | `/api/governance/pending-items` | 查询待处理对象 | 查看 |
+| `GET` | `/api/governance/pending-summary` | 查询待处理摘要 | 查看 |
+| `GET` | `/api/governance/resource-timeline` | 查询资源治理时间线 | 查看 |
+
+待处理摘要响应重点：
+
+1. `draftCount`
+2. `expiringSoonCount`
+3. `validationFailedCount`
+4. `conflictCount`
+5. `riskConfirmPendingCount`
+
+### 5.2 审计日志
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `GET` | `/api/governance/audit-logs` | 查询治理日志 | 审计查看 |
+| `GET` | `/api/governance/audit-logs/{logId}` | 查询治理日志详情 | 审计查看 |
+
+### 5.3 触发日志与执行日志
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `GET` | `/api/governance/trigger-logs` | 查询触发日志 | 审计查看 |
+| `GET` | `/api/governance/execution-logs` | 查询执行日志 | 审计查看 |
+| `GET` | `/api/governance/execution-logs/{executionId}` | 查询执行实例详情 | 审计查看 |
+
+### 5.4 指标看板
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `GET` | `/api/governance/metrics/overview` | 查询指标总览 | 查看 |
+| `GET` | `/api/governance/metrics/menus` | 查询菜单维度指标 | 查看 |
+| `GET` | `/api/governance/metrics/failure-reasons` | 查询失败原因分布 | 查看 |
+| `GET` | `/api/governance/metrics/expiring` | 查询已失效与即将到期对象 | 查看 |
+
+核心指标字段建议：
+
+1. `executionSuccessRate`
+2. `avgSavedSeconds`
+3. `failureReasonTopN`
+4. `expiredResourceCount`
+5. `expiringSoonResourceCount`
+
+## 6. API 与权限矩阵对齐建议
+
+1. 业务配置角色默认拥有查看、配置、校验类接口权限。
+2. 业务管理角色默认拥有查看、校验、发布、停用、延期、回滚、风险确认和治理查询权限，但不默认拥有配置类接口权限。
+3. 业务审计角色默认只访问治理日志、触发日志、执行日志和只读指标接口。
+4. 平台支持角色默认拥有查看、校验和审计查看接口权限，用于排障和支持。
+5. 业务超管角色拥有本组织范围内的完整业务管理与角色授权管理接口权限。
+
+## 7. 下一步建议
+
+1. 以本文为基线生成 OpenAPI 目录骨架，先覆盖控制面和运行面关键链路。
+2. 优先固化以下接口：
+   `page-context/resolve`
+   `runtime/pages/{pageId}/bundle`
+   `runtime/decisions/evaluate`
+   `runtime/executions`
+   `control/publish/validate`
+3. 在接口正式冻结前，和 `tdsql-ddl-draft.md` 做一次字段对齐评审，避免对象名、状态值和版本关系偏差。
+
