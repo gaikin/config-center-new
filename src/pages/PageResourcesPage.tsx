@@ -3,6 +3,7 @@
   Card,
   Drawer,
   Form,
+  Grid,
   Input,
   InputNumber,
   Modal,
@@ -18,6 +19,7 @@
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../services/configCenterService";
+import { getRightOverlayDrawerWidth } from "../utils";
 import type { LifecycleState, PageElement, PageMenu, PageResource, PageSite } from "../types";
 
 type ResourceForm = Omit<PageResource, "updatedAt">;
@@ -31,6 +33,9 @@ const statusColor: Record<LifecycleState, string> = {
 };
 
 export function PageResourcesPage() {
+  const screens = Grid.useBreakpoint();
+  const drawerWidth = getRightOverlayDrawerWidth(Boolean(screens.lg));
+
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState<PageSite[]>([]);
   const [menus, setMenus] = useState<PageMenu[]>([]);
@@ -325,7 +330,8 @@ export function PageResourcesPage() {
 
       <Drawer
         title={currentResource ? `元素映射：${currentResource.name}` : "元素映射"}
-        width={860}
+        placement="right"
+        width={drawerWidth}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         extra={

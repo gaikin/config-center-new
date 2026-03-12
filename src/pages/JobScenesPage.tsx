@@ -4,6 +4,7 @@ import {
   Card,
   Drawer,
   Form,
+  Grid,
   Input,
   InputNumber,
   Modal,
@@ -35,6 +36,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { configCenterService } from "../services/configCenterService";
 import { workflowService } from "../services/workflowService";
+import { getRightOverlayDrawerWidth } from "../utils";
 import type {
   JobNodeDefinition,
   JobSceneDefinition,
@@ -275,6 +277,9 @@ function buildFormValuesFromNode(node: JobNodeDefinition): NodeDetailForm {
 }
 
 export function JobScenesPage() {
+  const screens = Grid.useBreakpoint();
+  const drawerWidth = getRightOverlayDrawerWidth(Boolean(screens.lg));
+
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<JobSceneDefinition[]>([]);
   const [resources, setResources] = useState<PageResource[]>([]);
@@ -715,7 +720,8 @@ export function JobScenesPage() {
 
       <Drawer
         title={builderScene ? `作业编排: ${builderScene.name}` : "作业编排"}
-        width={1340}
+        placement="right"
+        width={drawerWidth}
         open={builderOpen}
         onClose={() => setBuilderOpen(false)}
         extra={

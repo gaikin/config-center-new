@@ -4,6 +4,7 @@ import {
   Card,
   Drawer,
   Form,
+  Grid,
   Input,
   InputNumber,
   Modal,
@@ -18,6 +19,7 @@ import { DeleteOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../services/configCenterService";
 import { workflowService } from "../services/workflowService";
+import { getRightOverlayDrawerWidth } from "../utils";
 import type {
   InterfaceDefinition,
   JobSceneDefinition,
@@ -367,6 +369,9 @@ function toRuleOperand(draft: OperandDraft): RuleOperand {
 }
 
 export function RulesPage() {
+  const screens = Grid.useBreakpoint();
+  const logicDrawerWidth = getRightOverlayDrawerWidth(Boolean(screens.lg));
+
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<RuleDefinition[]>([]);
   const [resources, setResources] = useState<PageResource[]>([]);
@@ -883,7 +888,8 @@ export function RulesPage() {
 
       <Drawer
         title={currentRule ? `条件编辑: ${currentRule.name}` : "条件编辑"}
-        width={1440}
+        placement="right"
+        width={logicDrawerWidth}
         open={logicOpen}
         onClose={() => setLogicOpen(false)}
       >

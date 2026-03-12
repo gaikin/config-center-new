@@ -5,6 +5,7 @@ import {
   Col,
   Drawer,
   Form,
+  Grid,
   Input,
   InputNumber,
   Modal,
@@ -21,6 +22,7 @@ import {
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../services/configCenterService";
+import { getRightOverlayDrawerWidth } from "../utils";
 import type {
   ApiInputParam,
   ApiOutputParam,
@@ -355,6 +357,9 @@ function buildMockResponseBody(outputs: ApiOutputParam[]) {
   return root;
 }
 export function InterfacesPage() {
+  const screens = Grid.useBreakpoint();
+  const drawerWidth = getRightOverlayDrawerWidth(Boolean(screens.lg));
+
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<InterfaceDefinition[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
@@ -796,7 +801,8 @@ export function InterfacesPage() {
 
       <Drawer
         title={editing ? `编辑API注册：${editing.name}` : "新建API注册"}
-        width={1280}
+        placement="right"
+        width={drawerWidth}
         open={drawerOpen}
         onClose={closeDrawer}
         destroyOnClose
