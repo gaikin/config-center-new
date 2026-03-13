@@ -1,10 +1,11 @@
 ﻿import {
+  Alert,
   Button,
   Card,
   Form,
   Input,
-  InputNumber,
   Modal,
+  Popconfirm,
   Segmented,
   Select,
   Space,
@@ -13,6 +14,7 @@
   Typography,
   message
 } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../services/configCenterService";
 import type { ActionType, RoleItem } from "../types";
@@ -31,7 +33,7 @@ const statusColor: Record<RoleItem["status"], string> = {
   DISABLED: "orange"
 };
 
-type RoleForm = Omit<RoleItem, "updatedAt">;
+type RoleForm = Omit<RoleItem, "id" | "updatedAt" | "memberCount">;
 type StatusFilter = "ALL" | RoleItem["status"];
 
 const allActions: ActionType[] = [
@@ -47,6 +49,28 @@ const allActions: ActionType[] = [
   "ROLE_MANAGE"
 ];
 
+const actionDescriptions: Record<ActionType, string> = {
+  VIEW: "查看配置与运行结果",
+  CONFIG: "创建和编辑业务对象",
+  VALIDATE: "触发发布前校验",
+  PUBLISH: "发布待生效对象",
+  DISABLE: "停用已生效对象",
+  DEFER: "延期即将到期对象",
+  ROLLBACK: "回滚到待发布状态",
+  AUDIT_VIEW: "查看审计与日志",
+  RISK_CONFIRM: "确认自动化风险责任",
+  ROLE_MANAGE: "维护角色与成员"
+};
+
+const roleTypeDefaultActions: Record<RoleItem["roleType"], ActionType[]> = {
+  BUSINESS_OPERATOR: ["VIEW"],
+  BUSINESS_CONFIG: ["VIEW", "CONFIG", "VALIDATE"],
+  BUSINESS_MANAGER: ["VIEW", "VALIDATE", "PUBLISH", "DISABLE", "DEFER", "ROLLBACK", "RISK_CONFIRM"],
+  BUSINESS_AUDITOR: ["VIEW", "AUDIT_VIEW"],
+  BUSINESS_SUPER_ADMIN: allActions,
+  PLATFORM_SUPPORT: ["VIEW", "VALIDATE", "AUDIT_VIEW"]
+};
+
 export function RolesPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<RoleItem[]>([]);
@@ -54,16 +78,28 @@ export function RolesPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RoleItem | null>(null);
   const [form] = Form.useForm<RoleForm>();
+  const selectedRoleType = Form.useWatch("roleType", form);
+
   const [memberOpen, setMemberOpen] = useState(false);
   const [memberRole, setMemberRole] = useState<RoleItem | null>(null);
-  const [memberText, setMemberText] = useState("");
+  const [memberValues, setMemberValues] = useState<string[]>([]);
+  const [memberOptions, setMemberOptions] = useState<string[]>([]);
+
   const [msgApi, holder] = message.useMessage();
+
+  async function loadMemberOptions(roleRows: RoleItem[]) {
+    const memberGroups = await Promise.all(roleRows.map((role) => configCenterService.listRoleMembers(role.id)));
+    const merged = new Set<string>(["张三", "李四", "王五", "赵六"]);
+    memberGroups.flat().forEach((name) => merged.add(name));
+    setMemberOptions(Array.from(merged).sort((a, b) => a.localeCompare(b, "zh-CN")));
+  }
 
   async function loadData() {
     setLoading(true);
     try {
       const data = await configCenterService.listRoles();
       setRows(data);
+      await loadMemberOptions(data);
     } finally {
       setLoading(false);
     }
@@ -83,29 +119,59 @@ export function RolesPage() {
   function openCreate() {
     setEditing(null);
     form.setFieldsValue({
-      id: Date.now(),
       name: "",
       roleType: "BUSINESS_CONFIG",
       status: "ACTIVE",
       orgScopeId: "branch-east",
-      actions: ["VIEW", "CONFIG", "VALIDATE"],
-      memberCount: 0
+      actions: roleTypeDefaultActions.BUSINESS_CONFIG
     });
     setOpen(true);
   }
 
   function openEdit(row: RoleItem) {
     setEditing(row);
-    form.setFieldsValue({ ...row });
+    form.setFieldsValue({
+      name: row.name,
+      roleType: row.roleType,
+      status: row.status,
+      orgScopeId: row.orgScopeId,
+      actions: row.actions
+    });
     setOpen(true);
   }
 
   async function submit() {
     const values = await form.validateFields();
-    await configCenterService.upsertRole(values);
+    await configCenterService.upsertRole({
+      ...values,
+      id: editing?.id ?? Date.now()
+    });
     msgApi.success(editing ? "角色已更新" : "角色已创建");
     setOpen(false);
     await loadData();
+  }
+
+  function closeRoleModal() {
+    if (!form.isFieldsTouched(true)) {
+      setOpen(false);
+      return;
+    }
+
+    Modal.confirm({
+      title: "放弃未保存更改？",
+      content: "当前角色配置未保存，关闭后将丢失。",
+      okText: "放弃并关闭",
+      cancelText: "继续编辑",
+      onOk: () => setOpen(false)
+    });
+  }
+
+  function applyRolePreset() {
+    if (!selectedRoleType) {
+      return;
+    }
+    form.setFieldValue("actions", roleTypeDefaultActions[selectedRoleType]);
+    msgApi.success("已按角色类型填充推荐权限");
   }
 
   async function cloneRole(role: RoleItem) {
@@ -123,7 +189,7 @@ export function RolesPage() {
   async function openMembers(role: RoleItem) {
     const members = await configCenterService.listRoleMembers(role.id);
     setMemberRole(role);
-    setMemberText(members.join("\n"));
+    setMemberValues(members);
     setMemberOpen(true);
   }
 
@@ -131,11 +197,7 @@ export function RolesPage() {
     if (!memberRole) {
       return;
     }
-    const members = memberText
-      .split(/[\n,]/)
-      .map((name) => name.trim())
-      .filter(Boolean);
-    await configCenterService.assignRoleMembers(memberRole.id, members);
+    await configCenterService.assignRoleMembers(memberRole.id, memberValues);
     msgApi.success(`已更新成员：${memberRole.name}`);
     setMemberOpen(false);
     await loadData();
@@ -161,9 +223,7 @@ export function RolesPage() {
                 { label: "停用", value: "DISABLED" }
               ]}
             />
-            <Button type="primary" onClick={openCreate}>
-              新建角色
-            </Button>
+            <Button type="primary" icon={<PlusOutlined />} aria-label="create-role" title="新建角色" onClick={openCreate} />
           </Space>
         }
       >
@@ -171,7 +231,7 @@ export function RolesPage() {
           rowKey="id"
           loading={loading}
           dataSource={filteredRows}
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             { title: "角色名称", dataIndex: "name", width: 220 },
             {
@@ -211,9 +271,12 @@ export function RolesPage() {
                   <Button size="small" onClick={() => void openMembers(row)}>
                     配成员
                   </Button>
-                  <Button size="small" onClick={() => void toggleStatus(row)}>
-                    {row.status === "ACTIVE" ? "停用" : "启用"}
-                  </Button>
+                  <Popconfirm
+                    title={row.status === "ACTIVE" ? "确认停用该角色？" : "确认启用该角色？"}
+                    onConfirm={() => void toggleStatus(row)}
+                  >
+                    <Button size="small">{row.status === "ACTIVE" ? "停用" : "启用"}</Button>
+                  </Popconfirm>
                 </Space>
               )
             }
@@ -224,14 +287,18 @@ export function RolesPage() {
       <Modal
         title={editing ? "编辑角色" : "新建角色"}
         open={open}
-        onCancel={() => setOpen(false)}
+        onCancel={closeRoleModal}
         onOk={() => void submit()}
-        width={720}
+        width={760}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="id" label="ID" rules={[{ required: true, message: "请输入 ID" }]}>
-            <InputNumber style={{ width: "100%" }} />
-          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={`ID 由系统自动生成（当前${editing ? `#${editing.id}` : "新建后生成"}）`}
+            description={`成员数由系统根据角色成员自动统计（当前${editing?.memberCount ?? 0}）`}
+          />
           <Form.Item name="name" label="角色名称" rules={[{ required: true, message: "请输入角色名称" }]}>
             <Input maxLength={128} />
           </Form.Item>
@@ -243,21 +310,36 @@ export function RolesPage() {
               }))}
             />
           </Form.Item>
+
+          <Button size="small" onClick={applyRolePreset} style={{ marginBottom: 12 }}>
+            按角色类型填充推荐权限
+          </Button>
+
           <Form.Item name="orgScopeId" label="组织范围" rules={[{ required: true, message: "请输入组织范围" }]}>
             <Input />
           </Form.Item>
           <Form.Item name="actions" label="操作类型" rules={[{ required: true, message: "请选择操作类型" }]}>
             <Select
               mode="multiple"
-              options={allActions.map((action) => ({ value: action, label: action }))}
+              options={allActions.map((action) => ({ value: action, label: `${action} - ${actionDescriptions[action]}` }))}
               placeholder="可多选"
             />
           </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="权限说明"
+            description={
+              <Space size={[6, 6]} wrap>
+                {allActions.map((action) => (
+                  <Tag key={action}>{`${action}: ${actionDescriptions[action]}`}</Tag>
+                ))}
+              </Space>
+            }
+          />
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
             <Select options={[{ label: "ACTIVE", value: "ACTIVE" }, { label: "DISABLED", value: "DISABLED" }]} />
-          </Form.Item>
-          <Form.Item name="memberCount" label="成员数" rules={[{ required: true, message: "请输入成员数" }]}>
-            <InputNumber min={0} style={{ width: "100%" }} />
           </Form.Item>
         </Form>
       </Modal>
@@ -269,13 +351,16 @@ export function RolesPage() {
         onOk={() => void saveMembers()}
       >
         <Typography.Paragraph type="secondary">
-          每行一个成员姓名，或使用英文逗号分隔。
+          支持搜索选择，或直接输入新成员名称后回车。
         </Typography.Paragraph>
-        <Input.TextArea
-          rows={8}
-          value={memberText}
-          onChange={(event) => setMemberText(event.target.value)}
-          placeholder="例如：\n张三\n李四\n王五"
+        <Select
+          mode="tags"
+          style={{ width: "100%" }}
+          value={memberValues}
+          onChange={(values) => setMemberValues(values)}
+          tokenSeparators={[","]}
+          options={memberOptions.map((name) => ({ label: name, value: name }))}
+          placeholder="输入成员姓名并回车，或从下拉中选择"
         />
       </Modal>
     </div>

@@ -101,6 +101,7 @@ export interface PreprocessorDefinition {
   name: string;
   processorType: "BUILT_IN" | "SCRIPT";
   category: "STRING" | "NUMBER" | "DATE" | "JSON";
+  scriptContent?: string;
   status: LifecycleState;
   ownerOrgId: string;
   usedByCount: number;

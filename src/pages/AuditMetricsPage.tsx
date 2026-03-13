@@ -187,7 +187,7 @@ export function AuditMetricsPage() {
           rowKey="id"
           loading={loading}
           dataSource={executionFiltered}
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             { title: "作业场景", dataIndex: "sceneName", width: 220 },
             { title: "触发来源", dataIndex: "triggerSource", width: 150 },
@@ -208,3 +208,4 @@ export function AuditMetricsPage() {
     </div>
   );
 }
+

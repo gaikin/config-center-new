@@ -450,14 +450,19 @@ export const configCenterService = {
   },
 
   async upsertPreprocessor(
-    payload: Omit<PreprocessorDefinition, "updatedAt"> & { updatedAt?: string }
+    payload: Omit<PreprocessorDefinition, "updatedAt" | "usedByCount"> & {
+      usedByCount?: number;
+      updatedAt?: string;
+    }
   ): Promise<PreprocessorDefinition> {
     await sleep(160);
+    const exists = store.preprocessors.find((item) => item.id === payload.id);
+    const usedByCount = exists?.usedByCount ?? payload.usedByCount ?? 0;
     const next: PreprocessorDefinition = {
       ...payload,
+      usedByCount,
       updatedAt: payload.updatedAt ?? nowIso()
     };
-    const exists = store.preprocessors.find((item) => item.id === next.id);
     if (exists && exists.status === "ACTIVE") {
       const draftVersion: PreprocessorDefinition = {
         ...next,
@@ -894,11 +899,18 @@ export const configCenterService = {
     return clone(store.roles);
   },
 
-  async upsertRole(payload: Omit<RoleItem, "updatedAt"> & { updatedAt?: string }): Promise<RoleItem> {
+  async upsertRole(
+    payload: Omit<RoleItem, "updatedAt" | "memberCount"> & { memberCount?: number; updatedAt?: string }
+  ): Promise<RoleItem> {
     await sleep(140);
     const exists = store.roles.find((item) => item.id === payload.id);
+    if (!store.roleMembers[payload.id]) {
+      store.roleMembers[payload.id] = [];
+    }
+    const memberCount = store.roleMembers[payload.id]?.length ?? payload.memberCount ?? 0;
     const next: RoleItem = {
       ...payload,
+      memberCount,
       updatedAt: payload.updatedAt ?? nowIso()
     };
     store.roles = exists ? store.roles.map((item) => (item.id === next.id ? next : item)) : [next, ...store.roles];

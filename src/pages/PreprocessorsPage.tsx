@@ -1,9 +1,10 @@
-﻿import { Button, Card, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
+﻿import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { configCenterService } from "../services/configCenterService";
 import type { LifecycleState, PreprocessorDefinition } from "../types";
 
-type PreprocessorForm = Omit<PreprocessorDefinition, "updatedAt">;
+type PreprocessorForm = Omit<PreprocessorDefinition, "id" | "updatedAt" | "usedByCount">;
 
 const statusColor: Record<LifecycleState, string> = {
   DRAFT: "default",
@@ -30,6 +31,7 @@ export function PreprocessorsPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PreprocessorDefinition | null>(null);
   const [form] = Form.useForm<PreprocessorForm>();
+  const watchedProcessorType = Form.useWatch("processorType", form);
   const [msgApi, holder] = message.useMessage();
 
   async function loadData() {
@@ -49,29 +51,54 @@ export function PreprocessorsPage() {
   function openCreate() {
     setEditing(null);
     form.setFieldsValue({
-      id: Date.now(),
       name: "",
       processorType: "BUILT_IN",
       category: "STRING",
       status: "DRAFT",
       ownerOrgId: "branch-east",
-      usedByCount: 0
+      scriptContent: ""
     });
     setOpen(true);
   }
 
   function openEdit(row: PreprocessorDefinition) {
     setEditing(row);
-    form.setFieldsValue({ ...row });
+    form.setFieldsValue({
+      name: row.name,
+      processorType: row.processorType,
+      category: row.category,
+      status: row.status,
+      ownerOrgId: row.ownerOrgId,
+      scriptContent: row.scriptContent ?? ""
+    });
     setOpen(true);
   }
 
   async function submit() {
     const values = await form.validateFields();
-    await configCenterService.upsertPreprocessor(values);
+    await configCenterService.upsertPreprocessor({
+      ...values,
+      id: editing?.id ?? Date.now(),
+      usedByCount: editing?.usedByCount ?? 0
+    });
     msgApi.success(editing ? "预处理器已更新" : "预处理器已创建");
     setOpen(false);
     await loadData();
+  }
+
+  function closeModal() {
+    if (!form.isFieldsTouched(true)) {
+      setOpen(false);
+      return;
+    }
+
+    Modal.confirm({
+      title: "放弃未保存更改？",
+      content: "当前表单有未保存内容，确认关闭后将丢失。",
+      okText: "放弃并关闭",
+      cancelText: "继续编辑",
+      onOk: () => setOpen(false)
+    });
   }
 
   async function switchStatus(item: PreprocessorDefinition) {
@@ -91,16 +118,14 @@ export function PreprocessorsPage() {
 
       <Card
         extra={
-          <Button type="primary" onClick={openCreate}>
-            新建预处理器
-          </Button>
+          <Button type="primary" icon={<PlusOutlined />} aria-label="create-preprocessor" title="新建预处理器" onClick={openCreate} />
         }
       >
         <Table<PreprocessorDefinition>
           rowKey="id"
           loading={loading}
           dataSource={rows}
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             { title: "名称", dataIndex: "name", width: 220 },
             {
@@ -129,9 +154,12 @@ export function PreprocessorsPage() {
                   <Button size="small" onClick={() => openEdit(row)}>
                     编辑
                   </Button>
-                  <Button size="small" onClick={() => void switchStatus(row)}>
-                    {row.status === "ACTIVE" ? "停用" : "启用"}
-                  </Button>
+                  <Popconfirm
+                    title={row.status === "ACTIVE" ? "确认停用该预处理器？" : "确认启用该预处理器？"}
+                    onConfirm={() => void switchStatus(row)}
+                  >
+                    <Button size="small">{row.status === "ACTIVE" ? "停用" : "启用"}</Button>
+                  </Popconfirm>
                 </Space>
               )
             }
@@ -142,14 +170,18 @@ export function PreprocessorsPage() {
       <Modal
         title={editing ? "编辑预处理器" : "新建预处理器"}
         open={open}
-        onCancel={() => setOpen(false)}
+        onCancel={closeModal}
         onOk={() => void submit()}
         destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="id" label="ID" rules={[{ required: true, message: "请输入 ID" }]}>
-            <InputNumber style={{ width: "100%" }} />
-          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={`ID 由系统自动生成（当前${editing ? `#${editing.id}` : "新建后生成"}）`}
+            description={`被引用次数由系统统计（当前${editing?.usedByCount ?? 0}）`}
+          />
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input maxLength={128} />
           </Form.Item>
@@ -172,9 +204,18 @@ export function PreprocessorsPage() {
           <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请输入组织" }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="usedByCount" label="被引用次数" rules={[{ required: true, message: "请输入次数" }]}>
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
+
+          {watchedProcessorType === "SCRIPT" ? (
+            <Form.Item name="scriptContent" label="脚本内容" rules={[{ required: true, message: "脚本类型需要填写脚本内容" }]}>
+              <Input.TextArea
+                rows={10}
+                placeholder="请输入脚本内容（原型态）"
+                style={{ fontFamily: "Consolas, 'Courier New', monospace" }}
+              />
+            </Form.Item>
+          ) : (
+            <Alert type="success" showIcon message="内置类型无需脚本内容" description="当前将使用平台内置实现。" />
+          )}
         </Form>
       </Modal>
     </div>

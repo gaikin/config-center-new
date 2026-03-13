@@ -191,7 +191,7 @@ export function GovernancePage() {
           rowKey="id"
           loading={loading}
           dataSource={filteredPendingItems}
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             { title: "对象类型", dataIndex: "resourceType", width: 130 },
             { title: "对象名称", dataIndex: "resourceName" },
@@ -239,7 +239,7 @@ export function GovernancePage() {
           rowKey="id"
           loading={loading}
           dataSource={logs}
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             {
               title: "动作",
@@ -313,3 +313,4 @@ export function GovernancePage() {
     </div>
   );
 }
+

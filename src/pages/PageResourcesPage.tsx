@@ -1,4 +1,6 @@
 ﻿import {
+  Alert,
+  AutoComplete,
   Button,
   Card,
   Drawer,
@@ -17,13 +19,14 @@
   Typography,
   message
 } from "antd";
+import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../services/configCenterService";
 import { getRightOverlayDrawerWidth } from "../utils";
 import type { LifecycleState, PageElement, PageMenu, PageResource, PageSite } from "../types";
 
-type ResourceForm = Omit<PageResource, "updatedAt">;
-type ElementForm = Omit<PageElement, "updatedAt">;
+type ResourceForm = Omit<PageResource, "id" | "updatedAt" | "elementCount">;
+type ElementForm = Omit<PageElement, "id" | "updatedAt">;
 
 const statusColor: Record<LifecycleState, string> = {
   DRAFT: "default",
@@ -31,6 +34,13 @@ const statusColor: Record<LifecycleState, string> = {
   DISABLED: "orange",
   EXPIRED: "red"
 };
+
+const detectRuleOptions = [
+  "业务标识优先 + URL兜底",
+  "业务标识 + 页面标题 + URL兜底",
+  "URL前缀 + DOM特征校验",
+  "菜单编码 + URL精确匹配"
+];
 
 export function PageResourcesPage() {
   const screens = Grid.useBreakpoint();
@@ -117,13 +127,11 @@ export function PageResourcesPage() {
     const defaultMenuId = selectedMenuId ?? menusFilteredBySite[0]?.id ?? menus[0]?.id ?? 0;
     setEditing(null);
     form.setFieldsValue({
-      id: Date.now(),
       menuId: defaultMenuId,
       name: "",
       status: "DRAFT",
       ownerOrgId: "branch-east",
       currentVersion: 1,
-      elementCount: 0,
       detectRulesSummary: "业务标识优先 + URL兜底"
     });
     setOpen(true);
@@ -131,16 +139,42 @@ export function PageResourcesPage() {
 
   function openEdit(row: PageResource) {
     setEditing(row);
-    form.setFieldsValue({ ...row });
+    form.setFieldsValue({
+      menuId: row.menuId,
+      name: row.name,
+      status: row.status,
+      ownerOrgId: row.ownerOrgId,
+      currentVersion: row.currentVersion,
+      detectRulesSummary: row.detectRulesSummary
+    });
     setOpen(true);
   }
 
   async function submit() {
     const values = await form.validateFields();
-    await configCenterService.upsertPageResource(values);
+    await configCenterService.upsertPageResource({
+      ...values,
+      id: editing?.id ?? Date.now(),
+      elementCount: editing?.elementCount ?? 0
+    });
     msgApi.success(editing ? "页面资源已更新（生效中对象会自动生成待发布版本）" : "页面资源已创建");
     setOpen(false);
     await loadAll();
+  }
+
+  function closeResourceModal() {
+    if (!form.isFieldsTouched(true)) {
+      setOpen(false);
+      return;
+    }
+
+    Modal.confirm({
+      title: "放弃未保存更改？",
+      content: "当前页面资源配置尚未保存，关闭后将丢失。",
+      okText: "放弃并关闭",
+      cancelText: "继续编辑",
+      onOk: () => setOpen(false)
+    });
   }
 
   async function openElementsDrawer(row: PageResource) {
@@ -155,7 +189,6 @@ export function PageResourcesPage() {
     }
     setEditingElement(null);
     elementForm.setFieldsValue({
-      id: Date.now(),
       pageResourceId: currentResource.id,
       logicName: "",
       selector: "",
@@ -167,19 +200,43 @@ export function PageResourcesPage() {
 
   function openEditElement(row: PageElement) {
     setEditingElement(row);
-    elementForm.setFieldsValue({ ...row });
+    elementForm.setFieldsValue({
+      pageResourceId: row.pageResourceId,
+      logicName: row.logicName,
+      selector: row.selector,
+      selectorType: row.selectorType,
+      required: row.required
+    });
     setElementOpen(true);
   }
 
   async function submitElement() {
     const values = await elementForm.validateFields();
-    await configCenterService.upsertPageElement(values);
+    await configCenterService.upsertPageElement({
+      ...values,
+      id: editingElement?.id ?? Date.now()
+    });
     msgApi.success(editingElement ? "元素映射已更新" : "元素映射已新增");
     setElementOpen(false);
     if (currentResource) {
       await loadElements(currentResource.id);
       await loadAll();
     }
+  }
+
+  function closeElementModal() {
+    if (!elementForm.isFieldsTouched(true)) {
+      setElementOpen(false);
+      return;
+    }
+
+    Modal.confirm({
+      title: "放弃未保存更改？",
+      content: "当前元素映射尚未保存，关闭后将丢失。",
+      okText: "放弃并关闭",
+      cancelText: "继续编辑",
+      onOk: () => setElementOpen(false)
+    });
   }
 
   async function removeElement(row: PageElement) {
@@ -234,9 +291,7 @@ export function PageResourcesPage() {
               ]}
               onChange={(value) => setMenuFilter(value)}
             />
-            <Button type="primary" onClick={openCreate}>
-              新建页面资源
-            </Button>
+            <Button type="primary" icon={<PlusOutlined />} aria-label="create-page-resource" title="新建页面资源" onClick={openCreate} />
           </Space>
         }
       >
@@ -244,7 +299,7 @@ export function PageResourcesPage() {
           rowKey="id"
           loading={loading}
           dataSource={resourcesFiltered}
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             { title: "名称", dataIndex: "name", width: 200 },
             {
@@ -284,14 +339,18 @@ export function PageResourcesPage() {
       <Modal
         title={editing ? "编辑页面资源" : "新建页面资源"}
         open={open}
-        onCancel={() => setOpen(false)}
+        onCancel={closeResourceModal}
         onOk={() => void submit()}
         destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="id" label="ID" rules={[{ required: true, message: "请输入 ID" }]}>
-            <InputNumber style={{ width: "100%" }} />
-          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={`ID 由系统自动生成（当前${editing ? `#${editing.id}` : "新建后生成"}）`}
+            description={`元素数量由系统根据元素映射自动统计（当前${editing?.elementCount ?? 0}）`}
+          />
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input maxLength={128} />
           </Form.Item>
@@ -319,11 +378,12 @@ export function PageResourcesPage() {
           <Form.Item name="currentVersion" label="当前版本" rules={[{ required: true, message: "请输入版本" }]}>
             <InputNumber min={1} style={{ width: "100%" }} />
           </Form.Item>
-          <Form.Item name="elementCount" label="元素数量" rules={[{ required: true, message: "请输入元素数" }]}>
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="detectRulesSummary" label="识别口径" rules={[{ required: true, message: "请输入识别口径" }]}>
-            <Input />
+          <Form.Item name="detectRulesSummary" label="识别口径" rules={[{ required: true, message: "请选择或输入识别口径" }]}>
+            <AutoComplete
+              options={detectRuleOptions.map((item) => ({ value: item }))}
+              placeholder="请选择或输入识别规则口径"
+              filterOption={(inputValue, option) => (option?.value ?? "").toLowerCase().includes(inputValue.toLowerCase())}
+            />
           </Form.Item>
         </Form>
       </Modal>
@@ -335,16 +395,14 @@ export function PageResourcesPage() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         extra={
-          <Button type="primary" onClick={openCreateElement} disabled={!currentResource}>
-            新增元素
-          </Button>
+          <Button type="primary" icon={<PlusOutlined />} aria-label="add-page-element" title="新增元素" onClick={openCreateElement} disabled={!currentResource} />
         }
       >
         <Table<PageElement>
           rowKey="id"
           loading={elementLoading}
           dataSource={elements}
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             { title: "逻辑名", dataIndex: "logicName", width: 160 },
             {
@@ -368,9 +426,7 @@ export function PageResourcesPage() {
                     编辑
                   </Button>
                   <Popconfirm title="确认删除该元素映射？" onConfirm={() => void removeElement(row)}>
-                    <Button size="small" danger>
-                      删除
-                    </Button>
+                    <Button size="small" danger icon={<DeleteOutlined />} aria-label="delete-page-element" title="删除元素" />
                   </Popconfirm>
                 </Space>
               )
@@ -382,13 +438,16 @@ export function PageResourcesPage() {
       <Modal
         title={editingElement ? "编辑元素映射" : "新增元素映射"}
         open={elementOpen}
-        onCancel={() => setElementOpen(false)}
+        onCancel={closeElementModal}
         onOk={() => void submitElement()}
       >
         <Form form={elementForm} layout="vertical">
-          <Form.Item name="id" label="ID" rules={[{ required: true, message: "请输入 ID" }]}>
-            <InputNumber style={{ width: "100%" }} />
-          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={`元素 ID 由系统自动生成（当前${editingElement ? `#${editingElement.id}` : "新建后生成"}）`}
+          />
           <Form.Item name="pageResourceId" label="页面资源 ID" rules={[{ required: true, message: "请输入页面资源 ID" }]}>
             <InputNumber style={{ width: "100%" }} disabled />
           </Form.Item>
