@@ -1,7 +1,7 @@
 ﻿import { Card, Col, Progress, Row, Segmented, Space, Table, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { configCenterService } from "../services/configCenterService";
-import type { ExecutionLogItem, FailureReasonMetric, TriggerLogItem } from "../types";
+import { configCenterService } from "../../services/configCenterService";
+import type { ExecutionLogItem, FailureReasonMetric, TriggerLogItem } from "../../types";
 
 export function AuditMetricsPage() {
   const [loading, setLoading] = useState(true);

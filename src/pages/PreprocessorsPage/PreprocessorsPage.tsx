@@ -1,8 +1,8 @@
 ﻿import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
-import { configCenterService } from "../services/configCenterService";
-import type { LifecycleState, PreprocessorDefinition } from "../types";
+import { configCenterService } from "../../services/configCenterService";
+import type { LifecycleState, PreprocessorDefinition } from "../../types";
 
 type PreprocessorForm = Omit<PreprocessorDefinition, "id" | "updatedAt" | "usedByCount">;
 

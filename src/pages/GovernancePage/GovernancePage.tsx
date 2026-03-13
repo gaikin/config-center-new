@@ -1,12 +1,12 @@
 ﻿import { Alert, Button, Card, Col, Modal, Row, Segmented, Space, Statistic, Table, Tag, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
-import { configCenterService } from "../services/configCenterService";
+import { configCenterService } from "../../services/configCenterService";
 import type {
   GovernanceAuditLog,
   GovernancePendingItem,
   GovernancePendingSummary,
   ValidationReport
-} from "../types";
+} from "../../types";
 
 type PendingFilter = "ALL" | GovernancePendingItem["pendingType"];
 

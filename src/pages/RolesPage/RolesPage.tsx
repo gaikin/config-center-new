@@ -16,8 +16,8 @@
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
-import { configCenterService } from "../services/configCenterService";
-import type { ActionType, RoleItem } from "../types";
+import { configCenterService } from "../../services/configCenterService";
+import type { ActionType, RoleItem } from "../../types";
 
 const roleTypeLabel: Record<RoleItem["roleType"], string> = {
   BUSINESS_OPERATOR: "业务操作",

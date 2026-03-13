@@ -1,7 +1,7 @@
 import { Card, Col, List, Row, Statistic, Tag, Typography } from "antd";
 import { useEffect, useState } from "react";
-import { configCenterService } from "../services/configCenterService";
-import type { DashboardOverview } from "../types";
+import { configCenterService } from "../../services/configCenterService";
+import type { DashboardOverview } from "../../types";
 
 const phaseItems = [
   { key: "phase-0", name: "Phase 0", detail: "基线冻结与对象模型确认" },

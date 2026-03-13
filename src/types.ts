@@ -52,6 +52,31 @@ export interface PageElement {
   updatedAt: string;
 }
 
+export interface BusinessFieldDefinition {
+  id: number;
+  code: string;
+  name: string;
+  scope: "GLOBAL" | "PAGE_RESOURCE";
+  pageResourceId?: number;
+  valueType: RuleOperandValueType;
+  required: boolean;
+  description: string;
+  ownerOrgId: string;
+  status: LifecycleState;
+  currentVersion: number;
+  aliases: string[];
+  updatedAt: string;
+}
+
+export interface PageFieldBinding {
+  id: number;
+  pageResourceId: number;
+  businessFieldCode: string;
+  pageElementId: number;
+  required: boolean;
+  updatedAt: string;
+}
+
 export type ApiValueType = "STRING" | "NUMBER" | "BOOLEAN" | "OBJECT" | "ARRAY";
 export type ApiValueSourceType = "CONST" | "PAGE_ELEMENT" | "API_OUTPUT" | "CONTEXT";
 

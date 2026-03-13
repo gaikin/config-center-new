@@ -21,9 +21,9 @@
 } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
-import { configCenterService } from "../services/configCenterService";
-import { getRightOverlayDrawerWidth } from "../utils";
-import type { LifecycleState, PageElement, PageMenu, PageResource, PageSite } from "../types";
+import { configCenterService } from "../../services/configCenterService";
+import { getRightOverlayDrawerWidth } from "../../utils";
+import type { LifecycleState, PageElement, PageMenu, PageResource, PageSite } from "../../types";
 
 type ResourceForm = Omit<PageResource, "id" | "updatedAt" | "elementCount">;
 type ElementForm = Omit<PageElement, "id" | "updatedAt">;
