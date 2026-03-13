@@ -8,14 +8,16 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message
 } from "antd";
-import { DeleteOutlined } from "@ant-design/icons";
+import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../services/configCenterService";
 import { workflowService } from "../services/workflowService";
@@ -81,6 +83,16 @@ type FlatConditionDraft = {
 type SelectedOperand = {
   conditionId: string;
   side: OperandSide;
+};
+
+type InterfaceInputParamDraft = {
+  tab: "headers" | "query" | "path" | "body";
+  name: string;
+  description: string;
+  required: boolean;
+  sourceType: "CONST" | "PAGE_ELEMENT" | "API_OUTPUT" | "CONTEXT";
+  sourceValue: string;
+  valueType: RuleOperandValueType;
 };
 
 const OPERAND_PILL_WIDTH = 320;
@@ -165,20 +177,86 @@ function parseJsonSafe<T>(raw: string, fallback: T): T {
   }
 }
 
-function collectOutputPaths(outputs: unknown[], collector: string[] = []): string[] {
+function normalizeOperandValueType(value: unknown): RuleOperandValueType {
+  if (value === "NUMBER" || value === "BOOLEAN" || value === "OBJECT" || value === "ARRAY") {
+    return value;
+  }
+  return "STRING";
+}
+
+function parseInterfaceInputConfig(raw: string) {
+  return parseJsonSafe<Record<string, string>>(raw, {});
+}
+
+function stringifyInterfaceInputConfig(config: Record<string, string>) {
+  const normalized = Object.entries(config)
+    .map(([key, value]) => [key.trim(), value.trim()] as const)
+    .filter(([key, value]) => key && value)
+    .reduce<Record<string, string>>((acc, [key, value]) => {
+      acc[key] = value;
+      return acc;
+    }, {});
+  return Object.keys(normalized).length > 0 ? JSON.stringify(normalized) : "";
+}
+
+function collectOutputPathMeta(
+  outputs: unknown[],
+  collector: Array<{ path: string; valueType: RuleOperandValueType }> = []
+): Array<{ path: string; valueType: RuleOperandValueType }> {
   for (const item of outputs) {
     if (!item || typeof item !== "object") {
       continue;
     }
-    const row = item as { path?: unknown; children?: unknown[] };
+    const row = item as { path?: unknown; valueType?: unknown; children?: unknown[] };
     if (typeof row.path === "string" && row.path.trim()) {
-      collector.push(row.path.trim());
+      collector.push({
+        path: row.path.trim(),
+        valueType: normalizeOperandValueType(row.valueType)
+      });
     }
     if (Array.isArray(row.children)) {
-      collectOutputPaths(row.children, collector);
+      collectOutputPathMeta(row.children, collector);
     }
   }
   return collector;
+}
+
+function collectInterfaceInputParams(target: InterfaceDefinition | undefined): InterfaceInputParamDraft[] {
+  if (!target) {
+    return [];
+  }
+
+  const parsed = parseJsonSafe<Record<string, unknown>>(target.inputConfigJson, {});
+  const tabs: Array<InterfaceInputParamDraft["tab"]> = ["headers", "query", "path", "body"];
+  const rows: InterfaceInputParamDraft[] = [];
+
+  for (const tab of tabs) {
+    const section = parsed[tab];
+    if (!Array.isArray(section)) {
+      continue;
+    }
+    for (const item of section) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const row = item as Record<string, unknown>;
+      const sourceType = row.sourceType;
+      rows.push({
+        tab,
+        name: typeof row.name === "string" ? row.name : "",
+        description: typeof row.description === "string" ? row.description : "",
+        required: Boolean(row.required),
+        sourceType:
+          sourceType === "PAGE_ELEMENT" || sourceType === "API_OUTPUT" || sourceType === "CONTEXT"
+            ? sourceType
+            : "CONST",
+        sourceValue: typeof row.sourceValue === "string" ? row.sourceValue : "",
+        valueType: normalizeOperandValueType(row.valueType)
+      });
+    }
+  }
+
+  return rows;
 }
 
 function buildConditionId() {
@@ -382,6 +460,7 @@ export function RulesPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RuleDefinition | null>(null);
   const [ruleForm] = Form.useForm<RuleForm>();
+  const [ruleSnapshot, setRuleSnapshot] = useState("");
 
   const [logicOpen, setLogicOpen] = useState(false);
   const [currentRule, setCurrentRule] = useState<RuleDefinition | null>(null);
@@ -389,6 +468,7 @@ export function RulesPage() {
   const [conditionsDraft, setConditionsDraft] = useState<FlatConditionDraft[]>([buildDefaultCondition()]);
   const [selectedOperand, setSelectedOperand] = useState<SelectedOperand | null>(null);
   const [savingQuery, setSavingQuery] = useState(false);
+  const [logicSnapshot, setLogicSnapshot] = useState("");
 
   const [msgApi, holder] = message.useMessage();
 
@@ -416,6 +496,68 @@ export function RulesPage() {
     void loadData();
   }, []);
 
+  function buildRuleSnapshot(values: Partial<RuleForm>) {
+    return JSON.stringify({
+      name: values.name ?? "",
+      pageResourceId: values.pageResourceId ?? null,
+      priority: values.priority ?? 1,
+      promptMode: values.promptMode ?? "FLOATING",
+      closeMode: values.closeMode ?? "MANUAL_CLOSE",
+      closeTimeoutSec: values.closeTimeoutSec ?? null,
+      hasConfirmButton: values.hasConfirmButton ?? true,
+      sceneId: values.sceneId ?? null,
+      status: values.status ?? "DRAFT",
+      ownerOrgId: values.ownerOrgId ?? ""
+    });
+  }
+
+  function buildLogicSnapshot(nextLogicType: RuleLogicType, nextConditions: FlatConditionDraft[]) {
+    return JSON.stringify({
+      globalLogicType: nextLogicType,
+      conditions: nextConditions
+    });
+  }
+
+  function closeRuleModalDirectly() {
+    setOpen(false);
+    setEditing(null);
+    setRuleSnapshot("");
+  }
+
+  function closeRuleModal() {
+    const current = buildRuleSnapshot(ruleForm.getFieldsValue() as Partial<RuleForm>);
+    if (ruleSnapshot && current !== ruleSnapshot) {
+      Modal.confirm({
+        title: "存在未保存修改",
+        content: "关闭后将丢失当前规则基础配置，是否继续？",
+        okText: "仍然关闭",
+        cancelText: "继续编辑",
+        onOk: closeRuleModalDirectly
+      });
+      return;
+    }
+    closeRuleModalDirectly();
+  }
+
+  function closeLogicDrawer() {
+    const current = buildLogicSnapshot(globalLogicType, conditionsDraft);
+    if (logicSnapshot && current !== logicSnapshot) {
+      Modal.confirm({
+        title: "条件逻辑尚未保存",
+        content: "关闭后将丢失当前条件编辑结果，是否继续？",
+        okText: "仍然关闭",
+        cancelText: "继续编辑",
+        onOk: () => {
+          setLogicOpen(false);
+          setLogicSnapshot("");
+        }
+      });
+      return;
+    }
+    setLogicOpen(false);
+    setLogicSnapshot("");
+  }
+
   async function loadLogic(ruleId: number) {
     const [groupData, conditionData] = await Promise.all([
       workflowService.listRuleConditionGroups(ruleId),
@@ -432,13 +574,13 @@ export function RulesPage() {
     const safeConditions = nextConditions.length > 0 ? nextConditions : [buildDefaultCondition()];
     setConditionsDraft(safeConditions);
     setSelectedOperand({ conditionId: safeConditions[0].id, side: "left" });
+    setLogicSnapshot(buildLogicSnapshot(rootGroup?.logicType ?? "AND", safeConditions));
   }
 
   function openCreate() {
-    setEditing(null);
-    ruleForm.setFieldsValue({
+    const values: RuleForm = {
       name: "",
-      pageResourceId: resources[0]?.id,
+      pageResourceId: resources[0]?.id ?? 0,
       priority: 500,
       promptMode: "FLOATING",
       closeMode: "MANUAL_CLOSE",
@@ -447,13 +589,15 @@ export function RulesPage() {
       sceneId: undefined,
       status: "DRAFT",
       ownerOrgId: "branch-east"
-    });
+    };
+    setEditing(null);
+    ruleForm.setFieldsValue(values);
+    setRuleSnapshot(buildRuleSnapshot(values));
     setOpen(true);
   }
 
   function openEdit(row: RuleDefinition) {
-    setEditing(row);
-    ruleForm.setFieldsValue({
+    const values: RuleForm = {
       name: row.name,
       pageResourceId: row.pageResourceId,
       priority: row.priority,
@@ -464,7 +608,10 @@ export function RulesPage() {
       sceneId: row.sceneId,
       status: row.status,
       ownerOrgId: row.ownerOrgId
-    });
+    };
+    setEditing(row);
+    ruleForm.setFieldsValue(values);
+    setRuleSnapshot(buildRuleSnapshot(values));
     setOpen(true);
   }
 
@@ -502,8 +649,7 @@ export function RulesPage() {
       msgApi.success("规则已更新");
     }
 
-    setOpen(false);
-    setEditing(null);
+    closeRuleModalDirectly();
     await loadData();
   }
 
@@ -627,23 +773,32 @@ export function RulesPage() {
   }
 
   function validateOperand(draft: OperandDraft, label: string, conditionIndex: number): string | null {
+    const conditionLabel = `Condition ${conditionIndex + 1} ${label}`;
+
     if (draft.sourceType === "INTERFACE_FIELD") {
       if (!draft.interfaceName?.trim()) {
-        return `第 ${conditionIndex + 1} 条条件${label}未选择 API`;
+        return `${conditionLabel}: API is required`;
       }
       if (!draft.outputPath?.trim()) {
-        return `第 ${conditionIndex + 1} 条条件${label}缺少输出值路径：${draft.interfaceName}.(未绑定输出值)`;
+        return `${conditionLabel}: API output path is required`;
       }
-      return null;
-    }
 
-    if (!draft.displayValue.trim()) {
-      return `第 ${conditionIndex + 1} 条条件${label}不能为空`;
+      const target = interfaces.find((item) => item.id === draft.interfaceId);
+      const requiredInputs = collectInterfaceInputParams(target).filter((item) => item.required);
+      const inputConfig = parseInterfaceInputConfig(draft.interfaceInputConfig);
+      for (const input of requiredInputs) {
+        const value = (inputConfig[input.name] ?? input.sourceValue ?? "").trim();
+        if (!value) {
+          return `${conditionLabel}: required API input missing (${input.name})`;
+        }
+      }
+    } else if (!draft.displayValue.trim()) {
+      return `${conditionLabel}: value is required`;
     }
 
     const invalidPreprocessor = draft.preprocessors.find((item) => typeof item.preprocessorId !== "number");
     if (invalidPreprocessor) {
-      return `第 ${conditionIndex + 1} 条条件${label}存在未选择的预处理器`;
+      return `${conditionLabel}: unresolved preprocessor exists`;
     }
 
     return null;
@@ -655,14 +810,14 @@ export function RulesPage() {
     }
 
     for (const [index, condition] of conditionsDraft.entries()) {
-      const leftError = validateOperand(condition.left, "左值", index);
+      const leftError = validateOperand(condition.left, "left", index);
       if (leftError) {
         msgApi.error(leftError);
         return;
       }
 
       if (condition.operator !== "EXISTS") {
-        const rightError = validateOperand(condition.right, "右值", index);
+        const rightError = validateOperand(condition.right, "right", index);
         if (rightError) {
           msgApi.error(rightError);
           return;
@@ -704,6 +859,7 @@ export function RulesPage() {
       }
 
       msgApi.success("条件逻辑已保存");
+      setLogicSnapshot(buildLogicSnapshot(globalLogicType, conditionsDraft));
       await loadLogic(currentRuleId);
     } catch (error) {
       msgApi.error(error instanceof Error ? error.message : "条件逻辑保存失败");
@@ -718,9 +874,18 @@ export function RulesPage() {
       return [];
     }
     const outputs = parseJsonSafe<unknown[]>(target.outputConfigJson, []);
-    return collectOutputPaths(outputs)
-      .filter(Boolean)
-      .map((path) => ({ label: path, value: path }));
+    return collectOutputPathMeta(outputs)
+      .filter((item) => Boolean(item.path))
+      .map((item) => ({
+        label: `${item.path} (${item.valueType})`,
+        value: item.path,
+        valueType: item.valueType
+      }));
+  }
+
+  function getInterfaceInputOptions(interfaceId?: number) {
+    const target = interfaces.find((item) => item.id === interfaceId);
+    return collectInterfaceInputParams(target);
   }
 
   function renderOperandPill(conditionId: string, side: OperandSide, operand: OperandDraft) {
@@ -770,6 +935,64 @@ export function RulesPage() {
     [selectedContext?.operand.interfaceId, interfaces]
   );
 
+  const selectedInterfaceInputParams = useMemo(
+    () => getInterfaceInputOptions(selectedContext?.operand.interfaceId),
+    [selectedContext?.operand.interfaceId, interfaces]
+  );
+
+  const selectedInterfaceInputConfig = useMemo(
+    () => parseInterfaceInputConfig(selectedContext?.operand.interfaceInputConfig ?? ""),
+    [selectedContext?.operand.interfaceInputConfig]
+  );
+
+  function updateInterfaceInputValue(paramName: string, value: string) {
+    const nextConfig = {
+      ...selectedInterfaceInputConfig,
+      [paramName]: value
+    };
+    if (!value.trim()) {
+      delete nextConfig[paramName];
+    }
+    updateSelectedOperand({
+      interfaceInputConfig: stringifyInterfaceInputConfig(nextConfig)
+    });
+  }
+
+  function renderInterfaceInputValueEditor(param: InterfaceInputParamDraft) {
+    const value = selectedInterfaceInputConfig[param.name] ?? param.sourceValue ?? "";
+    if (param.sourceType === "PAGE_ELEMENT") {
+      return (
+        <Select
+          showSearch
+          allowClear
+          placeholder="选择页面元素"
+          value={value || undefined}
+          options={pageFieldOptions.map((item) => ({ label: item, value: item }))}
+          onChange={(next) => updateInterfaceInputValue(param.name, (next as string) ?? "")}
+        />
+      );
+    }
+    if (param.sourceType === "CONTEXT") {
+      return (
+        <Select
+          showSearch
+          allowClear
+          placeholder="选择上下文变量"
+          value={value || undefined}
+          options={contextOptions.map((item) => ({ label: item, value: item }))}
+          onChange={(next) => updateInterfaceInputValue(param.name, (next as string) ?? "")}
+        />
+      );
+    }
+    return (
+      <Input
+        value={value}
+        placeholder={param.sourceType === "API_OUTPUT" ? "输入API输出路径" : "输入固定值"}
+        onChange={(event) => updateInterfaceInputValue(param.name, event.target.value)}
+      />
+    );
+  }
+
   return (
     <div>
       {holder}
@@ -780,16 +1003,16 @@ export function RulesPage() {
 
       <Card
         extra={
-          <Button type="primary" onClick={openCreate}>
-            新建规则
-          </Button>
+          <Tooltip title="新建规则">
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} aria-label="create-rule" />
+          </Tooltip>
         }
       >
         <Table<RuleDefinition>
           rowKey="id"
           loading={loading}
           dataSource={rows}
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 10, 20] }}
           columns={[
             { title: "规则名称", dataIndex: "name", width: 200 },
             { title: "页面资源", dataIndex: "pageResourceName", width: 160 },
@@ -819,9 +1042,12 @@ export function RulesPage() {
                   <Button size="small" onClick={() => void openLogic(row)}>
                     条件编辑
                   </Button>
-                  <Button size="small" onClick={() => void switchStatus(row)}>
-                    {row.status === "ACTIVE" ? "停用" : "启用"}
-                  </Button>
+                  <Popconfirm
+                    title={row.status === "ACTIVE" ? "确认停用该规则？" : "确认启用该规则？"}
+                    onConfirm={() => void switchStatus(row)}
+                  >
+                    <Button size="small">{row.status === "ACTIVE" ? "停用" : "启用"}</Button>
+                  </Popconfirm>
                 </Space>
               )
             }
@@ -832,10 +1058,7 @@ export function RulesPage() {
       <Modal
         title={editing ? "编辑规则" : "新建规则"}
         open={open}
-        onCancel={() => {
-          setOpen(false);
-          setEditing(null);
-        }}
+        onCancel={closeRuleModal}
         onOk={() => void submitRule()}
         width={680}
       >
@@ -891,13 +1114,15 @@ export function RulesPage() {
         placement="right"
         width={logicDrawerWidth}
         open={logicOpen}
-        onClose={() => setLogicOpen(false)}
+        onClose={closeLogicDrawer}
       >
         <Card
           title="条件配置（单层）"
           extra={
             <Space>
-              <Button onClick={addCondition}>新增条件</Button>
+              <Tooltip title="新增条件">
+                <Button icon={<PlusOutlined />} onClick={addCondition} />
+              </Tooltip>
               <Button type="primary" loading={savingQuery} onClick={() => void saveConditionLogic()}>
                 保存条件逻辑
               </Button>
@@ -996,12 +1221,16 @@ export function RulesPage() {
 
                   <div>
                     <Typography.Text>值类型</Typography.Text>
-                    <Select
-                      style={{ width: "100%", marginTop: 6 }}
-                      value={selectedContext.operand.valueType}
-                      options={valueTypeOptions}
-                      onChange={(value) => updateSelectedOperand({ valueType: value as RuleOperandValueType })}
-                    />
+                    {selectedContext.operand.sourceType === "INTERFACE_FIELD" ? (
+                      <Input style={{ marginTop: 6 }} value={selectedContext.operand.valueType} readOnly />
+                    ) : (
+                      <Select
+                        style={{ width: "100%", marginTop: 6 }}
+                        value={selectedContext.operand.valueType}
+                        options={valueTypeOptions}
+                        onChange={(value) => updateSelectedOperand({ valueType: value as RuleOperandValueType })}
+                      />
+                    )}
                   </div>
 
                   {selectedContext.operand.sourceType === "CONST" ? (
@@ -1079,7 +1308,9 @@ export function RulesPage() {
                               interfaceName: picked?.name,
                               outputPath: "",
                               machineKey: "",
-                              displayValue: ""
+                              displayValue: "",
+                              interfaceInputConfig: "",
+                              valueType: "STRING"
                             });
                           }}
                         />
@@ -1087,41 +1318,64 @@ export function RulesPage() {
 
                       <div>
                         <Typography.Text>输出值路径</Typography.Text>
-                        <Input
-                          style={{ marginTop: 6 }}
-                          placeholder="如 $.data.score"
-                          value={selectedContext.operand.outputPath}
-                          onChange={(event) =>
+                        <Select
+                          showSearch
+                          allowClear
+                          style={{ width: "100%", marginTop: 6 }}
+                          placeholder="请选择API输出路径"
+                          value={selectedContext.operand.outputPath || undefined}
+                          options={selectedOutputPathOptions}
+                          onChange={(value, option) => {
+                            const picked = option as { valueType?: RuleOperandValueType } | undefined;
+                            const nextPath = (value as string) ?? "";
                             updateSelectedOperand({
-                              outputPath: event.target.value,
-                              machineKey: deriveMachineKeyFromOutputPath(event.target.value)
-                            })
-                          }
+                              outputPath: nextPath,
+                              machineKey: deriveMachineKeyFromOutputPath(nextPath),
+                              valueType: picked?.valueType ?? selectedContext.operand.valueType
+                            });
+                          }}
                         />
-                        {selectedOutputPathOptions.length > 0 ? (
-                          <Select
-                            style={{ width: "100%", marginTop: 6 }}
-                            placeholder="可从已注册出参中选择"
-                            options={selectedOutputPathOptions}
-                            onChange={(value) =>
-                              updateSelectedOperand({
-                                outputPath: value as string,
-                                machineKey: deriveMachineKeyFromOutputPath(value as string)
-                              })
-                            }
-                          />
-                        ) : null}
                       </div>
 
                       <div>
-                        <Typography.Text>入参配置（接口）</Typography.Text>
-                        <Input.TextArea
-                          rows={3}
-                          style={{ marginTop: 6 }}
-                          placeholder="可选，输入 JSON 或说明"
-                          value={selectedContext.operand.interfaceInputConfig}
-                          onChange={(event) => updateSelectedOperand({ interfaceInputConfig: event.target.value })}
-                        />
+                        <Typography.Text>入参配置（按 API注册定义）</Typography.Text>
+                        {selectedInterfaceInputParams.length === 0 ? (
+                          <Alert type="info" showIcon style={{ marginTop: 6 }} message="当前API未定义入参或尚未配置。" />
+                        ) : (
+                          <Table<InterfaceInputParamDraft>
+                            size="small"
+                            style={{ marginTop: 6 }}
+                            rowKey={(row) => `${row.tab}:${row.name}`}
+                            pagination={false}
+                            dataSource={selectedInterfaceInputParams}
+                            columns={[
+                              {
+                                title: "参数",
+                                width: 220,
+                                render: (_, row) => (
+                                  <Space size={4}>
+                                    <Typography.Text>{row.name}</Typography.Text>
+                                    {row.required ? <Tag color="error">必填</Tag> : <Tag>可选</Tag>}
+                                  </Space>
+                                )
+                              },
+                              {
+                                title: "来源",
+                                width: 140,
+                                render: (_, row) => <Tag>{row.sourceType}</Tag>
+                              },
+                              {
+                                title: "值类型",
+                                width: 120,
+                                render: (_, row) => <Tag color="blue">{row.valueType}</Tag>
+                              },
+                              {
+                                title: "取值",
+                                render: (_, row) => renderInterfaceInputValueEditor(row)
+                              }
+                            ]}
+                          />
+                        )}
                       </div>
 
                       <Alert
@@ -1135,9 +1389,9 @@ export function RulesPage() {
                   <div>
                     <Space align="center" style={{ justifyContent: "space-between", width: "100%" }}>
                       <Typography.Text>预处理器</Typography.Text>
-                      <Button size="small" onClick={addPreprocessorBinding}>
-                        添加预处理器
-                      </Button>
+                      <Tooltip title="添加预处理器">
+                        <Button size="small" icon={<PlusOutlined />} onClick={addPreprocessorBinding} />
+                      </Tooltip>
                     </Space>
 
                     {selectedContext.operand.preprocessors.length === 0 ? (
@@ -1163,9 +1417,9 @@ export function RulesPage() {
                               value={binding.params}
                               onChange={(event) => updatePreprocessorBinding(binding.id, { params: event.target.value })}
                             />
-                            <Button danger onClick={() => removePreprocessorBinding(binding.id)}>
-                              删除
-                            </Button>
+                            <Tooltip title="删除预处理器">
+                              <Button danger icon={<DeleteOutlined />} onClick={() => removePreprocessorBinding(binding.id)} />
+                            </Tooltip>
                           </Space>
                         ))}
                       </Space>

@@ -14,9 +14,11 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message
 } from "antd";
+import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addEdge,
@@ -46,7 +48,15 @@ import type {
   RuleDefinition
 } from "../types";
 
-type SceneForm = Omit<JobSceneDefinition, "updatedAt" | "pageResourceName">;
+type SceneForm = {
+  name: string;
+  pageResourceId: number;
+  executionMode: JobSceneDefinition["executionMode"];
+  status: LifecycleState;
+  currentVersion: number;
+  nodeCount: number;
+  manualDurationSec: number;
+};
 type StatusFilter = "ALL" | LifecycleState;
 
 type FlowNodeData = {
@@ -288,6 +298,7 @@ export function JobScenesPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<JobSceneDefinition | null>(null);
   const [form] = Form.useForm<SceneForm>();
+  const [sceneSnapshot, setSceneSnapshot] = useState("");
 
   const [builderOpen, setBuilderOpen] = useState(false);
   const [builderScene, setBuilderScene] = useState<JobSceneDefinition | null>(null);
@@ -363,6 +374,39 @@ export function JobScenesPage() {
     return grouped;
   }, [rules]);
 
+  function buildSceneSnapshot(values: Partial<SceneForm>) {
+    return JSON.stringify({
+      name: values.name ?? "",
+      pageResourceId: values.pageResourceId ?? null,
+      executionMode: values.executionMode ?? "PREVIEW_THEN_EXECUTE",
+      status: values.status ?? "DRAFT",
+      currentVersion: values.currentVersion ?? 1,
+      nodeCount: values.nodeCount ?? 1,
+      manualDurationSec: values.manualDurationSec ?? 1
+    });
+  }
+
+  function closeSceneModalDirectly() {
+    setOpen(false);
+    setEditing(null);
+    setSceneSnapshot("");
+  }
+
+  function closeSceneModal() {
+    const current = buildSceneSnapshot(form.getFieldsValue() as Partial<SceneForm>);
+    if (sceneSnapshot && current !== sceneSnapshot) {
+      Modal.confirm({
+        title: "存在未保存修改",
+        content: "关闭后将丢失当前场景编辑内容，是否继续？",
+        okText: "仍然关闭",
+        cancelText: "继续编辑",
+        onOk: closeSceneModalDirectly
+      });
+      return;
+    }
+    closeSceneModalDirectly();
+  }
+
   async function loadBuilderData(sceneId: number) {
     const nodes = await workflowService.listJobNodes(sceneId);
     setNodeRows(nodes);
@@ -376,34 +420,34 @@ export function JobScenesPage() {
   }
 
   function openCreate() {
-    setEditing(null);
-    form.setFieldsValue({
-      id: Date.now(),
+    const values: SceneForm = {
       name: "",
-      pageResourceId: resources[0]?.id,
+      pageResourceId: resources[0]?.id ?? 0,
       executionMode: "PREVIEW_THEN_EXECUTE",
       status: "DRAFT",
       currentVersion: 1,
       nodeCount: 3,
-      manualDurationSec: 30,
-      riskConfirmed: false
-    });
+      manualDurationSec: 30
+    };
+    setEditing(null);
+    form.setFieldsValue(values);
+    setSceneSnapshot(buildSceneSnapshot(values));
     setOpen(true);
   }
 
   function openEdit(row: JobSceneDefinition) {
-    setEditing(row);
-    form.setFieldsValue({
-      id: row.id,
+    const values: SceneForm = {
       name: row.name,
       pageResourceId: row.pageResourceId,
       executionMode: row.executionMode,
       status: row.status,
       currentVersion: row.currentVersion,
       nodeCount: row.nodeCount,
-      manualDurationSec: row.manualDurationSec,
-      riskConfirmed: row.riskConfirmed
-    });
+      manualDurationSec: row.manualDurationSec
+    };
+    setEditing(row);
+    form.setFieldsValue(values);
+    setSceneSnapshot(buildSceneSnapshot(values));
     setOpen(true);
   }
 
@@ -414,9 +458,14 @@ export function JobScenesPage() {
       msgApi.error("页面资源不存在");
       return;
     }
-    await configCenterService.upsertJobScene({ ...values, pageResourceName: resource.name });
+    await configCenterService.upsertJobScene({
+      ...values,
+      id: editing?.id ?? Date.now() + Math.floor(Math.random() * 1000),
+      pageResourceName: resource.name,
+      riskConfirmed: editing?.riskConfirmed ?? false
+    });
     msgApi.success(editing ? "场景已更新" : "场景已创建");
-    setOpen(false);
+    closeSceneModalDirectly();
     await loadData();
   }
 
@@ -484,6 +533,25 @@ export function JobScenesPage() {
     } catch (error) {
       msgApi.error(error instanceof Error ? error.message : "加载作业编排失败");
     }
+  }
+
+  function closeBuilderDirectly() {
+    setBuilderOpen(false);
+    setSelectedNodeId(null);
+  }
+
+  function closeBuilder() {
+    if (selectedNode && nodeDetailForm.isFieldsTouched()) {
+      Modal.confirm({
+        title: "节点属性尚未保存",
+        content: "关闭后将丢失节点属性改动，是否继续？",
+        okText: "仍然关闭",
+        cancelText: "继续编辑",
+        onOk: closeBuilderDirectly
+      });
+      return;
+    }
+    closeBuilderDirectly();
   }
 
   async function addNodeFromLibrary(nodeType: JobNodeDefinition["nodeType"]) {
@@ -650,7 +718,9 @@ export function JobScenesPage() {
                 { label: "过期", value: "EXPIRED" }
               ]}
             />
-            <Button type="primary" onClick={openCreate}>新建场景</Button>
+            <Tooltip title="新建场景">
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} aria-label="create-scene" />
+            </Tooltip>
           </Space>
         }
       >
@@ -658,7 +728,7 @@ export function JobScenesPage() {
           rowKey="id"
           loading={loading}
           dataSource={filteredRows}
-          pagination={{ pageSize: 6 }}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 10, 20] }}
           columns={[
             { title: "场景名称", dataIndex: "name", width: 220 },
             { title: "页面资源", dataIndex: "pageResourceName", width: 160 },
@@ -694,9 +764,16 @@ export function JobScenesPage() {
                   <Button size="small" onClick={() => openEdit(row)}>编辑</Button>
                   <Button size="small" onClick={() => void openBuilder(row)}>作业编排</Button>
                   <Button size="small" onClick={() => void openPreview(row)}>预览确认</Button>
-                  <Button size="small" onClick={() => void triggerFloating(row)}>悬浮触发</Button>
+                  <Popconfirm title="确认触发悬浮按钮执行？" onConfirm={() => void triggerFloating(row)}>
+                    <Button size="small">悬浮触发</Button>
+                  </Popconfirm>
                   {!row.riskConfirmed ? <Button size="small" onClick={() => void confirmRisk(row)}>确认风险</Button> : null}
-                  <Button size="small" onClick={() => void switchStatus(row)}>{row.status === "ACTIVE" ? "停用" : "启用"}</Button>
+                  <Popconfirm
+                    title={row.status === "ACTIVE" ? "确认停用该场景？" : "确认启用该场景？"}
+                    onConfirm={() => void switchStatus(row)}
+                  >
+                    <Button size="small">{row.status === "ACTIVE" ? "停用" : "启用"}</Button>
+                  </Popconfirm>
                 </Space>
               )
             }
@@ -704,9 +781,20 @@ export function JobScenesPage() {
         />
       </Card>
 
-      <Modal title={editing ? "编辑场景" : "新建场景"} open={open} onCancel={() => setOpen(false)} onOk={() => void submitScene()} width={680}>
+      <Modal title={editing ? "编辑场景" : "新建场景"} open={open} onCancel={closeSceneModal} onOk={() => void submitScene()} width={680}>
         <Form form={form} layout="vertical">
-          <Form.Item name="id" label="ID" rules={[{ required: true }]}><InputNumber style={{ width: "100%" }} /></Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={editing ? `场景ID：${editing.id}` : "场景ID将由系统自动生成"}
+          />
+          <Alert
+            type={editing?.riskConfirmed ? "success" : "warning"}
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={editing?.riskConfirmed ? "风险确认：已确认（只读）" : "风险确认：未确认（只读）"}
+          />
           <Form.Item name="name" label="场景名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="pageResourceId" label="页面资源" rules={[{ required: true }]}><Select options={resources.map((r) => ({ label: r.name, value: r.id }))} /></Form.Item>
           <Form.Item name="executionMode" label="执行模式" rules={[{ required: true }]}><Select options={Object.entries(executionLabel).map(([value, label]) => ({ label, value }))} /></Form.Item>
@@ -714,7 +802,6 @@ export function JobScenesPage() {
           <Form.Item name="currentVersion" label="版本" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="nodeCount" label="节点数" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="manualDurationSec" label="人工基准(秒)" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
-          <Form.Item name="riskConfirmed" label="风险确认"><Select options={[{ label: "是", value: true }, { label: "否", value: false }]} /></Form.Item>
         </Form>
       </Modal>
 
@@ -723,7 +810,7 @@ export function JobScenesPage() {
         placement="right"
         width={drawerWidth}
         open={builderOpen}
-        onClose={() => setBuilderOpen(false)}
+        onClose={closeBuilder}
         extra={
           <Space>
             <Button onClick={autoLayoutNodes}>自动排版</Button>
@@ -769,9 +856,15 @@ export function JobScenesPage() {
               <Button size="small" disabled={!builderScene} onClick={() => (builderScene ? void openPreview(builderScene) : undefined)}>
                 打开预览确认
               </Button>
-              <Button size="small" disabled={!builderScene} onClick={() => (builderScene ? void triggerFloating(builderScene) : undefined)}>
-                悬浮按钮触发（新实例）
-              </Button>
+              <Popconfirm
+                title="确认触发悬浮按钮执行？"
+                onConfirm={() => (builderScene ? void triggerFloating(builderScene) : undefined)}
+                disabled={!builderScene}
+              >
+                <Button size="small" disabled={!builderScene}>
+                  悬浮按钮触发（新实例）
+                </Button>
+              </Popconfirm>
             </Space>
           </Card>
 
@@ -883,11 +976,18 @@ export function JobScenesPage() {
                       ) : null}
                     </Form>
 
-                    <Space>
-                      <Button type="primary" onClick={() => void saveSelectedNode()}>保存属性</Button>
-                      <Popconfirm title="确认删除当前节点?" onConfirm={() => void removeSelectedNode()}>
-                        <Button danger>删除节点</Button>
-                      </Popconfirm>
+                    <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                      <Typography.Text type="secondary">修改后请先保存节点属性</Typography.Text>
+                      <Space>
+                        <Button type="primary" onClick={() => void saveSelectedNode()}>
+                          保存属性
+                        </Button>
+                        <Popconfirm title="确认删除当前节点?" onConfirm={() => void removeSelectedNode()}>
+                          <Tooltip title="删除节点">
+                            <Button danger icon={<DeleteOutlined />} aria-label="delete-node" />
+                          </Tooltip>
+                        </Popconfirm>
+                      </Space>
                     </Space>
                   </>
                 )}
@@ -947,7 +1047,14 @@ export function JobScenesPage() {
               {
                 title: "状态",
                 width: 120,
-                render: (_, row) => (row.abnormal ? <Tag color="red">异常</Tag> : <Tag color="green">正常</Tag>)
+                render: (_, row) =>
+                  row.abnormal ? (
+                    <Tooltip title="异常字段已被预览校验拦截，执行时会自动跳过。">
+                      <Tag color="red">异常</Tag>
+                    </Tooltip>
+                  ) : (
+                    <Tag color="green">正常</Tag>
+                  )
               }
             ]}
             rowClassName={(record) => (record.abnormal ? "preview-row-abnormal" : "")}
