@@ -1,6 +1,7 @@
 ﻿import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { configCenterService } from "../../services/configCenterService";
 import type { LifecycleState, PreprocessorDefinition } from "../../types";
 
@@ -25,7 +26,7 @@ const categoryLabel: Record<PreprocessorDefinition["category"], string> = {
   JSON: "JSON"
 };
 
-export function PreprocessorsPage() {
+export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<PreprocessorDefinition[]>([]);
   const [open, setOpen] = useState(false);
@@ -111,10 +112,14 @@ export function PreprocessorsPage() {
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>预处理器中心</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        统一维护规则和作业共用的数据转换逻辑，优先使用内置能力，脚本能力仅作受控增强。
-      </Typography.Paragraph>
+      {!embedded ? (
+        <>
+          <Typography.Title level={4}>预处理器中心</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            统一维护规则和作业共用的数据转换逻辑，优先使用内置能力，脚本能力仅作受控增强。
+          </Typography.Paragraph>
+        </>
+      ) : null}
 
       <Card
         extra={
@@ -143,7 +148,7 @@ export function PreprocessorsPage() {
             {
               title: "状态",
               width: 100,
-              render: (_, row) => <Tag color={statusColor[row.status]}>{row.status}</Tag>
+              render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag>
             },
             { title: "更新时间", dataIndex: "updatedAt", width: 180 },
             {
@@ -195,7 +200,7 @@ export function PreprocessorsPage() {
             />
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select options={["DRAFT", "ACTIVE", "DISABLED", "EXPIRED"].map((v) => ({ label: v, value: v }))} />
+            <Select options={lifecycleOptions} />
           </Form.Item>
           <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请输入组织" }]}>
             <Input />

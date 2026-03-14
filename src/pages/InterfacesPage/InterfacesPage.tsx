@@ -1,17 +1,159 @@
-import { Button, Card, Col, Drawer, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Drawer,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Row,
+  Segmented,
+  Select,
+  Space,
+  Steps,
+  Table,
+  Tabs,
+  Tag,
+  Typography
+} from "antd";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { useInterfacesPageModel } from "./useInterfacesPageModel";
-import { defaultOutputParam, DebugEnv, InputTabKey, statusColor, StatusFilter, tabLabels, valueTypeOptions } from "./interfacesPageShared";
-import type { ApiInputParam, ApiOutputParam, ApiValueType, InterfaceDefinition } from "../../types";
+import {
+  ApiRegisterForm,
+  DebugEnv,
+  InputTabKey,
+  defaultOutputParam,
+  statusColor,
+  tabLabels,
+  valueTypeOptions,
+  type StatusFilter
+} from "./interfacesPageShared";
+import type { ApiOutputParam, ApiValueType, InterfaceDefinition } from "../../types";
+
+const wizardSteps = ["选用途", "基础信息", "参数示例", "在线测试", "保存"];
 
 export function InterfacesPage() {
-  const { holder, statusFilter, setStatusFilter, openCreate, loading, filteredRows, openEdit, openDebug, switchStatus, editing, drawerWidth, drawerOpen, closeDrawer, submit, form, inputTab, setInputTab, parseBodyTemplate, addInputRow, inputColumns, inputConfig, addOutputRow, outputSampleJson, setOutputSampleJson, parseOutputSample, outputConfig, updateOutputRow, openOutputProperty, removeOutputRow, propertyOpen, setPropertyOpen, saveOutputProperty, setPropertyRows, propertyRows, debugTarget, debugOpen, setDebugOpen, runDebug, debugEnv, setDebugEnv, debugPayload, setDebugPayload, debugResult } = useInterfacesPageModel();
+  const [searchParams] = useSearchParams();
+  const ownerOrgFilter = searchParams.get("ownerOrgId");
+  const quickAction = searchParams.get("action");
+  const useCase = searchParams.get("useCase");
+  const autoOpenCreateRef = useRef(false);
+  const [wizardStep, setWizardStep] = useState(0);
+
+  const {
+    holder,
+    statusFilter,
+    setStatusFilter,
+    openCreate,
+    loading,
+    filteredRows,
+    openEdit,
+    openClone,
+    openDebug,
+    openDebugDraft,
+    switchStatus,
+    editing,
+    drawerWidth,
+    drawerOpen,
+    closeDrawer,
+    submit,
+    form,
+    inputTab,
+    setInputTab,
+    parseBodyTemplate,
+    addInputRow,
+    inputColumns,
+    inputConfig,
+    addOutputRow,
+    outputSampleJson,
+    setOutputSampleJson,
+    parseOutputSample,
+    outputConfig,
+    updateOutputRow,
+    openOutputProperty,
+    removeOutputRow,
+    propertyOpen,
+    setPropertyOpen,
+    saveOutputProperty,
+    setPropertyRows,
+    propertyRows,
+    debugTarget,
+    debugOpen,
+    setDebugOpen,
+    runDebug,
+    debugEnv,
+    setDebugEnv,
+    debugPayload,
+    setDebugPayload,
+    debugResult
+  } = useInterfacesPageModel();
+
+  const visibleRows = useMemo(() => {
+    if (!ownerOrgFilter) {
+      return filteredRows;
+    }
+    return filteredRows.filter((item) => item.ownerOrgId === ownerOrgFilter);
+  }, [filteredRows, ownerOrgFilter]);
+
+  useEffect(() => {
+    if (quickAction !== "create" || autoOpenCreateRef.current) {
+      return;
+    }
+    autoOpenCreateRef.current = true;
+    openCreate({
+      ownerOrgId: ownerOrgFilter ?? "branch-east",
+      name: "",
+      description: useCase ?? ""
+    });
+  }, [openCreate, ownerOrgFilter, quickAction, useCase]);
+
+  useEffect(() => {
+    if (drawerOpen) {
+      setWizardStep(0);
+    }
+  }, [drawerOpen]);
+
+  async function goNextStep() {
+    if (wizardStep === 0) {
+      await form.validateFields(["name", "description", "method"]);
+    }
+    if (wizardStep === 1) {
+      await form.validateFields(["testPath", "prodPath", "timeoutMs", "retryTimes", "status", "ownerOrgId"]);
+    }
+    setWizardStep((prev) => Math.min(prev + 1, wizardSteps.length - 1));
+  }
+
+  function useTemplateCreate() {
+    openCreate({
+      ownerOrgId: ownerOrgFilter ?? "branch-east",
+      name: "客户信息查询模板",
+      description: "用于表单辅助录入的通用查询接口模板。",
+      method: "POST",
+      testPath: "/test/customer/profile/query",
+      prodPath: "/customer/profile/query"
+    });
+  }
+
   return (
     <div>
       {holder}
       <Typography.Title level={4}>API注册</Typography.Title>
       <Typography.Paragraph type="secondary">
-        API注册统一复用于智能提示与智能作业。支持测试/生产路径分离、入参四分栏配置、Body/出参 JSON 解析及列表调试。
+        保留 API注册 术语，主流程改为五步向导：选用途 → 填基础信息 → 填参数示例 → 在线测试 → 保存。
       </Typography.Paragraph>
+      {ownerOrgFilter ? (
+        <Alert
+          showIcon
+          type="info"
+          style={{ marginBottom: 12 }}
+          message={`已按机构过滤：${ownerOrgFilter}`}
+          description="该过滤来自页面管理详情中的“查看关联 API”快捷动作。"
+        />
+      ) : null}
 
       <Card
         extra={
@@ -27,8 +169,9 @@ export function InterfacesPage() {
                 { label: "失效", value: "EXPIRED" }
               ]}
             />
-            <Button type="primary" onClick={openCreate}>
-              新建API注册
+            <Button onClick={useTemplateCreate}>从模板创建</Button>
+            <Button type="primary" onClick={() => openCreate()}>
+              新建 API注册
             </Button>
           </Space>
         }
@@ -36,10 +179,11 @@ export function InterfacesPage() {
         <Table<InterfaceDefinition>
           rowKey="id"
           loading={loading}
-          dataSource={filteredRows}
-          pagination={{ pageSize: 6 }}
+          dataSource={visibleRows}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             { title: "API名称", dataIndex: "name", width: 180 },
+            { title: "接口用途", dataIndex: "description", width: 220 },
             {
               title: "方法与路径",
               width: 320,
@@ -58,23 +202,35 @@ export function InterfacesPage() {
                 </Space>
               )
             },
-            { title: "入参概览", dataIndex: "paramSourceSummary", width: 230 },
-            { title: "出参路径", dataIndex: "responsePath", width: 180 },
+            {
+              title: "引用关系",
+              width: 240,
+              render: (_, row) => (
+                <Space size={[4, 4]} wrap>
+                  <Tag>{`页面(${row.ownerOrgId})`}</Tag>
+                  <Tag>规则(2)</Tag>
+                  <Tag>作业(1)</Tag>
+                </Space>
+              )
+            },
             {
               title: "状态",
               width: 100,
-              render: (_, row) => <Tag color={statusColor[row.status]}>{row.status}</Tag>
+              render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag>
             },
             {
               title: "操作",
-              width: 260,
+              width: 320,
               render: (_, row) => (
                 <Space>
                   <Button size="small" onClick={() => openEdit(row)}>
                     编辑
                   </Button>
+                  <Button size="small" onClick={() => openClone(row)}>
+                    复制创建
+                  </Button>
                   <Button size="small" onClick={() => openDebug(row)}>
-                    调试
+                    在线测试
                   </Button>
                   <Button size="small" onClick={() => void switchStatus(row)}>
                     {row.status === "ACTIVE" ? "停用" : "启用"}
@@ -87,7 +243,7 @@ export function InterfacesPage() {
       </Card>
 
       <Drawer
-        title={editing ? `编辑API注册：${editing.name}` : "新建API注册"}
+        title={editing ? `编辑 API注册：${editing.name}` : "新建 API注册"}
         placement="right"
         width={drawerWidth}
         open={drawerOpen}
@@ -95,65 +251,104 @@ export function InterfacesPage() {
         destroyOnClose
         extra={
           <Space>
-            <Button onClick={closeDrawer}>取消</Button>
-            <Button type="primary" onClick={() => void submit()}>
-              保存接口
+            <Button onClick={() => setWizardStep((prev) => Math.max(prev - 1, 0))} disabled={wizardStep === 0}>
+              上一步
             </Button>
+            {wizardStep < wizardSteps.length - 1 ? (
+              <Button type="primary" onClick={() => void goNextStep()}>
+                下一步
+              </Button>
+            ) : (
+              <Button type="primary" onClick={() => void submit()}>
+                保存接口
+              </Button>
+            )}
           </Space>
         }
       >
-        <Form form={form} layout="vertical">
-          <Row gutter={12}>
-            <Col xs={24} lg={9}>
-              <Card title="基本信息" style={{ marginBottom: 12 }}>
-                <Form.Item name="id" label="ID" rules={[{ required: true, message: "请输入 ID" }]}>
-                  <InputNumber style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
-                  <Input maxLength={128} />
-                </Form.Item>
-                <Form.Item name="description" label="描述" rules={[{ required: true, message: "请输入描述" }]}>
-                  <Input.TextArea rows={3} maxLength={300} />
-                </Form.Item>
-                <Form.Item name="method" label="方法" rules={[{ required: true, message: "请选择方法" }]}>
-                  <Select options={["GET", "POST", "PUT", "DELETE"].map((v) => ({ label: v, value: v }))} />
-                </Form.Item>
-                <Form.Item name="testPath" label="测试环境路径" rules={[{ required: true, message: "请输入测试环境路径" }]}>
-                  <Input placeholder="如 /test/risk/score/query" />
-                </Form.Item>
-                <Form.Item name="prodPath" label="生产环境路径" rules={[{ required: true, message: "请输入生产环境路径" }]}>
-                  <Input placeholder="如 /risk/score/query" />
-                </Form.Item>
-                <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true, message: "请输入超时" }]}>
-                  <InputNumber min={1} max={5000} style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="retryTimes" label="重试次数" rules={[{ required: true, message: "请输入重试次数" }]}>
-                  <InputNumber min={0} max={3} style={{ width: "100%" }} />
-                </Form.Item>
-                <Form.Item name="maskSensitive" label="敏感字段脱敏" valuePropName="checked">
-                  <Switch checkedChildren="开启" unCheckedChildren="关闭" />
-                </Form.Item>
-                <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-                  <Select
-                    options={[
-                      { label: "DRAFT", value: "DRAFT" },
-                      { label: "ACTIVE", value: "ACTIVE" },
-                      { label: "DISABLED", value: "DISABLED" },
-                      { label: "EXPIRED", value: "EXPIRED" }
-                    ]}
-                  />
-                </Form.Item>
-                <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请输入组织范围" }]}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="currentVersion" label="当前版本" rules={[{ required: true, message: "请输入版本" }]}>
-                  <InputNumber min={1} style={{ width: "100%" }} />
-                </Form.Item>
-              </Card>
-            </Col>
+        <Steps
+          current={wizardStep}
+          size="small"
+          style={{ marginBottom: 12 }}
+          items={wizardSteps.map((title) => ({ title }))}
+        />
 
-            <Col xs={24} lg={15}>
-              <Card title="输入参数配置" style={{ marginBottom: 12 }}>
+        <Form form={form} layout="vertical">
+          {wizardStep === 0 ? (
+            <Card title="步骤 1：选用途" size="small">
+              <Typography.Paragraph type="secondary">
+                先明确接口用途和调用方式，后续再补参数和测试。可先从模板或复制已有 API 创建。
+              </Typography.Paragraph>
+              <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
+                <Input maxLength={128} />
+              </Form.Item>
+              <Form.Item name="description" label="用途说明" rules={[{ required: true, message: "请输入用途说明" }]}>
+                <Input.TextArea rows={3} maxLength={300} />
+              </Form.Item>
+              <Form.Item name="method" label="调用方式" rules={[{ required: true, message: "请选择方法" }]}>
+                <Select options={["GET", "POST", "PUT", "DELETE"].map((v) => ({ label: v, value: v }))} />
+              </Form.Item>
+              <Space>
+                <Button onClick={useTemplateCreate}>从常用模板创建</Button>
+              </Space>
+            </Card>
+          ) : null}
+
+          {wizardStep === 1 ? (
+            <Card title="步骤 2：填基础信息" size="small">
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="id" label="ID" rules={[{ required: true, message: "请输入 ID" }]}>
+                    <InputNumber style={{ width: "100%" }} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="ownerOrgId" label="机构范围" rules={[{ required: true, message: "请输入机构范围" }]}>
+                    <Input />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="testPath" label="测试环境路径" rules={[{ required: true, message: "请输入测试路径" }]}>
+                    <Input placeholder="如 /test/risk/score/query" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="prodPath" label="生产环境路径" rules={[{ required: true, message: "请输入生产路径" }]}>
+                    <Input placeholder="如 /risk/score/query" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={12}>
+                <Col span={8}>
+                  <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true, message: "请输入超时" }]}>
+                    <InputNumber min={1} max={5000} style={{ width: "100%" }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="retryTimes" label="重试次数" rules={[{ required: true, message: "请输入重试次数" }]}>
+                    <InputNumber min={0} max={3} style={{ width: "100%" }} />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item name="currentVersion" label="版本" rules={[{ required: true, message: "请输入版本" }]}>
+                    <InputNumber min={1} style={{ width: "100%" }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+                <Select options={lifecycleOptions} />
+              </Form.Item>
+              <Form.Item name="maskSensitive" label="敏感字段脱敏" valuePropName="checked">
+                <Select options={[{ label: "开启", value: true }, { label: "关闭", value: false }]} />
+              </Form.Item>
+            </Card>
+          ) : null}
+
+          {wizardStep === 2 ? (
+            <Space direction="vertical" style={{ width: "100%" }} size={12}>
+              <Card title="步骤 3：填参数示例" size="small">
                 <Tabs
                   activeKey={inputTab}
                   onChange={(key) => setInputTab(key as InputTabKey)}
@@ -178,15 +373,7 @@ export function InterfacesPage() {
                           </Button>
                         )}
 
-                        <Table<ApiInputParam>
-                          rowKey="id"
-                          pagination={false}
-                          size="small"
-                          columns={inputColumns(tab)}
-                          dataSource={inputConfig[tab]}
-                          scroll={{ x: 960 }}
-                          locale={{ emptyText: "暂无参数，点击上方按钮添加" }}
-                        />
+                        <Table size="small" rowKey="id" pagination={false} columns={inputColumns(tab)} dataSource={inputConfig[tab]} />
                       </div>
                     )
                   }))}
@@ -194,16 +381,14 @@ export function InterfacesPage() {
               </Card>
 
               <Card
-                title="输出参数配置"
+                title="返回参数示例"
+                size="small"
                 extra={
                   <Space>
                     <Button onClick={addOutputRow}>新增出参</Button>
                   </Space>
                 }
               >
-                <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-                  支持直接解析返回 JSON，也支持手动补充。对象/数组类型可继续细化属性。
-                </Typography.Paragraph>
                 <Input.TextArea
                   rows={5}
                   value={outputSampleJson}
@@ -218,9 +403,8 @@ export function InterfacesPage() {
                   rowKey="id"
                   pagination={false}
                   size="small"
-                  scroll={{ x: 980 }}
                   dataSource={outputConfig}
-                  locale={{ emptyText: "暂无出参，点击新增或解析 JSON" }}
+                  scroll={{ x: 980 }}
                   columns={[
                     {
                       title: "字段名",
@@ -240,10 +424,7 @@ export function InterfacesPage() {
                       title: "描述",
                       width: 160,
                       render: (_, row) => (
-                        <Input
-                          value={row.description}
-                          onChange={(event) => updateOutputRow(row.id, { description: event.target.value })}
-                        />
+                        <Input value={row.description} onChange={(event) => updateOutputRow(row.id, { description: event.target.value })} />
                       )
                     },
                     {
@@ -283,18 +464,36 @@ export function InterfacesPage() {
                   ]}
                 />
               </Card>
-            </Col>
-          </Row>
+            </Space>
+          ) : null}
+
+          {wizardStep === 3 ? (
+            <Card title="步骤 4：在线测试" size="small">
+              <Typography.Paragraph type="secondary">
+                建议保存前先执行一次在线测试，确认请求路径、入参与返回结构满足当前用途。
+              </Typography.Paragraph>
+              <Space>
+                <Button type="primary" onClick={openDebugDraft}>
+                  使用当前草稿在线测试
+                </Button>
+                {editing ? (
+                  <Button onClick={() => openDebug(editing)}>
+                    使用已保存版本测试
+                  </Button>
+                ) : null}
+              </Space>
+            </Card>
+          ) : null}
+
+          {wizardStep === 4 ? (
+            <Card title="步骤 5：保存前确认" size="small">
+              <DescriptionsSummary form={form} outputCount={outputConfig.length} />
+            </Card>
+          ) : null}
         </Form>
       </Drawer>
 
-      <Modal
-        title="细化对象属性"
-        open={propertyOpen}
-        width={900}
-        onCancel={() => setPropertyOpen(false)}
-        onOk={saveOutputProperty}
-      >
+      <Modal title="细化对象属性" open={propertyOpen} width={900} onCancel={() => setPropertyOpen(false)} onOk={saveOutputProperty}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
           在这里维护对象或数组下的子字段。
         </Typography.Paragraph>
@@ -315,9 +514,7 @@ export function InterfacesPage() {
                 <Input
                   value={row.name}
                   onChange={(event) =>
-                    setPropertyRows((prev) =>
-                      prev.map((item) => (item.id === row.id ? { ...item, name: event.target.value } : item))
-                    )
+                    setPropertyRows((prev) => prev.map((item) => (item.id === row.id ? { ...item, name: event.target.value } : item)))
                   }
                 />
               )
@@ -329,9 +526,7 @@ export function InterfacesPage() {
                 <Input
                   value={row.path}
                   onChange={(event) =>
-                    setPropertyRows((prev) =>
-                      prev.map((item) => (item.id === row.id ? { ...item, path: event.target.value } : item))
-                    )
+                    setPropertyRows((prev) => prev.map((item) => (item.id === row.id ? { ...item, path: event.target.value } : item)))
                   }
                 />
               )
@@ -387,15 +582,15 @@ export function InterfacesPage() {
       </Modal>
 
       <Modal
-        title={debugTarget ? `API调试：${debugTarget.name}` : "API调试"}
+        title={debugTarget ? `API在线测试：${debugTarget.name}` : "API在线测试"}
         open={debugOpen}
         width={980}
         onCancel={() => setDebugOpen(false)}
         onOk={runDebug}
-        okText="执行调试"
+        okText="执行测试"
       >
         <Space direction="vertical" style={{ width: "100%" }}>
-          <Card size="small" title="调试环境">
+          <Card size="small" title="测试环境">
             <Space>
               <Segmented
                 value={debugEnv}
@@ -411,16 +606,9 @@ export function InterfacesPage() {
               </Typography.Text>
             </Space>
           </Card>
-
           <Card size="small" title="请求入参(JSON)">
-            <Input.TextArea
-              rows={8}
-              value={debugPayload}
-              onChange={(event) => setDebugPayload(event.target.value)}
-              placeholder="输入调试请求 JSON"
-            />
+            <Input.TextArea rows={8} value={debugPayload} onChange={(event) => setDebugPayload(event.target.value)} />
           </Card>
-
           {debugResult ? (
             <Row gutter={12}>
               <Col span={12}>
@@ -429,14 +617,7 @@ export function InterfacesPage() {
                     耗时：{debugResult.latencyMs} ms
                   </Typography.Paragraph>
                   <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                    {JSON.stringify(
-                      {
-                        path: debugResult.requestPath,
-                        body: debugResult.requestBody
-                      },
-                      null,
-                      2
-                    )}
+                    {JSON.stringify({ path: debugResult.requestPath, body: debugResult.requestBody }, null, 2)}
                   </pre>
                 </Card>
               </Col>
@@ -447,10 +628,32 @@ export function InterfacesPage() {
               </Col>
             </Row>
           ) : (
-            <Typography.Text type="secondary">点击“执行调试”后会展示请求和响应结果。</Typography.Text>
+            <Typography.Text type="secondary">点击“执行测试”后会展示请求和响应结果。</Typography.Text>
           )}
         </Space>
       </Modal>
     </div>
+  );
+}
+
+function DescriptionsSummary({ form, outputCount }: { form: any; outputCount: number }) {
+  const values = form.getFieldsValue() as Partial<ApiRegisterForm>;
+  return (
+    <Space direction="vertical" style={{ width: "100%" }}>
+      <Alert
+        showIcon
+        type="info"
+        message="确认后保存"
+        description="保存后会在列表中展示引用关系，并进入发布与灰度流程。"
+      />
+      <Space wrap>
+        <Tag color="blue">{values.name || "未命名接口"}</Tag>
+        <Tag>{values.method || "POST"}</Tag>
+        <Tag>{values.ownerOrgId || "-"}</Tag>
+        <Tag color="purple">出参字段 {outputCount}</Tag>
+      </Space>
+      <Typography.Text type="secondary">测试路径：{values.testPath || "-"}</Typography.Text>
+      <Typography.Text type="secondary">生产路径：{values.prodPath || "-"}</Typography.Text>
+    </Space>
   );
 }

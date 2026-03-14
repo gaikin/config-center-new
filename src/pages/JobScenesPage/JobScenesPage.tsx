@@ -19,6 +19,9 @@ import {
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { Background, Controls, MiniMap, ReactFlow, ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
+import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { useJobScenesPageModel } from "./useJobScenesPageModel";
 import { executionLabel, nodeTypeLabel, StatusFilter } from "./jobScenesPageShared";
 import type { JobSceneDefinition, JobScenePreviewField } from "../../types";
@@ -74,15 +77,104 @@ export function JobScenesPage() {
     previewExecuting,
     executePreview,
     drawerWidth,
-    statusColor
+    statusColor,
+    autoOpenCreateRef
   } = useJobScenesPageModel();
+  const [searchParams] = useSearchParams();
+  const pageResourceFilter = Number(searchParams.get("pageResourceId") ?? "");
+  const executionModeParam = searchParams.get("executionMode");
+  const sceneNameParam = searchParams.get("sceneName");
+  const quickAction = searchParams.get("action");
+  const hasPageFilter = Number.isFinite(pageResourceFilter) && pageResourceFilter > 0;
+  const presetExecutionMode = (
+    executionModeParam === "AUTO_WITHOUT_PROMPT" ||
+    executionModeParam === "AUTO_AFTER_PROMPT" ||
+    executionModeParam === "PREVIEW_THEN_EXECUTE" ||
+    executionModeParam === "FLOATING_BUTTON"
+  )
+    ? executionModeParam
+    : undefined;
+
+  useEffect(() => {
+    if (!hasPageFilter || quickAction !== "create" || autoOpenCreateRef.current) {
+      return;
+    }
+    autoOpenCreateRef.current = true;
+    openCreate({
+      pageResourceId: pageResourceFilter,
+      executionMode: presetExecutionMode,
+      name: sceneNameParam ?? undefined
+    });
+  }, [autoOpenCreateRef, hasPageFilter, openCreate, pageResourceFilter, presetExecutionMode, quickAction, sceneNameParam]);
+
+  const visibleRows = useMemo(() => {
+    if (!hasPageFilter) {
+      return filteredRows;
+    }
+    return filteredRows.filter((item) => item.pageResourceId === pageResourceFilter);
+  }, [filteredRows, hasPageFilter, pageResourceFilter]);
+
+  const sceneCards = [
+    {
+      key: "query-fill",
+      title: "查询并回填",
+      desc: "适合根据页面字段查外部数据并自动回填。",
+      mode: "AUTO_AFTER_PROMPT" as const
+    },
+    {
+      key: "multi-assist",
+      title: "多字段辅助录入",
+      desc: "适合录入前批量补全、格式修正和风险标记。",
+      mode: "FLOATING_BUTTON" as const
+    },
+    {
+      key: "preview-confirm",
+      title: "预览确认后执行",
+      desc: "先预览拟写入值，再确认执行，降低误操作风险。",
+      mode: "PREVIEW_THEN_EXECUTE" as const
+    }
+  ];
   return (
     <div>
       {holder}
       <Typography.Title level={4}>智能作业</Typography.Title>
       <Typography.Paragraph type="secondary">
-        智能作业主链路：场景建模、节点编排、执行方式、预览确认与失败回退，确保执行留痕可追溯。
+        从页面上下文进入场景配置，优先表达业务场景与触发方式，再进入高级编排与节点细节。
       </Typography.Paragraph>
+      {hasPageFilter ? (
+        <Alert
+          showIcon
+          type="info"
+          style={{ marginBottom: 12 }}
+          message={`已按页面 ID ${pageResourceFilter} 过滤场景`}
+          description="你可以直接新建该页面的作业配置，默认会自动带入页面。"
+        />
+      ) : null}
+
+      <Card title="场景类型（业务视角）" style={{ marginBottom: 12 }}>
+        <Space size={[8, 8]} wrap>
+          {sceneCards.map((item) => (
+            <Card key={item.key} size="small" style={{ width: 300 }} title={item.title}>
+              <Space direction="vertical">
+                <Typography.Text type="secondary">{item.desc}</Typography.Text>
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() =>
+                    openCreate({
+                      pageResourceId: hasPageFilter ? pageResourceFilter : undefined,
+                      executionMode: item.mode,
+                      name: sceneNameParam ?? `${item.title}-${new Date().getTime()}`
+                    })
+                  }
+                >
+                  按该场景创建
+                </Button>
+              </Space>
+            </Card>
+          ))}
+        </Space>
+      </Card>
 
       <Card
         extra={
@@ -99,7 +191,18 @@ export function JobScenesPage() {
               ]}
             />
             <Tooltip title="新建场景">
-              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} aria-label="create-scene" />
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() =>
+                  openCreate({
+                    pageResourceId: hasPageFilter ? pageResourceFilter : undefined,
+                    executionMode: presetExecutionMode,
+                    name: sceneNameParam ?? undefined
+                  })
+                }
+                aria-label="create-scene"
+              />
             </Tooltip>
           </Space>
         }
@@ -107,7 +210,7 @@ export function JobScenesPage() {
         <Table<JobSceneDefinition>
           rowKey="id"
           loading={loading}
-          dataSource={filteredRows}
+          dataSource={visibleRows}
           pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 10, 20] }}
           columns={[
             { title: "场景名称", dataIndex: "name", width: 220 },
@@ -135,7 +238,7 @@ export function JobScenesPage() {
             { title: "节点数", dataIndex: "nodeCount", width: 80 },
             { title: "人工基准(秒)", dataIndex: "manualDurationSec", width: 120 },
             { title: "风险确认", width: 100, render: (_, row) => row.riskConfirmed ? <Tag color="green">已确认</Tag> : <Tag color="orange">待确认</Tag> },
-            { title: "状态", width: 100, render: (_, row) => <Tag color={statusColor[row.status]}>{row.status}</Tag> },
+            { title: "状态", width: 100, render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag> },
             {
               title: "操作",
               width: 520,
@@ -175,7 +278,7 @@ export function JobScenesPage() {
           <Form.Item name="name" label="场景名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="pageResourceId" label="页面资源" rules={[{ required: true }]}><Select options={resources.map((r) => ({ label: r.name, value: r.id }))} /></Form.Item>
           <Form.Item name="executionMode" label="执行模式" rules={[{ required: true }]}><Select options={Object.entries(executionLabel).map(([value, label]) => ({ label, value }))} /></Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true }]}><Select options={["DRAFT", "ACTIVE", "DISABLED", "EXPIRED"].map((v) => ({ label: v, value: v }))} /></Form.Item>
+          <Form.Item name="status" label="状态" rules={[{ required: true }]}><Select options={lifecycleOptions} /></Form.Item>
           <Form.Item name="currentVersion" label="版本" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="nodeCount" label="节点数" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="manualDurationSec" label="人工基准(秒)" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>

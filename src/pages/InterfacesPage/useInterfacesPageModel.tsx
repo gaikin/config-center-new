@@ -88,18 +88,25 @@ export function useInterfacesPageModel() {
     setOutputSampleJson("{\n  \"data\": {\n    \"score\": 90\n  }\n}");
   }
 
-  function openCreate() {
+  function openCreate(preset?: {
+    ownerOrgId?: string;
+    name?: string;
+    description?: string;
+    method?: ApiRegisterForm["method"];
+    testPath?: string;
+    prodPath?: string;
+  }) {
     setEditing(null);
     resetFormState();
     form.setFieldsValue({
       id: Date.now(),
-      name: "",
-      description: "",
-      method: "POST",
-      testPath: "",
-      prodPath: "",
+      name: preset?.name ?? "",
+      description: preset?.description ?? "",
+      method: preset?.method ?? "POST",
+      testPath: preset?.testPath ?? "",
+      prodPath: preset?.prodPath ?? "",
       status: "DRAFT",
-      ownerOrgId: "branch-east",
+      ownerOrgId: preset?.ownerOrgId ?? "branch-east",
       currentVersion: 1,
       timeoutMs: 3000,
       retryTimes: 1,
@@ -125,6 +132,29 @@ export function useInterfacesPageModel() {
       status: row.status,
       ownerOrgId: row.ownerOrgId,
       currentVersion: row.currentVersion,
+      timeoutMs: row.timeoutMs,
+      retryTimes: row.retryTimes,
+      maskSensitive: row.maskSensitive,
+      bodyTemplateJson: row.bodyTemplateJson
+    });
+    setDrawerOpen(true);
+  }
+
+  function openClone(row: InterfaceDefinition) {
+    setEditing(null);
+    setInputConfig(normalizeInputConfig(row.inputConfigJson));
+    setOutputConfig(normalizeOutputConfig(row.outputConfigJson));
+    setOutputSampleJson("{\n  \"data\": {}\n}");
+    form.setFieldsValue({
+      id: Date.now(),
+      name: `${row.name}-副本`,
+      description: row.description,
+      method: row.method,
+      testPath: row.testPath,
+      prodPath: row.prodPath,
+      status: "DRAFT",
+      ownerOrgId: row.ownerOrgId,
+      currentVersion: 1,
       timeoutMs: row.timeoutMs,
       retryTimes: row.retryTimes,
       maskSensitive: row.maskSensitive,
@@ -296,6 +326,36 @@ export function useInterfacesPageModel() {
     setDebugOpen(true);
   }
 
+  function openDebugDraft() {
+    const values = form.getFieldsValue() as Partial<ApiRegisterForm>;
+    const target: InterfaceDefinition = {
+      id: values.id ?? Date.now(),
+      name: values.name?.trim() || "未命名接口",
+      description: values.description?.trim() || "",
+      method: values.method ?? "POST",
+      testPath: values.testPath?.trim() || "/test/path",
+      prodPath: values.prodPath?.trim() || "/prod/path",
+      url: values.prodPath?.trim() || values.testPath?.trim() || "/prod/path",
+      status: values.status ?? "DRAFT",
+      ownerOrgId: values.ownerOrgId ?? "branch-east",
+      currentVersion: values.currentVersion ?? 1,
+      timeoutMs: values.timeoutMs ?? 3000,
+      retryTimes: values.retryTimes ?? 1,
+      bodyTemplateJson: values.bodyTemplateJson?.trim() ?? "{}",
+      inputConfigJson: JSON.stringify(inputConfig),
+      outputConfigJson: JSON.stringify(outputConfig),
+      paramSourceSummary: buildInputSummary(inputConfig),
+      responsePath: getResponsePath(outputConfig),
+      maskSensitive: values.maskSensitive ?? true,
+      updatedAt: new Date().toISOString()
+    };
+    setDebugTarget(target);
+    setDebugEnv("TEST");
+    setDebugPayload(target.bodyTemplateJson || "{}");
+    setDebugResult(null);
+    setDebugOpen(true);
+  }
+
   function runDebug() {
     if (!debugTarget) {
       return;
@@ -399,8 +459,8 @@ export function useInterfacesPageModel() {
     drawerWidth, loading, rows, statusFilter, setStatusFilter, drawerOpen, setDrawerOpen, editing, inputTab, setInputTab,
     inputConfig, outputConfig, outputSampleJson, setOutputSampleJson, debugOpen, setDebugOpen, debugTarget, debugEnv, setDebugEnv,
     debugPayload, setDebugPayload, debugResult, propertyOpen, setPropertyOpen, propertyRows, setPropertyRows, form, holder,
-    filteredRows, openCreate, openEdit, closeDrawer, addInputRow, updateInputRow, removeInputRow, parseBodyTemplate, addOutputRow,
-    updateOutputRow, removeOutputRow, openOutputProperty, saveOutputProperty, parseOutputSample, submit, switchStatus, openDebug,
+    filteredRows, openCreate, openEdit, openClone, closeDrawer, addInputRow, updateInputRow, removeInputRow, parseBodyTemplate, addOutputRow,
+    updateOutputRow, removeOutputRow, openOutputProperty, saveOutputProperty, parseOutputSample, submit, switchStatus, openDebug, openDebugDraft,
     runDebug, inputColumns, defaultOutputParam, valueTypeOptions, tabLabels, statusColor
   };
 }

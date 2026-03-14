@@ -1,11 +1,30 @@
-import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Steps, Table, Tag, Tooltip, Typography } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import { useEffect, useMemo, useState } from "react";
+import { lifecycleLabelMap, lifecycleOptions, promptModeLabelMap } from "../../enumLabels";
+import { configCenterService } from "../../services/configCenterService";
 import { RulesPageMode, useRulesPageModel } from "./useRulesPageModel";
 import { InterfaceInputParamDraft, LOGIC_OPERATOR_WIDTH, deriveMachineKeyFromOutputPath, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, operatorOptions, sourceOptions, statusColor, valueTypeOptions } from "./rulesPageShared";
 import { OperandPill, InterfaceInputValueEditor } from "./rulesOperandRenderers";
 import type { RuleDefinition, RuleLogicType, RuleOperandValueType } from "../../types";
 
-export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
+type RulesPageProps = {
+  mode?: RulesPageMode;
+  embedded?: boolean;
+  initialPageResourceId?: number;
+  initialTemplateRuleId?: number;
+  initialSceneId?: number;
+  autoOpenCreate?: boolean;
+};
+
+export function RulesPage({
+  mode = "PAGE_RULE",
+  embedded = false,
+  initialPageResourceId,
+  initialTemplateRuleId,
+  initialSceneId,
+  autoOpenCreate
+}: RulesPageProps) {
   const {
     holder,
     logicDrawerWidth,
@@ -50,9 +69,9 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
     updateInterfaceInputValue,
     updateCondition,
     updateSelectedOperand
-  } = useRulesPageModel(mode);
+  } = useRulesPageModel(mode, { initialPageResourceId, initialTemplateRuleId, initialSceneId, autoOpenCreate });
   const isTemplateMode = mode === "TEMPLATE";
-  const pageTitle = isTemplateMode ? "规则模板中心" : "智能提示";
+  const pageTitle = isTemplateMode ? "模板复用" : "智能提示";
   const pageDescription = isTemplateMode
     ? "沉淀高复用规则模板。模板仅引用公共字段，供业务人员在新建页面规则时快速套用。"
     : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。";
@@ -67,13 +86,96 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
         message: "以页面规则为主，新建时可直接套用模板。",
         description: "模板是快捷来源，不是业务人员的主操作对象；选择模板后会自动带入条件逻辑、提示方式和关闭策略。"
       };
+  const [wizardStep, setWizardStep] = useState(0);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewResult, setPreviewResult] = useState<{ matched: boolean; detail: string } | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setWizardStep(0);
+    setPreviewResult(null);
+  }, [open, editing?.id, isTemplateMode]);
+
+  const stepItems = useMemo(() => {
+    if (isTemplateMode) {
+      return [];
+    }
+    return [{ title: "选页面" }, { title: "改内容" }, { title: "预览" }, { title: "保存" }];
+  }, [isTemplateMode]);
+
+  async function runWizardPreview() {
+    const values = await ruleForm.validateFields([
+      "name",
+      "ruleSetCode",
+      "priority",
+      "promptMode",
+      "closeMode",
+      "hasConfirmButton",
+      "status",
+      "ownerOrgId",
+      ...(ruleForm.getFieldValue("closeMode") === "TIMER_THEN_MANUAL" ? ["closeTimeoutSec"] : []),
+      ...(ruleForm.getFieldValue("hasConfirmButton") ? ["sceneId"] : [])
+    ]);
+
+    setPreviewLoading(true);
+    try {
+      if (editing) {
+        const result = await configCenterService.previewRule(editing.id);
+        setPreviewResult({
+          matched: result.matched,
+          detail: result.detail
+        });
+      } else {
+        setPreviewResult({
+          matched: true,
+          detail: `规则「${values.name}」预览通过：已完成字段完整性检查，可继续保存。`
+        });
+      }
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function handleWizardNext() {
+    if (wizardStep === 0) {
+      await ruleForm.validateFields(["pageResourceId"]);
+      setWizardStep(1);
+      return;
+    }
+    if (wizardStep === 1) {
+      await ruleForm.validateFields([
+        "name",
+        "ruleSetCode",
+        "priority",
+        "promptMode",
+        "closeMode",
+        "hasConfirmButton",
+        "status",
+        "ownerOrgId",
+        ...(ruleForm.getFieldValue("closeMode") === "TIMER_THEN_MANUAL" ? ["closeTimeoutSec"] : []),
+        ...(ruleForm.getFieldValue("hasConfirmButton") ? ["sceneId"] : [])
+      ]);
+      setWizardStep(2);
+      return;
+    }
+    if (wizardStep === 2) {
+      await runWizardPreview();
+      setWizardStep(3);
+      return;
+    }
+    await submitRule();
+  }
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>{pageTitle}</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        {pageDescription}
-      </Typography.Paragraph>
+      {!embedded ? (
+        <>
+          <Typography.Title level={4}>{pageTitle}</Typography.Title>
+          <Typography.Paragraph type="secondary">{pageDescription}</Typography.Paragraph>
+        </>
+      ) : null}
 
       <Card
         extra={
@@ -113,7 +215,12 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
                   }
                 ]),
             { title: "优先级", dataIndex: "priority", width: 90 },
-            { title: "提示模式", dataIndex: "promptMode", width: 100 },
+            {
+              title: "提示模式",
+              dataIndex: "promptMode",
+              width: 100,
+              render: (value: RuleDefinition["promptMode"]) => promptModeLabelMap[value]
+            },
             {
               title: "关闭方式",
               width: 200,
@@ -125,7 +232,7 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
             {
               title: "状态",
               width: 100,
-              render: (_, row) => <Tag color={statusColor[row.status]}>{row.status}</Tag>
+              render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag>
             },
             {
               title: "操作",
@@ -136,7 +243,7 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
                     {isTemplateMode ? "编辑模板" : "编辑基础"}
                   </Button>
                   <Button size="small" onClick={() => void openLogic(row)}>
-                    {isTemplateMode ? "编辑模板条件" : "条件编辑"}
+                    {isTemplateMode ? "编辑模板条件" : "高级条件"}
                   </Button>
                   <Popconfirm
                     title={row.status === "ACTIVE" ? `确认停用该${isTemplateMode ? "模板" : "规则"}？` : `确认启用该${isTemplateMode ? "模板" : "规则"}？`}
@@ -155,8 +262,35 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
         title={modalTitle}
         open={open}
         onCancel={closeRuleModal}
-        onOk={() => void submitRule()}
-        width={680}
+        width={720}
+        footer={
+          isTemplateMode
+            ? [
+                <Button key="cancel" onClick={closeRuleModal}>
+                  取消
+                </Button>,
+                <Button key="save" type="primary" onClick={() => void submitRule()}>
+                  保存
+                </Button>
+              ]
+            : [
+                <Button
+                  key="back"
+                  onClick={() => {
+                    if (wizardStep === 0) {
+                      closeRuleModal();
+                      return;
+                    }
+                    setWizardStep((prev) => Math.max(prev - 1, 0));
+                  }}
+                >
+                  {wizardStep === 0 ? "取消" : "上一步"}
+                </Button>,
+                <Button key="next" type="primary" loading={wizardStep === 2 && previewLoading} onClick={() => void handleWizardNext()}>
+                  {wizardStep === 3 ? "保存规则" : "下一步"}
+                </Button>
+              ]
+        }
       >
         <Form form={ruleForm} layout="vertical">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
@@ -165,116 +299,177 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
           <Form.Item hidden name="ruleScope">
             <Input />
           </Form.Item>
-          {!editing && !isTemplateMode ? (
-            <>
-              <Form.Item
-                name="pageResourceId"
-                label="页面资源"
-                rules={[{ required: true, message: "请选择页面资源" }]}
-              >
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  options={resources.map((item) => ({ label: item.name, value: item.id }))}
-                />
-              </Form.Item>
-              <Form.Item name="templateRuleId" label="快速复用模板">
-                <Select
-                  allowClear
-                  showSearch
-                  placeholder={templates.length > 0 ? "可选：套用已沉淀模板" : "暂无可复用模板"}
-                  optionFilterProp="label"
-                  options={templates.map((item) => ({
-                    label: `${item.name}（${item.ruleSetCode}）`,
-                    value: item.id
-                  }))}
-                  onChange={(value) => applyTemplate(value as number | undefined)}
-                />
-              </Form.Item>
-            </>
-          ) : !isTemplateMode ? (
-            <>
-              <Form.Item
-                name="pageResourceId"
-                label="页面资源"
-                rules={[{ required: true, message: "请选择页面资源" }]}
-              >
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  options={resources.map((item) => ({ label: item.name, value: item.id }))}
-                />
-              </Form.Item>
-              <Form.Item label="来源模板">
-                <Input value={editing?.sourceRuleName ?? "独立规则"} readOnly />
-              </Form.Item>
-            </>
-          ) : (
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-              模板不绑定页面，只能使用公共字段。需要页面特有字段时，请在页面规则里补充。
-            </Typography.Paragraph>
-          )}
-          <Form.Item name="name" label={isTemplateMode ? "模板名称" : "规则名称"} rules={[{ required: true, message: `请输入${isTemplateMode ? "模板" : "规则"}名称` }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="ruleSetCode" label="规则集编码" rules={[{ required: true, message: "请输入规则集编码" }]}>
-            <Input placeholder="如：loan_high_risk_prompt" />
-          </Form.Item>
-          <Form.Item name="priority" label="优先级" rules={[{ required: true }]}>
-            <InputNumber min={1} max={999} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="promptMode" label="提示模式" rules={[{ required: true }]}>
-            <Select options={[{ label: "静默", value: "SILENT" }, { label: "浮窗", value: "FLOATING" }]} />
-          </Form.Item>
-          <Form.Item name="closeMode" label="关闭方式" rules={[{ required: true }]}>
-            <Select options={Object.entries(closeModeLabel).map(([value, label]) => ({ label, value }))} />
-          </Form.Item>
-          <Form.Item noStyle shouldUpdate>
-            {() =>
-              ruleForm.getFieldValue("closeMode") === "TIMER_THEN_MANUAL" ? (
+
+          {!isTemplateMode ? <Steps current={wizardStep} size="small" items={stepItems} style={{ marginBottom: 12 }} /> : null}
+
+          {isTemplateMode || wizardStep === 0 ? (
+            !editing && !isTemplateMode ? (
+              <>
                 <Form.Item
-                  name="closeTimeoutSec"
-                  label="关闭超时(秒)"
-                  rules={[
-                    { required: true, message: "超时后关闭必须填写关闭超时时间" },
-                    { type: "number", min: 1, message: "关闭超时时间需大于0" }
-                  ]}
+                  name="pageResourceId"
+                  label="页面资源"
+                  rules={[{ required: true, message: "请选择页面资源" }]}
                 >
-                  <InputNumber min={1} style={{ width: "100%" }} />
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    options={resources.map((item) => ({ label: item.name, value: item.id }))}
+                  />
                 </Form.Item>
-              ) : null
-            }
-          </Form.Item>
-          <Form.Item name="hasConfirmButton" label="确认按钮">
-            <Select options={[{ label: "开启", value: true }, { label: "关闭", value: false }]} />
-          </Form.Item>
-          <Form.Item noStyle shouldUpdate>
-            {() =>
-              ruleForm.getFieldValue("hasConfirmButton") ? (
-                <Form.Item name="sceneId" label="关联作业场景">
-                  <Select allowClear options={scenes.map((scene) => ({ label: scene.name, value: scene.id }))} />
+                <Form.Item name="templateRuleId" label="场景模板">
+                  <Select
+                    allowClear
+                    showSearch
+                    placeholder={templates.length > 0 ? "可选：套用已沉淀模板" : "暂无可复用模板"}
+                    optionFilterProp="label"
+                    options={templates.map((item) => ({
+                      label: `${item.name}（${item.ruleSetCode}）`,
+                      value: item.id
+                    }))}
+                    onChange={(value) => applyTemplate(value as number | undefined)}
+                  />
                 </Form.Item>
-              ) : null
-            }
-          </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true }]}>
-            <Select options={["DRAFT", "ACTIVE", "DISABLED", "EXPIRED"].map((value) => ({ label: value, value }))} />
-          </Form.Item>
-          <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
+              </>
+            ) : !isTemplateMode ? (
+              <>
+                <Form.Item
+                  name="pageResourceId"
+                  label="页面资源"
+                  rules={[{ required: true, message: "请选择页面资源" }]}
+                >
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    options={resources.map((item) => ({ label: item.name, value: item.id }))}
+                  />
+                </Form.Item>
+                <Form.Item label="来源模板">
+                  <Input value={editing?.sourceRuleName ?? "独立规则"} readOnly />
+                </Form.Item>
+              </>
+            ) : (
+              <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                模板不绑定页面，只能使用公共字段。需要页面特有字段时，请在页面规则里补充。
+              </Typography.Paragraph>
+            )
+          ) : null}
+
+          {isTemplateMode || wizardStep === 1 ? (
+            <>
+              <Form.Item name="name" label={isTemplateMode ? "模板名称" : "规则名称"} rules={[{ required: true, message: `请输入${isTemplateMode ? "模板" : "规则"}名称` }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="ruleSetCode" label="规则集编码" rules={[{ required: true, message: "请输入规则集编码" }]}>
+                <Input placeholder="如：loan_high_risk_prompt" />
+              </Form.Item>
+              <Form.Item name="priority" label="优先级" rules={[{ required: true }]}>
+                <InputNumber min={1} max={999} style={{ width: "100%" }} />
+              </Form.Item>
+              <Form.Item name="promptMode" label="提示模式" rules={[{ required: true }]}>
+                <Select options={[{ label: promptModeLabelMap.SILENT, value: "SILENT" }, { label: promptModeLabelMap.FLOATING, value: "FLOATING" }]} />
+              </Form.Item>
+              <Form.Item name="closeMode" label="关闭方式" rules={[{ required: true }]}>
+                <Select options={Object.entries(closeModeLabel).map(([value, label]) => ({ label, value }))} />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate>
+                {() =>
+                  ruleForm.getFieldValue("closeMode") === "TIMER_THEN_MANUAL" ? (
+                    <Form.Item
+                      name="closeTimeoutSec"
+                      label="关闭超时(秒)"
+                      rules={[
+                        { required: true, message: "超时后关闭必须填写关闭超时时间" },
+                        { type: "number", min: 1, message: "关闭超时时间需大于0" }
+                      ]}
+                    >
+                      <InputNumber min={1} style={{ width: "100%" }} />
+                    </Form.Item>
+                  ) : null
+                }
+              </Form.Item>
+              <Form.Item name="hasConfirmButton" label="确认按钮">
+                <Select options={[{ label: "开启", value: true }, { label: "关闭", value: false }]} />
+              </Form.Item>
+              <Form.Item noStyle shouldUpdate>
+                {() =>
+                  ruleForm.getFieldValue("hasConfirmButton") ? (
+                    <Form.Item name="sceneId" label="关联作业场景">
+                      <Select allowClear options={scenes.map((scene) => ({ label: scene.name, value: scene.id }))} />
+                    </Form.Item>
+                  ) : null
+                }
+              </Form.Item>
+              <Form.Item name="status" label="状态" rules={[{ required: true }]}>
+                <Select options={lifecycleOptions} />
+              </Form.Item>
+              <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
+              {!isTemplateMode ? (
+                <Button onClick={() => (editing ? void openLogic(editing) : undefined)} disabled={!editing}>
+                  配置高级条件
+                </Button>
+              ) : null}
+            </>
+          ) : null}
+
+          {!isTemplateMode && wizardStep === 2 ? (
+            <Space direction="vertical" style={{ width: "100%" }} size={12}>
+              <Alert
+                showIcon
+                type={previewResult?.matched ? "success" : "info"}
+                message={previewResult?.matched ? "预览通过" : "请执行预览"}
+                description={previewResult?.detail ?? "保存前建议先执行一次预览，确认规则表达和触发方式。"}
+              />
+              <Space>
+                <Button loading={previewLoading} type="primary" onClick={() => void runWizardPreview()}>
+                  执行预览
+                </Button>
+                <Button onClick={() => (editing ? void openLogic(editing) : undefined)} disabled={!editing}>
+                  编辑高级条件
+                </Button>
+              </Space>
+            </Space>
+          ) : null}
+
+          {!isTemplateMode && wizardStep === 3 ? (
+            <Card size="small" title="保存确认">
+              {(() => {
+                const summaryPromptMode = ruleForm.getFieldValue("promptMode") as RuleDefinition["promptMode"] | undefined;
+                const summaryCloseMode = ruleForm.getFieldValue("closeMode") as RuleDefinition["closeMode"] | undefined;
+                const summaryStatus = ruleForm.getFieldValue("status") as RuleDefinition["status"] | undefined;
+                return (
+              <Space direction="vertical" style={{ width: "100%" }}>
+                <Tag color="blue">{ruleForm.getFieldValue("name")}</Tag>
+                <Typography.Text type="secondary">
+                  页面：{
+                    resources.find((item) => item.id === ruleForm.getFieldValue("pageResourceId"))?.name ?? "未绑定页面"
+                  }
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  提示模式：{summaryPromptMode ? promptModeLabelMap[summaryPromptMode] : "-"} / 关闭方式：
+                  {summaryCloseMode ? closeModeLabel[summaryCloseMode] : "-"}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  状态：{summaryStatus ? lifecycleLabelMap[summaryStatus] : "-"}，组织范围：{ruleForm.getFieldValue("ownerOrgId")}
+                </Typography.Text>
+              </Space>
+                );
+              })()}
+            </Card>
+          ) : null}
         </Form>
       </Modal>
 
       <Drawer
-        title={currentRule ? `${isTemplateMode ? "模板条件编辑" : "条件编辑"}: ${currentRule.name}` : isTemplateMode ? "模板条件编辑" : "条件编辑"}
+        title={currentRule ? `${isTemplateMode ? "模板高级条件" : "高级条件"}: ${currentRule.name}` : isTemplateMode ? "模板高级条件" : "高级条件"}
         placement="right"
         width={logicDrawerWidth}
         open={logicOpen}
         onClose={closeLogicDrawer}
       >
         <Card
-          title="条件配置（单层）"
+          title="高级条件配置（单层）"
           extra={
             <Space>
               <Tooltip title="新增条件">

@@ -1,6 +1,7 @@
 import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
+import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { configCenterService } from "../../services/configCenterService";
 import type {
   LifecycleState,
@@ -206,7 +207,7 @@ export function SdkVersionCenterPage() {
             {
               title: "状态",
               width: 100,
-              render: (_, row) => <Tag color={statusColor[row.status]}>{row.status}</Tag>
+              render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag>
             }
           ]}
         />
@@ -225,7 +226,7 @@ export function SdkVersionCenterPage() {
             {
               title: "状态",
               width: 100,
-              render: (_, row) => <Tag color={statusColor[row.status]}>{row.status}</Tag>
+              render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag>
             },
             { title: "更新时间", dataIndex: "updatedAt", width: 180 }
           ]}
@@ -304,7 +305,7 @@ export function SdkVersionCenterPage() {
             {
               title: "状态",
               width: 100,
-              render: (_, row) => <Tag color={statusColor[row.status]}>{row.status}</Tag>
+              render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag>
             },
             {
               title: "操作",
@@ -388,14 +389,7 @@ export function SdkVersionCenterPage() {
             <Input />
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select
-              options={[
-                { label: "DRAFT", value: "DRAFT" },
-                { label: "ACTIVE", value: "ACTIVE" },
-                { label: "DISABLED", value: "DISABLED" },
-                { label: "EXPIRED", value: "EXPIRED" }
-              ]}
-            />
+            <Select options={lifecycleOptions} />
           </Form.Item>
         </Form>
       </Modal>

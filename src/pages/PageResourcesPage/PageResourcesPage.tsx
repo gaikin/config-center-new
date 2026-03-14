@@ -20,6 +20,7 @@ import {
 } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
+import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { configCenterService } from "../../services/configCenterService";
 import { getRightOverlayDrawerWidth } from "../../utils";
 import type {
@@ -539,7 +540,7 @@ export function PageResourcesPage() {
               title: "状态",
               dataIndex: "status",
               width: 100,
-              render: (status: LifecycleState) => <Tag color={statusColor[status]}>{status}</Tag>
+              render: (status: LifecycleState) => <Tag color={statusColor[status]}>{lifecycleLabelMap[status]}</Tag>
             },
             { title: "更新时间", dataIndex: "updatedAt", width: 180 },
             {
@@ -592,14 +593,7 @@ export function PageResourcesPage() {
             />
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select
-              options={[
-                { label: "DRAFT", value: "DRAFT" },
-                { label: "ACTIVE", value: "ACTIVE" },
-                { label: "DISABLED", value: "DISABLED" },
-                { label: "EXPIRED", value: "EXPIRED" }
-              ]}
-            />
+            <Select options={lifecycleOptions} />
           </Form.Item>
           <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请输入组织" }]}>
             <Input />
@@ -861,14 +855,7 @@ export function PageResourcesPage() {
             <Input />
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select
-              options={[
-                { label: "DRAFT", value: "DRAFT" },
-                { label: "ACTIVE", value: "ACTIVE" },
-                { label: "DISABLED", value: "DISABLED" },
-                { label: "EXPIRED", value: "EXPIRED" }
-              ]}
-            />
+            <Select options={lifecycleOptions} />
           </Form.Item>
           <Form.Item name="required" label="是否必填" valuePropName="checked">
             <Switch checkedChildren="是" unCheckedChildren="否" />

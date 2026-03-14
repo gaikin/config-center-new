@@ -1,24 +1,41 @@
-﻿import { MenuOutlined } from "@ant-design/icons";
-import { Button, Drawer, Layout, Menu, Typography } from "antd";
-import styled from "styled-components";
+import { MenuOutlined } from "@ant-design/icons";
+import { Button, Drawer, Layout, Menu, Select, Space, Typography } from "antd";
+import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useState } from "react";
+import styled from "styled-components";
 
 const { Header, Sider, Content } = Layout;
 
-const navItems = [
-  { key: "/", label: "总览" },
-  { key: "/page-resources", label: "页面资源中心" },
-  { key: "/sdk-version-center", label: "SDK版本中心" },
-  { key: "/page-activation", label: "页面启用策略" },
+type AppRole = "BUSINESS" | "ADVANCED" | "ADMIN";
+
+type NavItem = {
+  key: string;
+  label: string;
+  minRole?: Exclude<AppRole, "BUSINESS">;
+};
+
+const navItems: NavItem[] = [
+  { key: "/", label: "我的工作台" },
+  { key: "/page-management", label: "页面管理" },
+  { key: "/prompts", label: "智能提示" },
+  { key: "/jobs", label: "智能作业" },
   { key: "/interfaces", label: "API注册" },
-  { key: "/preprocessors", label: "预处理器中心" },
-  { key: "/rules", label: "智能提示" },
-  { key: "/rule-templates", label: "规则模板中心" },
-  { key: "/job-scenes", label: "智能作业" },
-  { key: "/governance", label: "治理工作台" },
-  { key: "/audit-metrics", label: "审计与指标中心" },
-  { key: "/roles", label: "角色管理" }
+  { key: "/publish", label: "发布与灰度" },
+  { key: "/stats", label: "运行统计" },
+  { key: "/advanced", label: "高级配置", minRole: "ADVANCED" }
+];
+
+const compatiblePathToBizPath: Array<{ from: string; to: string }> = [
+  { from: "/page-resources", to: "/page-management" },
+  { from: "/page-activation", to: "/page-management" },
+  { from: "/rules", to: "/prompts" },
+  { from: "/rule-templates", to: "/prompts" },
+  { from: "/job-scenes", to: "/jobs" },
+  { from: "/sdk-version-center", to: "/publish" },
+  { from: "/governance", to: "/publish" },
+  { from: "/audit-metrics", to: "/stats" },
+  { from: "/preprocessors", to: "/advanced" },
+  { from: "/roles", to: "/advanced" }
 ];
 
 const HeaderBar = styled(Header)`
@@ -61,18 +78,24 @@ const MobileNavButton = styled(Button)`
   }
 `;
 
+function normalizePath(pathname: string) {
+  const matched = compatiblePathToBizPath.find((item) => pathname.startsWith(item.from));
+  return matched?.to ?? pathname;
+}
+
 function getSelectedKey(pathname: string) {
+  const normalized = normalizePath(pathname);
   const matched = navItems.find((item) => {
     if (item.key === "/") {
-      return pathname === "/";
+      return normalized === "/";
     }
-    return pathname.startsWith(item.key);
+    return normalized.startsWith(item.key);
   });
   return matched?.key ?? "/";
 }
 
-function renderMenuItems() {
-  return navItems.map((item) => ({
+function renderMenuItems(items: NavItem[]) {
+  return items.map((item) => ({
     key: item.key,
     label: <Link to={item.key}>{item.label}</Link>
   }));
@@ -80,8 +103,21 @@ function renderMenuItems() {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const selected = getSelectedKey(location.pathname);
+  const [role, setRole] = useState<AppRole>("BUSINESS");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const selected = getSelectedKey(location.pathname);
+
+  const visibleNavItems = useMemo(() => {
+    return navItems.filter((item) => {
+      if (!item.minRole) {
+        return true;
+      }
+      if (item.minRole === "ADVANCED") {
+        return role === "ADVANCED" || role === "ADMIN";
+      }
+      return role === "ADMIN";
+    });
+  }, [role]);
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
@@ -89,30 +125,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <LogoBlock>
           <Typography.Text style={{ color: "#fff", fontWeight: 700 }}>营小助配置中心（新版）</Typography.Text>
           <Typography.Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 12 }}>
-            Phase 0-5 | WP-A~WP-F 实施导航
+            业务主路径：找页面、配规则、接接口、做发布、看结果
           </Typography.Text>
         </LogoBlock>
-        <MobileNavButton icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)}>
-          导航
-        </MobileNavButton>
+        <Space>
+          <Select
+            value={role}
+            size="small"
+            style={{ width: 148 }}
+            onChange={(next) => setRole(next as AppRole)}
+            options={[
+              { label: "业务人员视角", value: "BUSINESS" },
+              { label: "高级运营视角", value: "ADVANCED" },
+              { label: "平台管理员视角", value: "ADMIN" }
+            ]}
+          />
+          <MobileNavButton icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)}>
+            导航
+          </MobileNavButton>
+        </Space>
       </HeaderBar>
       <Layout>
         <StyledSider width={248} theme="light">
-          <Menu mode="inline" selectedKeys={[selected]} items={renderMenuItems()} style={{ height: "100%", borderInlineEnd: 0 }} />
+          <Menu
+            mode="inline"
+            selectedKeys={[selected]}
+            items={renderMenuItems(visibleNavItems)}
+            style={{ height: "100%", borderInlineEnd: 0 }}
+          />
         </StyledSider>
         <ContentWrap>{children}</ContentWrap>
       </Layout>
-      <Drawer
-        title="实施导航"
-        placement="left"
-        width={248}
-        onClose={() => setDrawerOpen(false)}
-        open={drawerOpen}
-      >
+      <Drawer title="业务导航" placement="left" width={248} onClose={() => setDrawerOpen(false)} open={drawerOpen}>
         <Menu
           mode="inline"
           selectedKeys={[selected]}
-          items={renderMenuItems()}
+          items={renderMenuItems(visibleNavItems)}
           onClick={() => setDrawerOpen(false)}
           style={{ borderInlineEnd: 0 }}
         />

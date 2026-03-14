@@ -1,10 +1,11 @@
 import { Form, Grid, Modal, message } from "antd";
 import { addEdge, type Connection, MarkerType, useEdgesState, useNodesState } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { configCenterService } from "../../services/configCenterService";
 import { workflowService } from "../../services/workflowService";
 import { getRightOverlayDrawerWidth } from "../../utils";
 import type {
+  ExecutionMode,
   JobNodeDefinition,
   JobSceneDefinition,
   JobScenePreviewField,
@@ -62,6 +63,7 @@ export function useJobScenesPageModel() {
   const [previewExecuting, setPreviewExecuting] = useState(false);
   const [previewRows, setPreviewRows] = useState<JobScenePreviewField[]>([]);
   const [previewSelectedKeys, setPreviewSelectedKeys] = useState<string[]>([]);
+  const autoOpenCreateRef = useRef(false);
 
   const [nodeDetailForm] = Form.useForm<NodeDetailForm>();
   const watchedNodeType = Form.useWatch("nodeType", nodeDetailForm);
@@ -165,11 +167,19 @@ export function useJobScenesPageModel() {
     }
   }
 
-  function openCreate() {
+  function openCreate(preset?: { pageResourceId?: number; executionMode?: ExecutionMode; name?: string }) {
+    const pickedExecutionMode: ExecutionMode =
+      preset?.executionMode && ["AUTO_WITHOUT_PROMPT", "AUTO_AFTER_PROMPT", "PREVIEW_THEN_EXECUTE", "FLOATING_BUTTON"].includes(preset.executionMode)
+        ? preset.executionMode
+        : "PREVIEW_THEN_EXECUTE";
+    const pickedPageId =
+      typeof preset?.pageResourceId === "number" && resources.some((item) => item.id === preset.pageResourceId)
+        ? preset.pageResourceId
+        : resources[0]?.id ?? 0;
     const values: SceneForm = {
-      name: "",
-      pageResourceId: resources[0]?.id ?? 0,
-      executionMode: "PREVIEW_THEN_EXECUTE",
+      name: preset?.name ?? "",
+      pageResourceId: pickedPageId,
+      executionMode: pickedExecutionMode,
       status: "DRAFT",
       currentVersion: 1,
       nodeCount: 3,
@@ -450,6 +460,6 @@ export function useJobScenesPageModel() {
     onFlowNodesChange, onFlowEdgesChange, onConnect, setReactFlowInstance, nodeLibrary, nodeTypeLabel,
     addNodeFromLibrary, selectedNode, nodeDetailForm, watchedNodeType, saveSelectedNode, removeSelectedNode,
     previewOpen, setPreviewOpen, previewScene, previewRows, previewSelectedKeys, setPreviewSelectedKeys,
-    previewLoading, previewExecuting, executePreview, holder, statusColor
+    previewLoading, previewExecuting, executePreview, holder, statusColor, autoOpenCreateRef
   };
 }

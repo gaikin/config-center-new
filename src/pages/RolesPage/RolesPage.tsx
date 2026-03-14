@@ -14,6 +14,7 @@ import {  Button,
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
+import { lifecycleLabelMap } from "../../enumLabels";
 import { configCenterService } from "../../services/configCenterService";
 import type { ActionType, RoleItem } from "../../types";
 
@@ -69,7 +70,7 @@ const roleTypeDefaultActions: Record<RoleItem["roleType"], ActionType[]> = {
   PLATFORM_SUPPORT: ["VIEW", "VALIDATE", "AUDIT_VIEW"]
 };
 
-export function RolesPage() {
+export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<RoleItem[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
@@ -204,10 +205,14 @@ export function RolesPage() {
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>角色管理</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        角色按组织隔离配置，支持角色定义、复制、停用/恢复、组织范围绑定、操作类型配置与成员批量分配。
-      </Typography.Paragraph>
+      {!embedded ? (
+        <>
+          <Typography.Title level={4}>角色管理</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            角色按组织隔离配置，支持角色定义、复制、停用/恢复、组织范围绑定、操作类型配置与成员批量分配。
+          </Typography.Paragraph>
+        </>
+      ) : null}
 
       <Card
         extra={
@@ -252,7 +257,7 @@ export function RolesPage() {
             {
               title: "状态",
               width: 100,
-              render: (_, row) => <Tag color={statusColor[row.status]}>{row.status}</Tag>
+              render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag>
             },
             { title: "更新时间", dataIndex: "updatedAt", width: 180 },
             {
@@ -328,7 +333,7 @@ export function RolesPage() {
             ))}
           </Space>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
-            <Select options={[{ label: "ACTIVE", value: "ACTIVE" }, { label: "DISABLED", value: "DISABLED" }]} />
+            <Select options={[{ label: lifecycleLabelMap.ACTIVE, value: "ACTIVE" }, { label: lifecycleLabelMap.DISABLED, value: "DISABLED" }]} />
           </Form.Item>
         </Form>
       </Modal>

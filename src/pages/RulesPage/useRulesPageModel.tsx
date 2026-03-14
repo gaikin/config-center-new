@@ -1,5 +1,5 @@
 import { Form, Grid, Modal, message } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { configCenterService } from "../../services/configCenterService";
 import { workflowService } from "../../services/workflowService";
 import { getRightOverlayDrawerWidth } from "../../utils";
@@ -43,7 +43,14 @@ import {
 
 export type RulesPageMode = "PAGE_RULE" | "TEMPLATE";
 
-export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE") {
+type RulesPageOptions = {
+  initialPageResourceId?: number;
+  initialTemplateRuleId?: number;
+  initialSceneId?: number;
+  autoOpenCreate?: boolean;
+};
+
+export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: RulesPageOptions = {}) {
   const screens = Grid.useBreakpoint();
   const logicDrawerWidth = getRightOverlayDrawerWidth(Boolean(screens.lg));
   const [loading, setLoading] = useState(true);
@@ -68,6 +75,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE") {
   const [selectedOperand, setSelectedOperand] = useState<SelectedOperand | null>(null);
   const [savingQuery, setSavingQuery] = useState(false);
   const [logicSnapshot, setLogicSnapshot] = useState("");
+  const hasAutoOpened = useRef(false);
   const [msgApi, holder] = message.useMessage();
   const activeRuleScope = currentRule?.ruleScope ?? watchedRuleScope ?? "PAGE_RESOURCE";
   const activePageResourceId = currentRule?.pageResourceId ?? watchedPageResourceId;
@@ -214,27 +222,52 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE") {
     setLogicSnapshot(buildLogicSnapshot(rootGroup?.logicType ?? "AND", safeConditions));
   }
   function openCreate() {
+    const presetPageId =
+      typeof options.initialPageResourceId === "number" &&
+      resources.some((item) => item.id === options.initialPageResourceId)
+        ? options.initialPageResourceId
+        : resources[0]?.id;
+    const presetTemplate =
+      mode === "PAGE_RULE" &&
+      typeof options.initialTemplateRuleId === "number" &&
+      templateRows.some((item) => item.id === options.initialTemplateRuleId)
+        ? templateRows.find((item) => item.id === options.initialTemplateRuleId) ?? null
+        : null;
+    const presetSceneId =
+      typeof options.initialSceneId === "number" && scenes.some((item) => item.id === options.initialSceneId)
+        ? options.initialSceneId
+        : undefined;
     const values: RuleForm = {
-      templateRuleId: undefined,
-      name: "",
+      templateRuleId: presetTemplate?.id,
+      name: presetTemplate ? `${presetTemplate.name}-副本` : "",
       ruleScope: mode === "TEMPLATE" ? "SHARED" : "PAGE_RESOURCE",
-      ruleSetCode: "",
-      pageResourceId: mode === "TEMPLATE" ? undefined : resources[0]?.id,
-      priority: 500,
-      promptMode: "FLOATING",
-      closeMode: "MANUAL_CLOSE",
-      closeTimeoutSec: undefined,
-      hasConfirmButton: true,
-      sceneId: undefined,
+      ruleSetCode: presetTemplate?.ruleSetCode ?? "",
+      pageResourceId: mode === "TEMPLATE" ? undefined : presetPageId,
+      priority: presetTemplate?.priority ?? 500,
+      promptMode: presetTemplate?.promptMode ?? "FLOATING",
+      closeMode: presetTemplate?.closeMode ?? "MANUAL_CLOSE",
+      closeTimeoutSec: presetTemplate?.closeTimeoutSec,
+      hasConfirmButton: presetTemplate?.hasConfirmButton ?? true,
+      sceneId: presetTemplate?.sceneId ?? presetSceneId,
       status: "DRAFT",
-      ownerOrgId: "branch-east"
+      ownerOrgId: presetTemplate?.ownerOrgId ?? "branch-east"
     };
     setEditing(null);
-    setReuseSourceRule(null);
+    setReuseSourceRule(presetTemplate);
     ruleForm.setFieldsValue(values);
     setRuleSnapshot(buildRuleSnapshot(values));
     setOpen(true);
   }
+  useEffect(() => {
+    if (mode !== "PAGE_RULE" || !options.autoOpenCreate) {
+      return;
+    }
+    if (hasAutoOpened.current || resources.length === 0) {
+      return;
+    }
+    hasAutoOpened.current = true;
+    openCreate();
+  }, [mode, options.autoOpenCreate, resources.length]);
   function applyTemplate(templateId?: number) {
     const template = templateRows.find((item) => item.id === templateId) ?? null;
     setReuseSourceRule(template);
