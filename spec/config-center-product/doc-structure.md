@@ -25,3 +25,6 @@
 3. `job-prd.md`：智能作业产品文档（已创建）
 4. `ui-spec-sentinel-rules-editor.md`：智能提示条件编辑区 UI 规范（独立文档）
 
+## 5. 补充专题文档
+1. `business-user-optimization.md`：面向业务人员的产品优化分析与交互重构建议，用于收敛菜单结构、主流程、角色分层与业务侧体验优化口径。
+
