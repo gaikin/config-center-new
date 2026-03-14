@@ -1,5 +1,4 @@
 import {
-  Alert,
   AutoComplete,
   Button,
   Card,
@@ -572,13 +571,9 @@ export function PageResourcesPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={`ID 由系统自动生成（当前${editing ? `#${editing.id}` : "新建后生成"}）`}
-            description={`元素数量由系统根据元素映射自动统计（当前${editing?.elementCount ?? 0}）`}
-          />
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            页面编号由系统自动生成，元素数量会根据已配置的元素映射自动统计。
+          </Typography.Paragraph>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input maxLength={128} />
           </Form.Item>
@@ -689,12 +684,9 @@ export function PageResourcesPage() {
         onOk={() => void submitElement()}
       >
         <Form form={elementForm} layout="vertical">
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={`元素 ID 由系统自动生成（当前${editingElement ? `#${editingElement.id}` : "新建后生成"}）`}
-          />
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            元素编号由系统自动生成，你只需要维护业务字段和定位方式。
+          </Typography.Paragraph>
           <Form.Item name="pageResourceId" label="页面资源 ID" rules={[{ required: true, message: "请输入页面资源 ID" }]}>
             <InputNumber style={{ width: "100%" }} disabled />
           </Form.Item>
@@ -720,13 +712,9 @@ export function PageResourcesPage() {
         open={fieldDrawerOpen}
         onClose={() => setFieldDrawerOpen(false)}
       >
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message="页面字段建模"
-          description="公共字段用于跨页面复用条件和规则模板；页面特有字段只在当前页面内使用。规则和作业只引用字段编码，不直接引用选择器。"
-        />
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          公共字段可在多个页面复用；页面特有字段只作用当前页面。规则和作业统一引用字段编码，不直接引用选择器。
+        </Typography.Paragraph>
 
         <Card
           size="small"

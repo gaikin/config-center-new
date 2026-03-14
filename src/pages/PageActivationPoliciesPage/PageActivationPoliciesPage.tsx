@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../../services/configCenterService";
@@ -144,13 +144,9 @@ export function PageActivationPoliciesPage() {
         业务人员在配置端控制菜单下哪些页面启用智能提示，是否带作业，以及 `job` 的预热策略；技术人员继续维护页面识别和字段模型。
       </Typography.Paragraph>
 
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="控制边界"
-        description="业务只配置页面启用范围、规则集和作业开关；不直接维护 URL、XPath、iframe selector 等技术字段。"
-      />
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        业务人员只需要配置“这个页面是否启用、用哪套规则、是否带作业”。URL、XPath、iframe 定位等技术项由技术侧维护。
+      </Typography.Paragraph>
 
       <Space size={12} style={{ marginBottom: 16 }} wrap>
         <Tag color="green">启用页面：{enabledCount}</Tag>

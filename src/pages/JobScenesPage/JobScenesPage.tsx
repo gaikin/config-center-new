@@ -163,12 +163,9 @@ export function JobScenesPage() {
 
       <Modal title={editing ? "编辑场景" : "新建场景"} open={open} onCancel={closeSceneModal} onOk={() => void submitScene()} width={680}>
         <Form form={form} layout="vertical">
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={editing ? `场景ID：${editing.id}` : "场景ID将由系统自动生成"}
-          />
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            {editing ? `当前场景编号：${editing.id}` : "场景编号会在保存后由系统自动生成。"}
+          </Typography.Paragraph>
           <Alert
             type={editing?.riskConfirmed ? "success" : "warning"}
             showIcon
@@ -307,7 +304,7 @@ export function JobScenesPage() {
 
               <Card title="节点属性" style={{ flex: "0 0 320px" }}>
                 {!selectedNode ? (
-                  <Alert type="info" showIcon message="请选择一个节点" description="在画布中点击节点后，可在这里编辑节点属性。" />
+                  <Typography.Text type="secondary">请先在画布中点击一个节点，再编辑节点属性。</Typography.Text>
                 ) : (
                   <>
                     <Form form={nodeDetailForm} layout="vertical">
@@ -399,15 +396,15 @@ export function JobScenesPage() {
             </Space>
           </Card>
 
-          <Alert
-            type={previewRows.some((item) => item.abnormal) ? "warning" : "info"}
-            showIcon
-            message={
-              previewRows.some((item) => item.abnormal)
-                ? "存在异常字段，建议取消勾选后再执行。"
-                : "可按字段勾选是否写入，确认后执行。"
-            }
-          />
+          {previewRows.some((item) => item.abnormal) ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="有异常字段，建议先取消勾选再执行。"
+            />
+          ) : (
+            <Typography.Text type="secondary">请勾选需要写入的字段，确认后执行。</Typography.Text>
+          )}
 
           <Table<JobScenePreviewField>
             rowKey="key"

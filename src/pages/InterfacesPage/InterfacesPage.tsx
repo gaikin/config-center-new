@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, Drawer, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
+import { Button, Card, Col, Drawer, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from "antd";
 import { useInterfacesPageModel } from "./useInterfacesPageModel";
 import { defaultOutputParam, DebugEnv, InputTabKey, statusColor, StatusFilter, tabLabels, valueTypeOptions } from "./interfacesPageShared";
 import type { ApiInputParam, ApiOutputParam, ApiValueType, InterfaceDefinition } from "../../types";
@@ -295,7 +295,9 @@ export function InterfacesPage() {
         onCancel={() => setPropertyOpen(false)}
         onOk={saveOutputProperty}
       >
-        <Alert type="info" showIcon message="当前面板用于编辑对象/数组的子属性。" style={{ marginBottom: 12 }} />
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          在这里维护对象或数组下的子字段。
+        </Typography.Paragraph>
         <Space style={{ marginBottom: 12 }}>
           <Button onClick={() => setPropertyRows((prev) => [...prev, defaultOutputParam()])}>新增属性</Button>
         </Space>
@@ -445,7 +447,7 @@ export function InterfacesPage() {
               </Col>
             </Row>
           ) : (
-            <Alert type="info" showIcon message="点击“执行调试”后展示请求与响应预览。" />
+            <Typography.Text type="secondary">点击“执行调试”后会展示请求和响应结果。</Typography.Text>
           )}
         </Space>
       </Modal>

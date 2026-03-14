@@ -1,6 +1,4 @@
-﻿import {
-  Alert,
-  Button,
+import {  Button,
   Card,
   Form,
   Input,
@@ -288,17 +286,13 @@ export function RolesPage() {
         title={editing ? "编辑角色" : "新建角色"}
         open={open}
         onCancel={closeRoleModal}
-        onOk={() => void submit()}
-        width={760}
+          onOk={() => void submit()}
+          width={760}
       >
         <Form form={form} layout="vertical">
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={`ID 由系统自动生成（当前${editing ? `#${editing.id}` : "新建后生成"}）`}
-            description={`成员数由系统根据角色成员自动统计（当前${editing?.memberCount ?? 0}）`}
-          />
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            角色编号由系统自动生成；成员数量会按已绑定人员自动统计。
+          </Typography.Paragraph>
           <Form.Item name="name" label="角色名称" rules={[{ required: true, message: "请输入角色名称" }]}>
             <Input maxLength={128} />
           </Form.Item>
@@ -325,19 +319,14 @@ export function RolesPage() {
               placeholder="可多选"
             />
           </Form.Item>
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="权限说明"
-            description={
-              <Space size={[6, 6]} wrap>
-                {allActions.map((action) => (
-                  <Tag key={action}>{`${action}: ${actionDescriptions[action]}`}</Tag>
-                ))}
-              </Space>
-            }
-          />
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+            权限说明：
+          </Typography.Paragraph>
+          <Space size={[6, 6]} wrap style={{ marginBottom: 12 }}>
+            {allActions.map((action) => (
+              <Tag key={action}>{`${action}: ${actionDescriptions[action]}`}</Tag>
+            ))}
+          </Space>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
             <Select options={[{ label: "ACTIVE", value: "ACTIVE" }, { label: "DISABLED", value: "DISABLED" }]} />
           </Form.Item>
@@ -366,3 +355,4 @@ export function RolesPage() {
     </div>
   );
 }
+

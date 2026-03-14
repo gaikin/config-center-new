@@ -175,13 +175,9 @@ export function PreprocessorsPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={`ID 由系统自动生成（当前${editing ? `#${editing.id}` : "新建后生成"}）`}
-            description={`被引用次数由系统统计（当前${editing?.usedByCount ?? 0}）`}
-          />
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            编号由系统自动生成；被引用次数会自动统计，你只需维护转换规则本身。
+          </Typography.Paragraph>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input maxLength={128} />
           </Form.Item>

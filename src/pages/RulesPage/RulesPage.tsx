@@ -159,13 +159,9 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
         width={680}
       >
         <Form form={ruleForm} layout="vertical">
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={modalAlert.message}
-            description={modalAlert.description}
-          />
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            {modalAlert.message} {modalAlert.description}
+          </Typography.Paragraph>
           <Form.Item hidden name="ruleScope">
             <Input />
           </Form.Item>
@@ -214,13 +210,9 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
               </Form.Item>
             </>
           ) : (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 12 }}
-              message="模板不绑定页面"
-              description="模板只允许引用公共字段；若条件需要页面特有字段，请在页面规则中补充。"
-            />
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              模板不绑定页面，只能使用公共字段。需要页面特有字段时，请在页面规则里补充。
+            </Typography.Paragraph>
           )}
           <Form.Item name="name" label={isTemplateMode ? "模板名称" : "规则名称"} rules={[{ required: true, message: `请输入${isTemplateMode ? "模板" : "规则"}名称` }]}>
             <Input />
@@ -294,12 +286,9 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
             </Space>
           }
         >
-          <Alert
-            type="info"
-            showIcon
-            message="全部条件共用一个 AND/OR 关系；多提示命中采用串行策略，按优先级依次展示。"
-            style={{ marginBottom: 12 }}
-          />
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            所有条件共用一套“且/或”关系。多个提示同时命中时，会按优先级依次展示。
+          </Typography.Paragraph>
 
           <Space style={{ marginBottom: 12 }}>
             <Typography.Text strong>整体逻辑</Typography.Text>
@@ -365,14 +354,12 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
               }
             >
               {!selectedContext ? (
-                <Alert type="info" showIcon message="请先选中左值或右值，再在此面板编辑属性。" />
+                <Typography.Text type="secondary">先在左侧点击要编辑的左值或右值。</Typography.Text>
               ) : (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                  <Alert
-                    type="info"
-                    showIcon
-                    message={`当前编辑：条件 ${selectedContext.index + 1} - ${selectedContext.side === "left" ? "左值" : "右值"}`}
-                  />
+                  <Typography.Text type="secondary">
+                    当前正在编辑：条件 {selectedContext.index + 1} - {selectedContext.side === "left" ? "左值" : "右值"}
+                  </Typography.Text>
 
                   <div>
                     <Typography.Text>来源类型</Typography.Text>
@@ -506,7 +493,9 @@ export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
                       <div>
                         <Typography.Text>入参配置（按 API注册定义）</Typography.Text>
                         {selectedInterfaceInputParams.length === 0 ? (
-                          <Alert type="info" showIcon style={{ marginTop: 6 }} message="当前API未定义入参或尚未配置。" />
+                          <Typography.Paragraph type="secondary" style={{ marginTop: 6, marginBottom: 0 }}>
+                            当前 API 没有配置入参，可直接继续。
+                          </Typography.Paragraph>
                         ) : (
                           <Table<InterfaceInputParamDraft>
                             size="small"

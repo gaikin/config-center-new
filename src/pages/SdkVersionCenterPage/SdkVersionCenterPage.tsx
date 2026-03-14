@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../../services/configCenterService";
@@ -180,13 +180,9 @@ export function SdkVersionCenterPage() {
         解析真实版本。
       </Typography.Paragraph>
 
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="P0 决策"
-        description="菜单父级统一使用 regionId；页面与 iframe 继承菜单命中的 SDK 版本；灰度仅到机构维度，不开放人员级配置。"
-      />
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        当前口径：菜单挂在专区下（`regionId`），页面和 iframe 继承菜单命中的 SDK 版本。灰度范围只到机构，不到个人。
+      </Typography.Paragraph>
 
       <Space size={12} style={{ marginBottom: 16 }} wrap>
         <Tag color="blue">制品版本：{artifacts.length}</Tag>
