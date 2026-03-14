@@ -3,7 +3,19 @@ import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../../services/configCenterService";
 import { workflowService } from "../../services/workflowService";
 import { getRightOverlayDrawerWidth } from "../../utils";
-import type { InterfaceDefinition, JobSceneDefinition, LifecycleState, PageResource, PreprocessorDefinition, RuleConditionGroup, RuleDefinition, RuleLogicType, RuleOperandSourceType } from "../../types";
+import type {
+  BusinessFieldDefinition,
+  InterfaceDefinition,
+  JobSceneDefinition,
+  LifecycleState,
+  PageFieldBinding,
+  PageResource,
+  PreprocessorDefinition,
+  RuleConditionGroup,
+  RuleDefinition,
+  RuleLogicType,
+  RuleOperandSourceType
+} from "../../types";
 import type { OperandDraft, OperandSide } from "./rulesPageShared";
 import {
   buildDefaultCondition,
@@ -17,6 +29,7 @@ import {
   parseJsonSafe,
   PreprocessorDraft,
   resetOperandBySource,
+  RulePageFieldOption,
   RuleForm,
   SelectedOperand,
   stringifyInterfaceInputConfig,
@@ -33,12 +46,16 @@ export function useRulesPageModel() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<RuleDefinition[]>([]);
   const [resources, setResources] = useState<PageResource[]>([]);
+  const [businessFields, setBusinessFields] = useState<BusinessFieldDefinition[]>([]);
+  const [pageFieldBindings, setPageFieldBindings] = useState<PageFieldBinding[]>([]);
   const [scenes, setScenes] = useState<JobSceneDefinition[]>([]);
   const [preprocessors, setPreprocessors] = useState<PreprocessorDefinition[]>([]);
   const [interfaces, setInterfaces] = useState<InterfaceDefinition[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RuleDefinition | null>(null);
   const [ruleForm] = Form.useForm<RuleForm>();
+  const watchedRuleScope = Form.useWatch("ruleScope", ruleForm);
+  const watchedPageResourceId = Form.useWatch("pageResourceId", ruleForm);
   const [ruleSnapshot, setRuleSnapshot] = useState("");
   const [logicOpen, setLogicOpen] = useState(false);
   const [currentRule, setCurrentRule] = useState<RuleDefinition | null>(null);
@@ -48,18 +65,27 @@ export function useRulesPageModel() {
   const [savingQuery, setSavingQuery] = useState(false);
   const [logicSnapshot, setLogicSnapshot] = useState("");
   const [msgApi, holder] = message.useMessage();
+  const activeRuleScope = currentRule?.ruleScope ?? watchedRuleScope ?? "PAGE_RESOURCE";
+  const activePageResourceId = currentRule?.pageResourceId ?? watchedPageResourceId;
+
   async function loadData() {
     setLoading(true);
     try {
-      const [ruleData, resourceData, sceneData, preprocessorData, interfaceData] = await Promise.all([
+      const [ruleData, resourceData, fieldData, sceneData, preprocessorData, interfaceData] = await Promise.all([
         configCenterService.listRules(),
         configCenterService.listPageResources(),
+        configCenterService.listBusinessFields(),
         configCenterService.listJobScenes(),
         configCenterService.listPreprocessors(),
         configCenterService.listInterfaces()
       ]);
+      const bindingData = (await Promise.all(
+        resourceData.map((resource) => configCenterService.listPageFieldBindings(resource.id))
+      )).flat();
       setRows(ruleData);
       setResources(resourceData);
+      setBusinessFields(fieldData);
+      setPageFieldBindings(bindingData);
       setScenes(sceneData);
       setPreprocessors(preprocessorData);
       setInterfaces(interfaceData);
@@ -70,9 +96,40 @@ export function useRulesPageModel() {
   useEffect(() => {
     void loadData();
   }, []);
+  const pageFieldOptions = useMemo<RulePageFieldOption[]>(() => {
+    const boundFieldCodes =
+      activeRuleScope === "PAGE_RESOURCE" && typeof activePageResourceId === "number"
+        ? new Set(
+            pageFieldBindings
+              .filter((binding) => binding.pageResourceId === activePageResourceId)
+              .map((binding) => binding.businessFieldCode)
+          )
+        : null;
+
+    const fields = businessFields.filter((field) => {
+      if (activeRuleScope === "SHARED") {
+        return field.scope === "GLOBAL";
+      }
+      if (typeof activePageResourceId !== "number") {
+        return field.scope === "GLOBAL";
+      }
+      if (!boundFieldCodes?.has(field.code)) {
+        return false;
+      }
+      return field.scope === "GLOBAL" || field.pageResourceId === activePageResourceId;
+    });
+
+    return fields.map((field) => ({
+      label: `${field.scope === "GLOBAL" ? "公共字段" : "页面字段"} / ${field.name} (${field.code})`,
+      value: field.code,
+      group: field.scope === "GLOBAL" ? "公共字段" : "页面字段"
+    }));
+  }, [activePageResourceId, activeRuleScope, businessFields, pageFieldBindings]);
   function buildRuleSnapshot(values: Partial<RuleForm>) {
     return JSON.stringify({
       name: values.name ?? "",
+      ruleScope: values.ruleScope ?? "PAGE_RESOURCE",
+      ruleSetCode: values.ruleSetCode ?? "",
       pageResourceId: values.pageResourceId ?? null,
       priority: values.priority ?? 1,
       promptMode: values.promptMode ?? "FLOATING",
@@ -145,7 +202,9 @@ export function useRulesPageModel() {
   function openCreate() {
     const values: RuleForm = {
       name: "",
-      pageResourceId: resources[0]?.id ?? 0,
+      ruleScope: "PAGE_RESOURCE",
+      ruleSetCode: "",
+      pageResourceId: resources[0]?.id,
       priority: 500,
       promptMode: "FLOATING",
       closeMode: "MANUAL_CLOSE",
@@ -163,6 +222,8 @@ export function useRulesPageModel() {
   function openEdit(row: RuleDefinition) {
     const values: RuleForm = {
       name: row.name,
+      ruleScope: row.ruleScope,
+      ruleSetCode: row.ruleSetCode,
       pageResourceId: row.pageResourceId,
       priority: row.priority,
       promptMode: row.promptMode,
@@ -180,8 +241,11 @@ export function useRulesPageModel() {
   }
   async function submitRule() {
     const values = await ruleForm.validateFields();
-    const resource = resources.find((item) => item.id === values.pageResourceId);
-    if (!resource) {
+    const resource =
+      values.ruleScope === "PAGE_RESOURCE"
+        ? resources.find((item) => item.id === values.pageResourceId)
+        : undefined;
+    if (values.ruleScope === "PAGE_RESOURCE" && !resource) {
       msgApi.error("请选择页面资源");
       return;
     }
@@ -189,8 +253,10 @@ export function useRulesPageModel() {
     const saved = await configCenterService.upsertRule({
       id: editing?.id ?? Date.now() + Math.floor(Math.random() * 1000),
       name: values.name,
-      pageResourceId: values.pageResourceId,
-      pageResourceName: resource.name,
+      ruleScope: values.ruleScope,
+      ruleSetCode: values.ruleSetCode,
+      pageResourceId: resource?.id,
+      pageResourceName: resource?.name,
       priority: values.priority,
       promptMode: values.promptMode,
       closeMode: values.closeMode,
@@ -443,6 +509,7 @@ export function useRulesPageModel() {
   return {
     holder, logicDrawerWidth, loading, rows, resources, scenes, preprocessors, interfaces,
     open, editing, ruleForm, logicOpen, currentRule, globalLogicType, setGlobalLogicType,
+    pageFieldOptions,
     conditionsDraft, selectedOperand, setSelectedOperand, savingQuery,
     closeRuleModal, closeLogicDrawer, openCreate, openEdit, submitRule, switchStatus, openLogic,
     addCondition, removeCondition, selectedContext, changeSelectedSourceType,

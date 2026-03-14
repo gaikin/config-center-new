@@ -20,10 +20,18 @@ export interface PageSite {
   status: LifecycleState;
 }
 
+export interface PageRegion {
+  id: number;
+  siteId: number;
+  regionCode: string;
+  regionName: string;
+  status: LifecycleState;
+}
+
 export interface PageMenu {
   id: number;
   siteId: number;
-  zoneName: string;
+  regionId: number;
   menuName: string;
   menuCode: string;
   status: LifecycleState;
@@ -33,6 +41,8 @@ export interface PageMenu {
 export interface PageResource {
   id: number;
   menuId: number;
+  pageCode: string;
+  frameCode?: string;
   name: string;
   status: LifecycleState;
   ownerOrgId: string;
@@ -136,8 +146,10 @@ export interface PreprocessorDefinition {
 export interface RuleDefinition {
   id: number;
   name: string;
-  pageResourceId: number;
-  pageResourceName: string;
+  ruleScope: "SHARED" | "PAGE_RESOURCE";
+  ruleSetCode: string;
+  pageResourceId?: number;
+  pageResourceName?: string;
   priority: number;
   promptMode: PromptMode;
   closeMode: PromptCloseMode;
@@ -270,6 +282,61 @@ export interface JobScenePreviewField {
   abnormal: boolean;
 }
 
+export interface SdkArtifactVersion {
+  id: number;
+  sdkVersion: string;
+  sdkMajorVersion: number;
+  loaderVersion: string;
+  artifactManifestUrl: string;
+  compatibility: string;
+  status: LifecycleState;
+  publishedBy: string;
+  publishedAt: string;
+  notes: string;
+}
+
+export interface SdkReleaseLane {
+  id: number;
+  laneCode: string;
+  laneName: string;
+  sdkArtifactVersionId: number;
+  sdkVersion: string;
+  status: LifecycleState;
+  updatedAt: string;
+}
+
+export type JobPreloadPolicy = "immediate" | "idle" | "intent" | "none";
+
+export interface MenuSdkPolicy {
+  id: number;
+  siteId: number;
+  regionId: number;
+  menuId: number;
+  menuCode: string;
+  stableLaneId: number;
+  grayLaneId?: number;
+  grayOrgIds: string[];
+  effectiveStart: string;
+  effectiveEnd: string;
+  status: LifecycleState;
+  ownerOrgId: string;
+  updatedAt: string;
+  resolutionSummary: string;
+}
+
+export interface PageActivationPolicy {
+  id: number;
+  pageResourceId: number;
+  enabled: boolean;
+  promptRuleSetName: string;
+  hasJobScenes: boolean;
+  jobPreloadPolicy: JobPreloadPolicy;
+  jobSceneName?: string;
+  status: LifecycleState;
+  ownerOrgId: string;
+  updatedAt: string;
+}
+
 export interface GovernancePendingSummary {
   draftCount: number;
   expiringSoonCount: number;
@@ -280,7 +347,14 @@ export interface GovernancePendingSummary {
 
 export interface GovernancePendingItem {
   id: number;
-  resourceType: "PAGE_RESOURCE" | "RULE" | "JOB_SCENE" | "INTERFACE" | "PREPROCESSOR";
+  resourceType:
+    | "PAGE_RESOURCE"
+    | "RULE"
+    | "JOB_SCENE"
+    | "INTERFACE"
+    | "PREPROCESSOR"
+    | "MENU_SDK_POLICY"
+    | "PAGE_ACTIVATION_POLICY";
   resourceId: number;
   resourceName: string;
   status: LifecycleState;

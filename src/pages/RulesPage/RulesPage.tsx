@@ -1,18 +1,60 @@
 import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useRulesPageModel } from "./useRulesPageModel";
-import { InterfaceInputParamDraft, LOGIC_OPERATOR_WIDTH, deriveMachineKeyFromOutputPath, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, operatorOptions, pageFieldOptions, sourceOptions, statusColor, valueTypeOptions } from "./rulesPageShared";
+import { InterfaceInputParamDraft, LOGIC_OPERATOR_WIDTH, deriveMachineKeyFromOutputPath, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, operatorOptions, sourceOptions, statusColor, valueTypeOptions } from "./rulesPageShared";
 import { OperandPill, InterfaceInputValueEditor } from "./rulesOperandRenderers";
 import type { RuleDefinition, RuleLogicType, RuleOperandValueType } from "../../types";
 
 export function RulesPage() {
-  const { holder, logicDrawerWidth, loading, rows, resources, scenes, preprocessors, interfaces, open, editing, ruleForm, logicOpen, currentRule, globalLogicType, setGlobalLogicType, conditionsDraft, selectedOperand, setSelectedOperand, savingQuery, closeRuleModal, closeLogicDrawer, openCreate, openEdit, submitRule, switchStatus, openLogic, addCondition, removeCondition, selectedContext, changeSelectedSourceType, addPreprocessorBinding, updatePreprocessorBinding, removePreprocessorBinding, saveConditionLogic, selectedOutputPathOptions, selectedInterfaceInputParams, selectedInterfaceInputConfig, updateInterfaceInputValue, updateCondition, updateSelectedOperand } = useRulesPageModel();
+  const {
+    holder,
+    logicDrawerWidth,
+    loading,
+    rows,
+    resources,
+    scenes,
+    preprocessors,
+    interfaces,
+    open,
+    editing,
+    ruleForm,
+    logicOpen,
+    currentRule,
+    globalLogicType,
+    setGlobalLogicType,
+    pageFieldOptions,
+    conditionsDraft,
+    selectedOperand,
+    setSelectedOperand,
+    savingQuery,
+    closeRuleModal,
+    closeLogicDrawer,
+    openCreate,
+    openEdit,
+    submitRule,
+    switchStatus,
+    openLogic,
+    addCondition,
+    removeCondition,
+    selectedContext,
+    changeSelectedSourceType,
+    addPreprocessorBinding,
+    updatePreprocessorBinding,
+    removePreprocessorBinding,
+    saveConditionLogic,
+    selectedOutputPathOptions,
+    selectedInterfaceInputParams,
+    selectedInterfaceInputConfig,
+    updateInterfaceInputValue,
+    updateCondition,
+    updateSelectedOperand
+  } = useRulesPageModel();
   return (
     <div>
       {holder}
       <Typography.Title level={4}>智能提示</Typography.Title>
       <Typography.Paragraph type="secondary">
-        智能提示主链路：规则配置、条件命中、提示展示、关闭/确认联动。条件编辑区采用左侧条件链路 + 右侧单属性面板。
+        智能提示主链路：规则配置、条件命中、提示展示、关闭/确认联动。支持共享规则复用公共字段，页面规则补充页面特有字段。
       </Typography.Paragraph>
 
       <Card
@@ -29,7 +71,17 @@ export function RulesPage() {
           pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 10, 20] }}
           columns={[
             { title: "规则名称", dataIndex: "name", width: 200 },
-            { title: "页面资源", dataIndex: "pageResourceName", width: 160 },
+            {
+              title: "适用范围",
+              width: 120,
+              render: (_, row) => <Tag color={row.ruleScope === "SHARED" ? "blue" : "geekblue"}>{row.ruleScope === "SHARED" ? "共享规则" : "页面专用"}</Tag>
+            },
+            { title: "规则集编码", dataIndex: "ruleSetCode", width: 180 },
+            {
+              title: "页面资源",
+              width: 160,
+              render: (_, row) => row.pageResourceName ?? <Typography.Text type="secondary">共享规则</Typography.Text>
+            },
             { title: "优先级", dataIndex: "priority", width: 90 },
             { title: "提示模式", dataIndex: "promptMode", width: 100 },
             {
@@ -80,8 +132,33 @@ export function RulesPage() {
           <Form.Item name="name" label="规则名称" rules={[{ required: true, message: "请输入规则名称" }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="pageResourceId" label="页面资源" rules={[{ required: true, message: "请选择页面资源" }]}>
-            <Select options={resources.map((item) => ({ label: item.name, value: item.id }))} />
+          <Form.Item name="ruleSetCode" label="规则集编码" rules={[{ required: true, message: "请输入规则集编码" }]}>
+            <Input placeholder="如：loan_high_risk_prompt" />
+          </Form.Item>
+          <Form.Item name="ruleScope" label="适用范围" rules={[{ required: true, message: "请选择适用范围" }]}>
+            <Select
+              options={[
+                { label: "共享规则（仅公共字段）", value: "SHARED" },
+                { label: "页面专用规则（公共字段 + 页面字段）", value: "PAGE_RESOURCE" }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate>
+            {() =>
+              ruleForm.getFieldValue("ruleScope") === "PAGE_RESOURCE" ? (
+                <Form.Item
+                  name="pageResourceId"
+                  label="页面资源"
+                  rules={[{ required: true, message: "请选择页面资源" }]}
+                >
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    options={resources.map((item) => ({ label: item.name, value: item.id }))}
+                  />
+                </Form.Item>
+              ) : null
+            }
           </Form.Item>
           <Form.Item name="priority" label="优先级" rules={[{ required: true }]}>
             <InputNumber min={1} max={999} style={{ width: "100%" }} />
@@ -111,8 +188,14 @@ export function RulesPage() {
           <Form.Item name="hasConfirmButton" label="确认按钮">
             <Select options={[{ label: "开启", value: true }, { label: "关闭", value: false }]} />
           </Form.Item>
-          <Form.Item name="sceneId" label="关联作业场景">
-            <Select allowClear options={scenes.map((scene) => ({ label: scene.name, value: scene.id }))} />
+          <Form.Item noStyle shouldUpdate>
+            {() =>
+              ruleForm.getFieldValue("hasConfirmButton") ? (
+                <Form.Item name="sceneId" label="关联作业场景">
+                  <Select allowClear options={scenes.map((scene) => ({ label: scene.name, value: scene.id }))} />
+                </Form.Item>
+              ) : null
+            }
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true }]}>
             <Select options={["DRAFT", "ACTIVE", "DISABLED", "EXPIRED"].map((value) => ({ label: value, value }))} />
@@ -273,7 +356,8 @@ export function RulesPage() {
                         style={{ width: "100%", marginTop: 6 }}
                         placeholder="请选择页面字段"
                         value={selectedContext.operand.displayValue || undefined}
-                        options={pageFieldOptions.map((item) => ({ label: item, value: item }))}
+                        optionFilterProp="label"
+                        options={pageFieldOptions}
                         onChange={(value) =>
                           updateSelectedOperand({
                             displayValue: (value as string) ?? "",
@@ -385,7 +469,14 @@ export function RulesPage() {
                               },
                               {
                                 title: "取值",
-                                render: (_, row) => (<InterfaceInputValueEditor param={row} selectedInterfaceInputConfig={selectedInterfaceInputConfig} updateInterfaceInputValue={updateInterfaceInputValue} />)
+                                render: (_, row) => (
+                                  <InterfaceInputValueEditor
+                                    param={row}
+                                    pageFieldOptions={pageFieldOptions}
+                                    selectedInterfaceInputConfig={selectedInterfaceInputConfig}
+                                    updateInterfaceInputValue={updateInterfaceInputValue}
+                                  />
+                                )
                               }
                             ]}
                           />

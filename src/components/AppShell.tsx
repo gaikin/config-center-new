@@ -9,6 +9,8 @@ const { Header, Sider, Content } = Layout;
 const navItems = [
   { key: "/", label: "总览" },
   { key: "/page-resources", label: "页面资源中心" },
+  { key: "/sdk-version-center", label: "SDK版本中心" },
+  { key: "/page-activation", label: "页面启用策略" },
   { key: "/interfaces", label: "API注册" },
   { key: "/preprocessors", label: "预处理器中心" },
   { key: "/rules", label: "智能提示" },

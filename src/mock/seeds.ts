@@ -1,4 +1,5 @@
 ﻿import type {
+  BusinessFieldDefinition,
   DashboardOverview,
   ExecutionLogItem,
   GovernanceAuditLog,
@@ -9,15 +10,21 @@
   JobNodeDefinition,
   JobNodeRunLog,
   JobSceneDefinition,
+  MenuSdkPolicy,
   PageElement,
+  PageFieldBinding,
   PageMenu,
+  PageRegion,
   PageResource,
   PageSite,
+  PageActivationPolicy,
   PreprocessorDefinition,
   RoleItem,
   RuleCondition,
   RuleConditionGroup,
   RuleDefinition,
+  SdkArtifactVersion,
+  SdkReleaseLane,
   TriggerLogItem
 } from "../types";
 
@@ -28,11 +35,16 @@ export const seedPageSites: PageSite[] = [
   { id: 2, code: "counter", name: "柜面统一办理系统", status: "ACTIVE" }
 ];
 
+export const seedPageRegions: PageRegion[] = [
+  { id: 11, siteId: 1, regionCode: "loan_region", regionName: "贷款专区", status: "ACTIVE" },
+  { id: 21, siteId: 2, regionCode: "corp_region", regionName: "对公专区", status: "ACTIVE" }
+];
+
 export const seedPageMenus: PageMenu[] = [
   {
     id: 101,
     siteId: 1,
-    zoneName: "贷款专区",
+    regionId: 11,
     menuName: "贷款申请",
     menuCode: "loan_apply",
     status: "ACTIVE",
@@ -41,7 +53,7 @@ export const seedPageMenus: PageMenu[] = [
   {
     id: 102,
     siteId: 1,
-    zoneName: "贷款专区",
+    regionId: 11,
     menuName: "贷款审核",
     menuCode: "loan_review",
     status: "ACTIVE",
@@ -50,7 +62,7 @@ export const seedPageMenus: PageMenu[] = [
   {
     id: 201,
     siteId: 2,
-    zoneName: "对公专区",
+    regionId: 21,
     menuName: "开户办理",
     menuCode: "open_account",
     status: "ACTIVE",
@@ -62,6 +74,8 @@ export const seedPageResources: PageResource[] = [
   {
     id: 1001,
     menuId: 101,
+    pageCode: "loan_apply_main",
+    frameCode: "main-frame",
     name: "贷款申请主页面",
     status: "ACTIVE",
     ownerOrgId: "branch-east",
@@ -72,7 +86,22 @@ export const seedPageResources: PageResource[] = [
   },
   {
     id: 1002,
+    menuId: 101,
+    pageCode: "loan_apply_collateral",
+    frameCode: "collateral-iframe",
+    name: "贷款申请抵押信息页",
+    status: "ACTIVE",
+    ownerOrgId: "branch-east",
+    currentVersion: 3,
+    elementCount: 12,
+    detectRulesSummary: "pageCode + iframe 标记优先",
+    updatedAt: now()
+  },
+  {
+    id: 1003,
     menuId: 201,
+    pageCode: "open_account_main",
+    frameCode: "main-frame",
     name: "开户办理主页面",
     status: "DRAFT",
     ownerOrgId: "branch-south",
@@ -87,8 +116,8 @@ export const seedPageElements: PageElement[] = [
   {
     id: 12001,
     pageResourceId: 1001,
-    logicName: "客户姓名",
-    selector: "//*[@id='customer-name']",
+    logicName: "客户号",
+    selector: "//*[@id='customer-id']",
     selectorType: "XPATH",
     required: true,
     updatedAt: now()
@@ -103,12 +132,278 @@ export const seedPageElements: PageElement[] = [
     updatedAt: now()
   },
   {
-    id: 12003,
+    id: 12004,
+    pageResourceId: 1001,
+    logicName: "客户手机号",
+    selector: "#mobile",
+    selectorType: "CSS",
+    required: false,
+    updatedAt: now()
+  },
+  {
+    id: 12005,
     pageResourceId: 1002,
+    logicName: "抵押物类型",
+    selector: "//*[@id='collateral-type']",
+    selectorType: "XPATH",
+    required: false,
+    updatedAt: now()
+  },
+  {
+    id: 12003,
+    pageResourceId: 1003,
     logicName: "开户用途",
     selector: "//*[@name='purpose']",
     selectorType: "XPATH",
     required: false,
+    updatedAt: now()
+  }
+];
+
+export const seedBusinessFields: BusinessFieldDefinition[] = [
+  {
+    id: 13001,
+    code: "customer_id",
+    name: "客户号",
+    scope: "GLOBAL",
+    valueType: "STRING",
+    required: true,
+    description: "跨菜单公共字段，用于客户唯一标识。",
+    ownerOrgId: "head-office",
+    status: "ACTIVE",
+    currentVersion: 3,
+    aliases: ["cust_id", "client_id"],
+    updatedAt: now()
+  },
+  {
+    id: 13002,
+    code: "id_no",
+    name: "证件号",
+    scope: "GLOBAL",
+    valueType: "STRING",
+    required: true,
+    description: "跨页面公共字段，用于接口入参与规则条件复用。",
+    ownerOrgId: "head-office",
+    status: "ACTIVE",
+    currentVersion: 2,
+    aliases: ["certificate_no"],
+    updatedAt: now()
+  },
+  {
+    id: 13003,
+    code: "mobile",
+    name: "手机号",
+    scope: "GLOBAL",
+    valueType: "STRING",
+    required: false,
+    description: "客户联系方式公共字段。",
+    ownerOrgId: "head-office",
+    status: "ACTIVE",
+    currentVersion: 2,
+    aliases: ["mobile_phone"],
+    updatedAt: now()
+  },
+  {
+    id: 13004,
+    code: "collateral_type",
+    name: "抵押物类型",
+    scope: "PAGE_RESOURCE",
+    pageResourceId: 1002,
+    valueType: "STRING",
+    required: false,
+    description: "贷款申请抵押页特有字段。",
+    ownerOrgId: "branch-east",
+    status: "ACTIVE",
+    currentVersion: 1,
+    aliases: [],
+    updatedAt: now()
+  },
+  {
+    id: 13005,
+    code: "account_purpose",
+    name: "开户用途",
+    scope: "PAGE_RESOURCE",
+    pageResourceId: 1003,
+    valueType: "STRING",
+    required: false,
+    description: "开户页面特有字段。",
+    ownerOrgId: "branch-south",
+    status: "ACTIVE",
+    currentVersion: 1,
+    aliases: [],
+    updatedAt: now()
+  }
+];
+
+export const seedPageFieldBindings: PageFieldBinding[] = [
+  {
+    id: 14001,
+    pageResourceId: 1001,
+    businessFieldCode: "customer_id",
+    pageElementId: 12001,
+    required: true,
+    updatedAt: now()
+  },
+  {
+    id: 14002,
+    pageResourceId: 1001,
+    businessFieldCode: "id_no",
+    pageElementId: 12002,
+    required: true,
+    updatedAt: now()
+  },
+  {
+    id: 14003,
+    pageResourceId: 1001,
+    businessFieldCode: "mobile",
+    pageElementId: 12004,
+    required: false,
+    updatedAt: now()
+  },
+  {
+    id: 14004,
+    pageResourceId: 1002,
+    businessFieldCode: "collateral_type",
+    pageElementId: 12005,
+    required: false,
+    updatedAt: now()
+  },
+  {
+    id: 14005,
+    pageResourceId: 1003,
+    businessFieldCode: "account_purpose",
+    pageElementId: 12003,
+    required: false,
+    updatedAt: now()
+  }
+];
+
+export const seedSdkArtifactVersions: SdkArtifactVersion[] = [
+  {
+    id: 8001,
+    sdkVersion: "1.3.0",
+    sdkMajorVersion: 1,
+    loaderVersion: "1.0.2",
+    artifactManifestUrl: "/manifest/kaiyang/prod/1.3.0.json",
+    compatibility: "loader>=1.0.0, core/prompt/job/preview 分包兼容",
+    status: "ACTIVE",
+    publishedBy: "平台支持A",
+    publishedAt: now(),
+    notes: "稳定版，作为 stable 槽位默认版本。"
+  },
+  {
+    id: 8002,
+    sdkVersion: "1.4.0-rc.2",
+    sdkMajorVersion: 1,
+    loaderVersion: "1.0.2",
+    artifactManifestUrl: "/manifest/kaiyang/prod/1.4.0-rc.2.json",
+    compatibility: "新增 sdk-release-index 与菜单级灰度支持",
+    status: "DRAFT",
+    publishedBy: "平台支持A",
+    publishedAt: now(),
+    notes: "灰度版，面向贷款专区菜单验证 loader -> menu -> lane 解析。"
+  }
+];
+
+export const seedSdkReleaseLanes: SdkReleaseLane[] = [
+  {
+    id: 8101,
+    laneCode: "stable",
+    laneName: "稳定槽位",
+    sdkArtifactVersionId: 8001,
+    sdkVersion: "1.3.0",
+    status: "ACTIVE",
+    updatedAt: now()
+  },
+  {
+    id: 8102,
+    laneCode: "gray-a",
+    laneName: "灰度槽位A",
+    sdkArtifactVersionId: 8002,
+    sdkVersion: "1.4.0-rc.2",
+    status: "DRAFT",
+    updatedAt: now()
+  },
+  {
+    id: 8103,
+    laneCode: "gray-b",
+    laneName: "灰度槽位B",
+    sdkArtifactVersionId: 8001,
+    sdkVersion: "1.3.0",
+    status: "ACTIVE",
+    updatedAt: now()
+  }
+];
+
+export const seedMenuSdkPolicies: MenuSdkPolicy[] = [
+  {
+    id: 8201,
+    siteId: 1,
+    regionId: 11,
+    menuId: 101,
+    menuCode: "loan_apply",
+    stableLaneId: 8101,
+    grayLaneId: 8102,
+    grayOrgIds: ["branch-east", "branch-east-sub1"],
+    effectiveStart: "2026-03-14 09:00",
+    effectiveEnd: "2026-03-31 23:59",
+    status: "DRAFT",
+    ownerOrgId: "head-office",
+    updatedAt: now(),
+    resolutionSummary: "branch-east 命中 gray-a，其余机构回退 stable"
+  },
+  {
+    id: 8202,
+    siteId: 2,
+    regionId: 21,
+    menuId: 201,
+    menuCode: "open_account",
+    stableLaneId: 8101,
+    grayLaneId: undefined,
+    grayOrgIds: [],
+    effectiveStart: "2026-03-14 09:00",
+    effectiveEnd: "2026-12-31 23:59",
+    status: "ACTIVE",
+    ownerOrgId: "head-office",
+    updatedAt: now(),
+    resolutionSummary: "全部机构命中 stable"
+  }
+];
+
+export const seedPageActivationPolicies: PageActivationPolicy[] = [
+  {
+    id: 8301,
+    pageResourceId: 1001,
+    enabled: true,
+    promptRuleSetName: "贷款申请提示规则集",
+    hasJobScenes: true,
+    jobPreloadPolicy: "idle",
+    jobSceneName: "贷款申请自动查数预填",
+    status: "ACTIVE",
+    ownerOrgId: "branch-east",
+    updatedAt: now()
+  },
+  {
+    id: 8302,
+    pageResourceId: 1002,
+    enabled: false,
+    promptRuleSetName: "贷款申请抵押信息补录",
+    hasJobScenes: false,
+    jobPreloadPolicy: "none",
+    status: "DRAFT",
+    ownerOrgId: "branch-east",
+    updatedAt: now()
+  },
+  {
+    id: 8303,
+    pageResourceId: 1003,
+    enabled: true,
+    promptRuleSetName: "开户办理完整性规则集",
+    hasJobScenes: true,
+    jobPreloadPolicy: "intent",
+    jobSceneName: "开户证件信息同步",
+    status: "DRAFT",
+    ownerOrgId: "branch-south",
     updatedAt: now()
   }
 ];
@@ -212,7 +507,7 @@ export const seedJobScenes: JobSceneDefinition[] = [
   {
     id: 5002,
     name: "开户证件信息同步",
-    pageResourceId: 1002,
+    pageResourceId: 1003,
     pageResourceName: "开户办理主页面",
     executionMode: "AUTO_AFTER_PROMPT",
     status: "DRAFT",
@@ -301,8 +596,8 @@ export const seedRules: RuleDefinition[] = [
   {
     id: 4001,
     name: "贷款高风险强提示",
-    pageResourceId: 1001,
-    pageResourceName: "贷款申请主页面",
+    ruleScope: "SHARED",
+    ruleSetCode: "loan_high_risk_prompt",
     priority: 950,
     promptMode: "FLOATING",
     closeMode: "MANUAL_CLOSE",
@@ -317,7 +612,9 @@ export const seedRules: RuleDefinition[] = [
   {
     id: 4002,
     name: "开户信息完整性提醒",
-    pageResourceId: 1002,
+    ruleScope: "PAGE_RESOURCE",
+    ruleSetCode: "open_account_integrity_prompt",
+    pageResourceId: 1003,
     pageResourceName: "开户办理主页面",
     priority: 700,
     promptMode: "SILENT",
@@ -375,11 +672,11 @@ export const seedRuleConditions: RuleCondition[] = [
 ];
 
 export const seedPendingSummary: GovernancePendingSummary = {
-  draftCount: 5,
-  expiringSoonCount: 2,
+  draftCount: 3,
+  expiringSoonCount: 1,
   validationFailedCount: 1,
-  conflictCount: 1,
-  riskConfirmPendingCount: 2
+  conflictCount: 0,
+  riskConfirmPendingCount: 1
 };
 
 export const seedPendingItems: GovernancePendingItem[] = [
@@ -422,6 +719,26 @@ export const seedPendingItems: GovernancePendingItem[] = [
     ownerOrgId: "branch-east",
     pendingType: "DRAFT",
     updatedAt: now()
+  },
+  {
+    id: 5,
+    resourceType: "MENU_SDK_POLICY",
+    resourceId: 8201,
+    resourceName: "贷款申请菜单 SDK 灰度策略",
+    status: "DRAFT",
+    ownerOrgId: "head-office",
+    pendingType: "DRAFT",
+    updatedAt: now()
+  },
+  {
+    id: 6,
+    resourceType: "PAGE_ACTIVATION_POLICY",
+    resourceId: 8303,
+    resourceName: "开户办理主页面启用策略",
+    status: "DRAFT",
+    ownerOrgId: "branch-south",
+    pendingType: "DRAFT",
+    updatedAt: now()
   }
 ];
 
@@ -451,6 +768,15 @@ export const seedAuditLogs: GovernanceAuditLog[] = [
     resourceId: 7002,
     resourceName: "业务管理角色-华东",
     operator: "业务超管",
+    createdAt: now()
+  },
+  {
+    id: 9004,
+    action: "VALIDATE",
+    resourceType: "MENU_SDK_POLICY",
+    resourceId: 8201,
+    resourceName: "贷款申请菜单 SDK 灰度策略",
+    operator: "业务经理-华东",
     createdAt: now()
   }
 ];

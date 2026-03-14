@@ -9,6 +9,16 @@ const DashboardPage = lazy(() =>
 const PageResourcesPage = lazy(() =>
   import("./pages/PageResourcesPage/PageResourcesPage").then((m) => ({ default: m.PageResourcesPage }))
 );
+const SdkVersionCenterPage = lazy(() =>
+  import("./pages/SdkVersionCenterPage/SdkVersionCenterPage").then((m) => ({
+    default: m.SdkVersionCenterPage
+  }))
+);
+const PageActivationPoliciesPage = lazy(() =>
+  import("./pages/PageActivationPoliciesPage/PageActivationPoliciesPage").then((m) => ({
+    default: m.PageActivationPoliciesPage
+  }))
+);
 const RulesPage = lazy(() => import("./pages/RulesPage/RulesPage").then((m) => ({ default: m.RulesPage })));
 const JobScenesPage = lazy(() =>
   import("./pages/JobScenesPage/JobScenesPage").then((m) => ({ default: m.JobScenesPage }))
@@ -34,6 +44,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/page-resources" element={<PageResourcesPage />} />
+          <Route path="/sdk-version-center" element={<SdkVersionCenterPage />} />
+          <Route path="/page-activation" element={<PageActivationPoliciesPage />} />
           <Route path="/rules" element={<RulesPage />} />
           <Route path="/job-scenes" element={<JobScenesPage />} />
           <Route path="/interfaces" element={<InterfacesPage />} />

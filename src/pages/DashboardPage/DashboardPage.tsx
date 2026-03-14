@@ -5,20 +5,20 @@ import type { DashboardOverview } from "../../types";
 
 const phaseItems = [
   { key: "phase-0", name: "Phase 0", detail: "基线冻结与对象模型确认" },
-  { key: "phase-1", name: "Phase 1", detail: "公共支撑层（页面资源、API注册、预处理器、权限）" },
-  { key: "phase-2", name: "Phase 2", detail: "智能提示主链路（规则、展示、关闭策略）" },
-  { key: "phase-3", name: "Phase 3", detail: "智能作业主链路（场景、编排、执行）" },
-  { key: "phase-4", name: "Phase 4", detail: "治理、审计、指标收口" },
+  { key: "phase-1", name: "Phase 1", detail: "公共支撑层与页面资源建模" },
+  { key: "phase-2", name: "Phase 2", detail: "SDK 发布控制与运行时分发" },
+  { key: "phase-3", name: "Phase 3", detail: "页面启用控制与智能提示" },
+  { key: "phase-4", name: "Phase 4", detail: "智能作业、治理与发布收口" },
   { key: "phase-5", name: "Phase 5", detail: "试点灰度与扩面准备" }
 ];
 
 const workPackages = [
-  "WP-A 公共支撑层",
-  "WP-B 智能提示",
-  "WP-C 智能作业",
-  "WP-D 生命周期治理",
-  "WP-E 审计指标",
-  "WP-F 试点上线"
+  "WP-A 页面资源与公共支撑层",
+  "WP-B SDK版本中心与菜单灰度",
+  "WP-C 页面启用策略与智能提示",
+  "WP-D 智能作业与运行时分包",
+  "WP-E 生命周期治理与审计",
+  "WP-F 原型与试点验证"
 ];
 
 export function DashboardPage() {
@@ -50,7 +50,7 @@ export function DashboardPage() {
     <div>
       <Typography.Title level={4}>配置中心总览</Typography.Title>
       <Typography.Paragraph type="secondary">
-        当前工作台按 plan 基线展示实施进度，采用“总纲驱动 + 子文档承接细节”的推进方式。
+        当前工作台按最新 plan 展示实施进度，核心基线已切换到“loader 稳定入口 + 菜单级 SDK 控制 + 页面级启用策略”。
       </Typography.Paragraph>
 
       <Row gutter={[12, 12]}>
@@ -126,10 +126,10 @@ export function DashboardPage() {
             <List
               size="small"
               dataSource={[
-                "总纲：prd-analysis.md；细节：sentinel-prd.md 与 job-prd.md。",
-                "发布前强校验作为主防线，运行时仅保留最小技术防护。",
-                "智能提示与智能作业分开建模、分开版本化、分开治理。",
-                "提示入口统一为确认按钮，复杂场景由悬浮入口承接。",
+                "对象层级固定为 site -> region -> menu -> page。",
+                "SDK 统一通过 cc-sdk-loader.js 注入，菜单策略解析真实版本。",
+                "灰度范围在 P0 仅到机构维度，页面和 iframe 继承菜单版本。",
+                "页面启用策略由业务管理，页面识别与字段模型由技术维护。",
                 "平台只承诺基础校验，真实联调在外部环境完成。"
               ]}
               renderItem={(item) => <List.Item>{item}</List.Item>}

@@ -1,22 +1,30 @@
 import {
   seedAuditLogs,
+  seedBusinessFields,
   seedDashboardOverview,
   seedExecutionLogs,
   seedInterfaces,
   seedJobScenes,
+  seedMenuSdkPolicies,
   seedPageElements,
+  seedPageFieldBindings,
   seedPageMenus,
+  seedPageRegions,
   seedPageResources,
   seedPageSites,
+  seedPageActivationPolicies,
   seedPendingItems,
   seedPendingSummary,
   seedPreprocessors,
   seedRoleMembers,
   seedRoles,
   seedRules,
+  seedSdkArtifactVersions,
+  seedSdkReleaseLanes,
   seedTriggerLogs
 } from "../mock/seeds";
 import type {
+  BusinessFieldDefinition,
   DashboardOverview,
   ExecutionLogItem,
   FailureReasonMetric,
@@ -26,14 +34,20 @@ import type {
   InterfaceDefinition,
   JobSceneDefinition,
   JobScenePreviewField,
+  MenuSdkPolicy,
   LifecycleState,
   PageElement,
+  PageFieldBinding,
   PageMenu,
+  PageRegion,
   PageResource,
   PageSite,
+  PageActivationPolicy,
   PreprocessorDefinition,
   RoleItem,
   RuleDefinition,
+  SdkArtifactVersion,
+  SdkReleaseLane,
   TriggerLogItem,
   ValidationItem,
   ValidationReport
@@ -55,9 +69,16 @@ function sleep(ms: number) {
 const store = {
   dashboard: structuredClone(seedDashboardOverview),
   pageSites: structuredClone(seedPageSites),
+  pageRegions: structuredClone(seedPageRegions),
   pageMenus: structuredClone(seedPageMenus),
   pageResources: structuredClone(seedPageResources),
   pageElements: structuredClone(seedPageElements),
+  businessFields: structuredClone(seedBusinessFields),
+  pageFieldBindings: structuredClone(seedPageFieldBindings),
+  sdkArtifactVersions: structuredClone(seedSdkArtifactVersions),
+  sdkReleaseLanes: structuredClone(seedSdkReleaseLanes),
+  menuSdkPolicies: structuredClone(seedMenuSdkPolicies),
+  pageActivationPolicies: structuredClone(seedPageActivationPolicies),
   interfaces: structuredClone(seedInterfaces),
   preprocessors: structuredClone(seedPreprocessors),
   rules: structuredClone(seedRules),
@@ -139,6 +160,10 @@ function getResourceRecord(pending: GovernancePendingItem) {
       return store.interfaces.find((item) => item.id === pending.resourceId) ?? null;
     case "PREPROCESSOR":
       return store.preprocessors.find((item) => item.id === pending.resourceId) ?? null;
+    case "MENU_SDK_POLICY":
+      return store.menuSdkPolicies.find((item) => item.id === pending.resourceId) ?? null;
+    case "PAGE_ACTIVATION_POLICY":
+      return store.pageActivationPolicies.find((item) => item.id === pending.resourceId) ?? null;
     default:
       return null;
   }
@@ -199,6 +224,8 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
       (item) =>
         item.id !== rule.id &&
         item.status === "ACTIVE" &&
+        item.ruleScope === "PAGE_RESOURCE" &&
+        rule.ruleScope === "PAGE_RESOURCE" &&
         item.pageResourceId === rule.pageResourceId &&
         item.priority === rule.priority
     );
@@ -261,6 +288,60 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
     });
   }
 
+  if (pending.resourceType === "MENU_SDK_POLICY") {
+    const policy = resource as MenuSdkPolicy;
+    const stableLanePass = store.sdkReleaseLanes.some((lane) => lane.id === policy.stableLaneId);
+    items.push({
+      key: "stable_lane",
+      label: "Stable lane binding",
+      passed: stableLanePass,
+      detail: stableLanePass ? "Pass" : "Stable lane is missing"
+    });
+
+    const grayLanePass = policy.grayOrgIds.length === 0 || Boolean(policy.grayLaneId);
+    items.push({
+      key: "gray_lane",
+      label: "Gray lane binding",
+      passed: grayLanePass,
+      detail: grayLanePass ? "Pass" : "Gray organizations are configured but gray lane is missing"
+    });
+
+    const timePass = policy.effectiveStart <= policy.effectiveEnd;
+    items.push({
+      key: "effective_time",
+      label: "Effective time window",
+      passed: timePass,
+      detail: timePass ? `${policy.effectiveStart} ~ ${policy.effectiveEnd}` : "Effective time range is invalid"
+    });
+  }
+
+  if (pending.resourceType === "PAGE_ACTIVATION_POLICY") {
+    const policy = resource as PageActivationPolicy;
+    const pagePass = store.pageResources.some((page) => page.id === policy.pageResourceId);
+    items.push({
+      key: "page_binding",
+      label: "Page binding",
+      passed: pagePass,
+      detail: pagePass ? "Pass" : "Page resource is missing"
+    });
+
+    const promptPass = !policy.enabled || policy.promptRuleSetName.trim().length > 0;
+    items.push({
+      key: "prompt_ruleset",
+      label: "Prompt ruleset",
+      passed: promptPass,
+      detail: promptPass ? policy.promptRuleSetName || "Disabled page" : "Enabled page must bind prompt ruleset"
+    });
+
+    const preloadPass = !policy.hasJobScenes || policy.jobPreloadPolicy !== "none";
+    items.push({
+      key: "job_preload_policy",
+      label: "Job preload policy",
+      passed: preloadPass,
+      detail: preloadPass ? policy.jobPreloadPolicy : "Pages with job scenes should not use none in current baseline"
+    });
+  }
+
   const pass = items.every((item) => item.passed);
   return { pass, items };
 }
@@ -318,6 +399,11 @@ export const configCenterService = {
     return clone(store.pageSites);
   },
 
+  async listPageRegions(): Promise<PageRegion[]> {
+    await sleep(100);
+    return clone(store.pageRegions);
+  },
+
   async listPageMenus(): Promise<PageMenu[]> {
     await sleep(100);
     return clone(store.pageMenus);
@@ -326,6 +412,72 @@ export const configCenterService = {
   async listPageResources(): Promise<PageResource[]> {
     await sleep(150);
     return clone(store.pageResources);
+  },
+
+  async listSdkArtifactVersions(): Promise<SdkArtifactVersion[]> {
+    await sleep(120);
+    return clone(store.sdkArtifactVersions);
+  },
+
+  async listSdkReleaseLanes(): Promise<SdkReleaseLane[]> {
+    await sleep(120);
+    return clone(store.sdkReleaseLanes);
+  },
+
+  async listMenuSdkPolicies(): Promise<MenuSdkPolicy[]> {
+    await sleep(150);
+    return clone(store.menuSdkPolicies);
+  },
+
+  async upsertMenuSdkPolicy(
+    payload: Omit<MenuSdkPolicy, "updatedAt" | "resolutionSummary"> & {
+      updatedAt?: string;
+      resolutionSummary?: string;
+    }
+  ): Promise<MenuSdkPolicy> {
+    await sleep(180);
+    const next: MenuSdkPolicy = {
+      ...payload,
+      updatedAt: payload.updatedAt ?? nowIso(),
+      resolutionSummary:
+        payload.resolutionSummary ??
+        `${payload.grayOrgIds.length > 0 ? payload.grayOrgIds.join("、") : "全部机构"} -> ${
+          payload.grayLaneId ? "gray lane" : "stable"
+        }`
+    };
+    const exists = store.menuSdkPolicies.find((item) => item.id === payload.id);
+    store.menuSdkPolicies = exists
+      ? store.menuSdkPolicies.map((item) => (item.id === next.id ? next : item))
+      : [next, ...store.menuSdkPolicies];
+    touchPendingForResource("MENU_SDK_POLICY", next.id, next.status, next.ownerOrgId, `菜单策略-${next.menuCode}`);
+    return clone(next);
+  },
+
+  async listPageActivationPolicies(): Promise<PageActivationPolicy[]> {
+    await sleep(140);
+    return clone(store.pageActivationPolicies);
+  },
+
+  async upsertPageActivationPolicy(
+    payload: Omit<PageActivationPolicy, "updatedAt"> & { updatedAt?: string }
+  ): Promise<PageActivationPolicy> {
+    await sleep(180);
+    const next: PageActivationPolicy = {
+      ...payload,
+      updatedAt: payload.updatedAt ?? nowIso()
+    };
+    const exists = store.pageActivationPolicies.find((item) => item.id === payload.id);
+    store.pageActivationPolicies = exists
+      ? store.pageActivationPolicies.map((item) => (item.id === next.id ? next : item))
+      : [next, ...store.pageActivationPolicies];
+    touchPendingForResource(
+      "PAGE_ACTIVATION_POLICY",
+      next.id,
+      next.status,
+      next.ownerOrgId,
+      `页面启用策略-${next.pageResourceId}`
+    );
+    return clone(next);
   },
 
   async upsertPageResource(payload: Omit<PageResource, "updatedAt"> & { updatedAt?: string }): Promise<PageResource> {
@@ -363,6 +515,55 @@ export const configCenterService = {
   async listPageElements(pageResourceId: number): Promise<PageElement[]> {
     await sleep(120);
     return clone(store.pageElements.filter((item) => item.pageResourceId === pageResourceId));
+  },
+
+  async listBusinessFields(pageResourceId?: number): Promise<BusinessFieldDefinition[]> {
+    await sleep(120);
+    return clone(
+      store.businessFields.filter(
+        (item) => item.scope === "GLOBAL" || pageResourceId === undefined || item.pageResourceId === pageResourceId
+      )
+    );
+  },
+
+  async upsertBusinessField(
+    payload: Omit<BusinessFieldDefinition, "updatedAt"> & { updatedAt?: string }
+  ): Promise<BusinessFieldDefinition> {
+    await sleep(150);
+    const next: BusinessFieldDefinition = {
+      ...payload,
+      updatedAt: payload.updatedAt ?? nowIso()
+    };
+    const exists = store.businessFields.some((item) => item.id === next.id);
+    store.businessFields = exists
+      ? store.businessFields.map((item) => (item.id === next.id ? next : item))
+      : [next, ...store.businessFields];
+    return clone(next);
+  },
+
+  async listPageFieldBindings(pageResourceId: number): Promise<PageFieldBinding[]> {
+    await sleep(120);
+    return clone(store.pageFieldBindings.filter((item) => item.pageResourceId === pageResourceId));
+  },
+
+  async upsertPageFieldBinding(
+    payload: Omit<PageFieldBinding, "updatedAt"> & { updatedAt?: string }
+  ): Promise<PageFieldBinding> {
+    await sleep(150);
+    const next: PageFieldBinding = {
+      ...payload,
+      updatedAt: payload.updatedAt ?? nowIso()
+    };
+    const exists = store.pageFieldBindings.some((item) => item.id === next.id);
+    store.pageFieldBindings = exists
+      ? store.pageFieldBindings.map((item) => (item.id === next.id ? next : item))
+      : [next, ...store.pageFieldBindings];
+    return clone(next);
+  },
+
+  async deletePageFieldBinding(id: number): Promise<void> {
+    await sleep(100);
+    store.pageFieldBindings = store.pageFieldBindings.filter((item) => item.id !== id);
   },
 
   async upsertPageElement(payload: Omit<PageElement, "updatedAt"> & { updatedAt?: string }): Promise<PageElement> {
@@ -765,6 +966,10 @@ export const configCenterService = {
       store.interfaces = activate(store.interfaces);
     } else if (pending.resourceType === "PREPROCESSOR") {
       store.preprocessors = activate(store.preprocessors);
+    } else if (pending.resourceType === "MENU_SDK_POLICY") {
+      store.menuSdkPolicies = activate(store.menuSdkPolicies);
+    } else if (pending.resourceType === "PAGE_ACTIVATION_POLICY") {
+      store.pageActivationPolicies = activate(store.pageActivationPolicies);
     }
 
     store.pendingItems = store.pendingItems.filter((item) => item.id !== pendingId);
@@ -799,10 +1004,11 @@ export const configCenterService = {
   async rollbackResource(resourceType: string, resourceId: number, operator = "Business Manager"): Promise<void> {
     await sleep(160);
 
-    const rollback = <T extends { id: number; status: LifecycleState; updatedAt: string; name: string }>(
+    const rollback = <T extends { id: number; status: LifecycleState; updatedAt: string }>(
       items: T[],
       type: GovernancePendingItem["resourceType"],
-      ownerOrgId: string
+      ownerOrgId: string,
+      getName: (item: T) => string
     ) => {
       const target = items.find((item) => item.id === resourceId);
       if (!target) {
@@ -811,12 +1017,12 @@ export const configCenterService = {
       const nextItems = items.map((item) =>
         item.id === resourceId ? { ...item, status: "DRAFT", updatedAt: nowIso() } : item
       );
-      touchPendingForResource(type, resourceId, "DRAFT", ownerOrgId, target.name);
+      touchPendingForResource(type, resourceId, "DRAFT", ownerOrgId, getName(target));
       return { items: nextItems, target };
     };
 
     if (resourceType === "RULE") {
-      const result = rollback(store.rules, "RULE", "branch-east");
+      const result = rollback(store.rules, "RULE", "branch-east", (item) => item.name);
       store.rules = result.items;
       if (result.target) {
         appendAuditLog("ROLLBACK", "RULE", result.target.name, operator, resourceId);
@@ -825,7 +1031,7 @@ export const configCenterService = {
     }
 
     if (resourceType === "JOB_SCENE") {
-      const result = rollback(store.scenes, "JOB_SCENE", "branch-east");
+      const result = rollback(store.scenes, "JOB_SCENE", "branch-east", (item) => item.name);
       store.scenes = result.items;
       if (result.target) {
         appendAuditLog("ROLLBACK", "JOB_SCENE", result.target.name, operator, resourceId);
@@ -834,7 +1040,7 @@ export const configCenterService = {
     }
 
     if (resourceType === "INTERFACE") {
-      const result = rollback(store.interfaces, "INTERFACE", "branch-east");
+      const result = rollback(store.interfaces, "INTERFACE", "branch-east", (item) => item.name);
       store.interfaces = result.items;
       if (result.target) {
         appendAuditLog("ROLLBACK", "INTERFACE", result.target.name, operator, resourceId);
@@ -842,8 +1048,37 @@ export const configCenterService = {
       return;
     }
 
+    if (resourceType === "MENU_SDK_POLICY") {
+      const result = rollback(store.menuSdkPolicies, "MENU_SDK_POLICY", "head-office", (item) => `菜单策略-${item.menuCode}`);
+      store.menuSdkPolicies = result.items;
+      if (result.target) {
+        appendAuditLog("ROLLBACK", "MENU_SDK_POLICY", `菜单策略-${result.target.menuCode}`, operator, resourceId);
+      }
+      return;
+    }
+
+    if (resourceType === "PAGE_ACTIVATION_POLICY") {
+      const result = rollback(
+        store.pageActivationPolicies,
+        "PAGE_ACTIVATION_POLICY",
+        "branch-east",
+        (item) => `页面启用策略-${item.pageResourceId}`
+      );
+      store.pageActivationPolicies = result.items;
+      if (result.target) {
+        appendAuditLog(
+          "ROLLBACK",
+          "PAGE_ACTIVATION_POLICY",
+          `页面启用策略-${result.target.pageResourceId}`,
+          operator,
+          resourceId
+        );
+      }
+      return;
+    }
+
     if (resourceType === "PAGE_RESOURCE") {
-      const result = rollback(store.pageResources, "PAGE_RESOURCE", "branch-east");
+      const result = rollback(store.pageResources, "PAGE_RESOURCE", "branch-east", (item) => item.name);
       store.pageResources = result.items;
       if (result.target) {
         appendAuditLog("ROLLBACK", "PAGE_RESOURCE", result.target.name, operator, resourceId);
@@ -852,7 +1087,7 @@ export const configCenterService = {
     }
 
     if (resourceType === "PREPROCESSOR") {
-      const result = rollback(store.preprocessors, "PREPROCESSOR", "branch-east");
+      const result = rollback(store.preprocessors, "PREPROCESSOR", "branch-east", (item) => item.name);
       store.preprocessors = result.items;
       if (result.target) {
         appendAuditLog("ROLLBACK", "PREPROCESSOR", result.target.name, operator, resourceId);

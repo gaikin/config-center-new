@@ -12,7 +12,9 @@ import type {
 
 export type RuleForm = {
   name: string;
-  pageResourceId: number;
+  ruleScope: "SHARED" | "PAGE_RESOURCE";
+  ruleSetCode: string;
+  pageResourceId?: number;
   priority: number;
   promptMode: PromptMode;
   closeMode: PromptCloseMode;
@@ -109,7 +111,12 @@ export const operatorOptions: Array<{ value: RuleOperator; label: string }> = [
   { value: "EXISTS", label: "EXISTS" }
 ];
 
-export const pageFieldOptions = ["customer_id", "id_no", "mobile", "risk_score", "risk_level"];
+export type RulePageFieldOption = {
+  label: string;
+  value: string;
+  group: "公共字段" | "页面字段";
+};
+
 export const contextOptions = ["org_id", "operator_role", "channel", "user_role"];
 
 export const sourceVisualMap: Record<RuleOperandSourceType, { label: string; color: string; bg: string; border: string }> = {
