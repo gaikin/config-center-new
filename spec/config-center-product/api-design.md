@@ -386,55 +386,65 @@
 1. `bundleVersion`
 2. `pageResourceId`
 3. `etag`
-4. `rules`
-5. `sceneRefs`
-6. `floatingEntryAvailable`
+4. `pageFields`
+5. `rules`
+6. `sceneRefs`
+7. `floatingEntryAvailable`
 
-### 4.2 规则判定与提示生命周期
+`pageFields` 建议至少包含：
+
+1. `fieldKey`
+2. `fieldScope`：`COMMON` / `PAGE_LOCAL`
+3. `elementType`：如 `INPUT`、`SELECT`、`TEXTAREA`、`BUTTON`、`READONLY_TEXT`
+4. `locator`
+5. `readable`
+6. `writable`
+7. `watchable`
+8. `extractor`
+9. `normalizers`
+
+### 4.2 运行时数据代理与提示生命周期
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/api/runtime/decisions/evaluate` | 提交页面上下文，获取规则命中和提示结果 |
+| `POST` | `/api/runtime/data-proxy/query` | 按运行时快照中的接口定义发起受控数据代理请求 |
 | `POST` | `/api/runtime/prompts/{traceId}/close` | 记录提示关闭 |
-| `POST` | `/api/runtime/prompts/{traceId}/confirm` | 记录提示确认并准备触发作业 |
+| `POST` | `/api/runtime/prompts/{traceId}/confirm` | 记录提示确认，并在执行方式要求时承接后续作业启动 |
 
-判定请求示例：
+说明约束：
+
+1. 规则判定默认在 JSSDK 本地执行，运行面不再提供高频后端判定接口。
+2. 数据代理接口只服务于快照中声明的接口定义，不接受页面侧自由拼装的任意请求。
+3. 响应需返回可用于本地缓存治理的元信息，如 `ttlSeconds`、`cacheScope`、`interfaceVersion`。
+4. 页面字段结果语义由 JSSDK 按 `ABSENT`、`EMPTY`、`VALUE` 三态处理；运行面日志和执行接口需能承接字段缺失导致的 `INVALID` 信息。
+
+数据代理请求示例：
 
 ```json
 {
-  "pageResourceId": 2001001,
+  "interfaceId": 61001001,
+  "interfaceVersion": "v3",
   "bundleVersion": "b-20260312-001",
-  "context": {
-    "fields": {
-      "apply_amount": "600000",
-      "customer_no": "C20260001"
-    }
+  "pageResourceId": 2001001,
+  "params": {
+    "customer_no": "C20260001"
   }
 }
 ```
 
-判定响应示例：
+数据代理响应示例：
 
 ```json
 {
-  "traceId": "rt-20260312-0001",
-  "matchedRules": [
-    {
-      "ruleId": 4001001,
-      "ruleVersionId": 4001002,
-      "priority": 900,
-      "prompt": {
-        "promptMode": "FLOATING",
-        "closeMode": "MANUAL_CLOSE",
-        "content": "申请金额超过风险阈值，请先复核客户授信信息。",
-        "confirmAction": {
-          "enabled": true,
-          "buttonText": "确认",
-          "sceneId": 5001001
-        }
-      }
-    }
-  ]
+  "requestId": "dp-20260312-0001",
+  "interfaceId": 61001001,
+  "interfaceVersion": "v3",
+  "ttlSeconds": 60,
+  "cacheScope": "PAGE_SESSION",
+  "data": {
+    "creditLevel": "B",
+    "grantAmount": "500000"
+  }
 }
 ```
 
@@ -455,6 +465,7 @@
 {
   "sceneId": 5001001,
   "triggerSource": "PROMPT_CONFIRM",
+  "executionMode": "PREVIEW_THEN_EXECUTE",
   "pageResourceId": 2001001,
   "traceId": "rt-20260312-0001",
   "context": {
@@ -473,6 +484,12 @@
 4. `needPreviewConfirm`
 5. `fallbackAvailable`
 6. `errorMessage`
+
+约束说明：
+
+1. `executionMode` 由作业场景配置决定，可取 `AUTO_WITHOUT_PROMPT`、`AUTO_AFTER_PROMPT`、`PREVIEW_THEN_EXECUTE`、`FLOATING_BUTTON`。
+2. `PROMPT_CONFIRM` 仅是 `triggerSource` 的一种，不代表所有场景都必须经过提示确认。
+3. `FLOATING_BUTTON` 场景必须通过悬浮入口显式创建执行实例。
 
 ### 4.4 悬浮按钮二次触发
 
@@ -568,7 +585,7 @@
 2. 优先固化以下接口：
    `page-context/resolve`
    `runtime/pages/{pageId}/bundle`
-   `runtime/decisions/evaluate`
+   `runtime/data-proxy/query`
    `runtime/executions`
    `control/publish/validate`
 3. 在接口正式冻结前，和 `tdsql-ddl-draft.md` 做一次字段对齐评审，避免对象名、状态值和版本关系偏差。
