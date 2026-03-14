@@ -724,20 +724,20 @@ export function PageResourcesPage() {
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          message="字段建模恢复"
-          description="公共字段由总行统一维护；页面特有字段挂在当前页面下。规则和作业只引用字段编码，不直接引用选择器。"
+          message="页面字段建模"
+          description="公共字段用于跨页面复用条件和规则模板；页面特有字段只在当前页面内使用。规则和作业只引用字段编码，不直接引用选择器。"
         />
 
         <Card
           size="small"
-          title="业务字段字典"
+          title="页面字段字典"
           extra={
             <Space>
               <Button size="small" onClick={() => openCreateField("GLOBAL")}>
                 新增公共字段
               </Button>
               <Button size="small" type="primary" onClick={() => openCreateField("PAGE_RESOURCE")}>
-                新增页面字段
+                新增页面特有字段
               </Button>
             </Space>
           }
@@ -754,7 +754,7 @@ export function PageResourcesPage() {
               {
                 title: "归属",
                 width: 100,
-                render: (_, row) => <Tag color={row.scope === "GLOBAL" ? "blue" : "geekblue"}>{row.scope === "GLOBAL" ? "公共字段" : "页面字段"}</Tag>
+                render: (_, row) => <Tag color={row.scope === "GLOBAL" ? "blue" : "geekblue"}>{row.scope === "GLOBAL" ? "公共字段" : "页面特有字段"}</Tag>
               },
               { title: "类型", dataIndex: "valueType", width: 100 },
               { title: "说明", dataIndex: "description" },
@@ -823,7 +823,7 @@ export function PageResourcesPage() {
       </Drawer>
 
       <Modal
-        title={editingField ? "编辑业务字段" : "新增业务字段"}
+        title={editingField ? "编辑页面字段" : "新增页面字段"}
         open={fieldOpen}
         onCancel={() => setFieldOpen(false)}
         onOk={() => void submitField()}
@@ -833,7 +833,7 @@ export function PageResourcesPage() {
             <Select
               options={[
                 { label: "公共字段", value: "GLOBAL" },
-                { label: "页面字段", value: "PAGE_RESOURCE" }
+                { label: "页面特有字段", value: "PAGE_RESOURCE" }
               ]}
             />
           </Form.Item>

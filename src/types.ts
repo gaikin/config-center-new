@@ -150,6 +150,8 @@ export interface RuleDefinition {
   ruleSetCode: string;
   pageResourceId?: number;
   pageResourceName?: string;
+  sourceRuleId?: number;
+  sourceRuleName?: string;
   priority: number;
   promptMode: PromptMode;
   closeMode: PromptCloseMode;

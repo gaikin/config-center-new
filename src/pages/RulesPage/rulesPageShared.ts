@@ -11,6 +11,7 @@ import type {
 } from "../../types";
 
 export type RuleForm = {
+  templateRuleId?: number;
   name: string;
   ruleScope: "SHARED" | "PAGE_RESOURCE";
   ruleSetCode: string;
@@ -114,7 +115,7 @@ export const operatorOptions: Array<{ value: RuleOperator; label: string }> = [
 export type RulePageFieldOption = {
   label: string;
   value: string;
-  group: "公共字段" | "页面字段";
+  group: "公共字段" | "页面特有字段";
 };
 
 export const contextOptions = ["org_id", "operator_role", "channel", "user_role"];
@@ -127,7 +128,7 @@ export const sourceVisualMap: Record<RuleOperandSourceType, { label: string; col
     border: "var(--cc-source-fixed-border, #D0D5DD)"
   },
   PAGE_FIELD: {
-    label: "页面元素",
+    label: "页面字段",
     color: "var(--cc-source-page, #175CD3)",
     bg: "var(--cc-source-page-bg, #EFF8FF)",
     border: "var(--cc-source-page-border, #B2DDFF)"

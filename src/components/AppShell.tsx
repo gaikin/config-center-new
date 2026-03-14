@@ -14,6 +14,7 @@ const navItems = [
   { key: "/interfaces", label: "API注册" },
   { key: "/preprocessors", label: "预处理器中心" },
   { key: "/rules", label: "智能提示" },
+  { key: "/rule-templates", label: "规则模板中心" },
   { key: "/job-scenes", label: "智能作业" },
   { key: "/governance", label: "治理工作台" },
   { key: "/audit-metrics", label: "审计与指标中心" },

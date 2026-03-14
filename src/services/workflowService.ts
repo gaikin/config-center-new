@@ -398,6 +398,54 @@ export const workflowService = {
     store.conditions = store.conditions.filter((item) => item.id !== conditionId);
   },
 
+  async cloneRuleLogic(sourceRuleId: number, targetRuleId: number): Promise<void> {
+    await sleep(140);
+    const sourceGroups = store.groups
+      .filter((item) => item.ruleId === sourceRuleId)
+      .sort((a, b) => a.id - b.id);
+    const sourceConditions = store.conditions
+      .filter((item) => item.ruleId === sourceRuleId)
+      .sort((a, b) => a.id - b.id);
+
+    if (sourceGroups.length === 0) {
+      return;
+    }
+
+    const groupIdMap = new Map<number, number>();
+    for (const group of sourceGroups) {
+      const nextGroupId = nextId(store.groups);
+      groupIdMap.set(group.id, nextGroupId);
+      store.groups = [
+        {
+          ...group,
+          id: nextGroupId,
+          ruleId: targetRuleId,
+          parentGroupId: group.parentGroupId ? groupIdMap.get(group.parentGroupId) : undefined,
+          updatedAt: nowIso()
+        },
+        ...store.groups
+      ];
+    }
+
+    for (const condition of sourceConditions) {
+      const nextConditionId = nextId(store.conditions);
+      const mappedGroupId = groupIdMap.get(condition.groupId);
+      if (!mappedGroupId) {
+        continue;
+      }
+      store.conditions = [
+        {
+          ...condition,
+          id: nextConditionId,
+          ruleId: targetRuleId,
+          groupId: mappedGroupId,
+          updatedAt: nowIso()
+        },
+        ...store.conditions
+      ];
+    }
+  },
+
   async previewRuleWithInput(ruleId: number, input: RulePreviewInput): Promise<RulePreviewResult> {
     await sleep(140);
     return evaluateRule(ruleId, input);

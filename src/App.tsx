@@ -20,6 +20,11 @@ const PageActivationPoliciesPage = lazy(() =>
   }))
 );
 const RulesPage = lazy(() => import("./pages/RulesPage/RulesPage").then((m) => ({ default: m.RulesPage })));
+const RuleTemplateCenterPage = lazy(() =>
+  import("./pages/RuleTemplateCenterPage/RuleTemplateCenterPage").then((m) => ({
+    default: m.RuleTemplateCenterPage
+  }))
+);
 const JobScenesPage = lazy(() =>
   import("./pages/JobScenesPage/JobScenesPage").then((m) => ({ default: m.JobScenesPage }))
 );
@@ -47,6 +52,7 @@ export default function App() {
           <Route path="/sdk-version-center" element={<SdkVersionCenterPage />} />
           <Route path="/page-activation" element={<PageActivationPoliciesPage />} />
           <Route path="/rules" element={<RulesPage />} />
+          <Route path="/rule-templates" element={<RuleTemplateCenterPage />} />
           <Route path="/job-scenes" element={<JobScenesPage />} />
           <Route path="/interfaces" element={<InterfacesPage />} />
           <Route path="/preprocessors" element={<PreprocessorsPage />} />

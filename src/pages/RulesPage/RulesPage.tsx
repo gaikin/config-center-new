@@ -1,16 +1,17 @@
 import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { useRulesPageModel } from "./useRulesPageModel";
+import { RulesPageMode, useRulesPageModel } from "./useRulesPageModel";
 import { InterfaceInputParamDraft, LOGIC_OPERATOR_WIDTH, deriveMachineKeyFromOutputPath, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, operatorOptions, sourceOptions, statusColor, valueTypeOptions } from "./rulesPageShared";
 import { OperandPill, InterfaceInputValueEditor } from "./rulesOperandRenderers";
 import type { RuleDefinition, RuleLogicType, RuleOperandValueType } from "../../types";
 
-export function RulesPage() {
+export function RulesPage({ mode = "PAGE_RULE" }: { mode?: RulesPageMode }) {
   const {
     holder,
     logicDrawerWidth,
     loading,
     rows,
+    templates,
     resources,
     scenes,
     preprocessors,
@@ -30,6 +31,7 @@ export function RulesPage() {
     closeRuleModal,
     closeLogicDrawer,
     openCreate,
+    applyTemplate,
     openEdit,
     submitRule,
     switchStatus,
@@ -48,18 +50,34 @@ export function RulesPage() {
     updateInterfaceInputValue,
     updateCondition,
     updateSelectedOperand
-  } = useRulesPageModel();
+  } = useRulesPageModel(mode);
+  const isTemplateMode = mode === "TEMPLATE";
+  const pageTitle = isTemplateMode ? "规则模板中心" : "智能提示";
+  const pageDescription = isTemplateMode
+    ? "沉淀高复用规则模板。模板仅引用公共字段，供业务人员在新建页面规则时快速套用。"
+    : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。";
+  const createButtonLabel = isTemplateMode ? "新建模板" : "新建规则";
+  const modalTitle = editing ? (isTemplateMode ? "编辑规则模板" : "编辑规则") : isTemplateMode ? "新建规则模板" : "新建规则";
+  const modalAlert = isTemplateMode
+    ? {
+        message: "模板中心面向高复用规则沉淀。",
+        description: "模板只允许使用公共字段，不绑定具体页面；业务人员建规则时可选择模板，自动带入条件逻辑和提示配置。"
+      }
+    : {
+        message: "以页面规则为主，新建时可直接套用模板。",
+        description: "模板是快捷来源，不是业务人员的主操作对象；选择模板后会自动带入条件逻辑、提示方式和关闭策略。"
+      };
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>智能提示</Typography.Title>
+      <Typography.Title level={4}>{pageTitle}</Typography.Title>
       <Typography.Paragraph type="secondary">
-        智能提示主链路：规则配置、条件命中、提示展示、关闭/确认联动。支持共享规则复用公共字段，页面规则补充页面特有字段。
+        {pageDescription}
       </Typography.Paragraph>
 
       <Card
         extra={
-          <Tooltip title="新建规则">
+          <Tooltip title={createButtonLabel}>
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} aria-label="create-rule" />
           </Tooltip>
         }
@@ -70,18 +88,30 @@ export function RulesPage() {
           dataSource={rows}
           pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 10, 20] }}
           columns={[
-            { title: "规则名称", dataIndex: "name", width: 200 },
-            {
-              title: "适用范围",
-              width: 120,
-              render: (_, row) => <Tag color={row.ruleScope === "SHARED" ? "blue" : "geekblue"}>{row.ruleScope === "SHARED" ? "共享规则" : "页面专用"}</Tag>
-            },
+            { title: isTemplateMode ? "模板名称" : "规则名称", dataIndex: "name", width: 200 },
             { title: "规则集编码", dataIndex: "ruleSetCode", width: 180 },
-            {
-              title: "页面资源",
-              width: 160,
-              render: (_, row) => row.pageResourceName ?? <Typography.Text type="secondary">共享规则</Typography.Text>
-            },
+            ...(isTemplateMode
+              ? [
+                  {
+                    title: "字段范围",
+                    width: 140,
+                    render: () => <Tag color="blue">仅公共字段</Tag>
+                  }
+                ]
+              : [
+                  {
+                    title: "页面资源",
+                    width: 160,
+                    render: (_: unknown, row: RuleDefinition) =>
+                      row.pageResourceName ?? <Typography.Text type="secondary">未绑定页面</Typography.Text>
+                  },
+                  {
+                    title: "来源模板",
+                    width: 160,
+                    render: (_: unknown, row: RuleDefinition) =>
+                      row.sourceRuleName ?? <Typography.Text type="secondary">独立规则</Typography.Text>
+                  }
+                ]),
             { title: "优先级", dataIndex: "priority", width: 90 },
             { title: "提示模式", dataIndex: "promptMode", width: 100 },
             {
@@ -103,13 +133,13 @@ export function RulesPage() {
               render: (_, row) => (
                 <Space>
                   <Button size="small" onClick={() => openEdit(row)}>
-                    编辑基础
+                    {isTemplateMode ? "编辑模板" : "编辑基础"}
                   </Button>
                   <Button size="small" onClick={() => void openLogic(row)}>
-                    条件编辑
+                    {isTemplateMode ? "编辑模板条件" : "条件编辑"}
                   </Button>
                   <Popconfirm
-                    title={row.status === "ACTIVE" ? "确认停用该规则？" : "确认启用该规则？"}
+                    title={row.status === "ACTIVE" ? `确认停用该${isTemplateMode ? "模板" : "规则"}？` : `确认启用该${isTemplateMode ? "模板" : "规则"}？`}
                     onConfirm={() => void switchStatus(row)}
                   >
                     <Button size="small">{row.status === "ACTIVE" ? "停用" : "启用"}</Button>
@@ -122,43 +152,81 @@ export function RulesPage() {
       </Card>
 
       <Modal
-        title={editing ? "编辑规则" : "新建规则"}
+        title={modalTitle}
         open={open}
         onCancel={closeRuleModal}
         onOk={() => void submitRule()}
         width={680}
       >
         <Form form={ruleForm} layout="vertical">
-          <Form.Item name="name" label="规则名称" rules={[{ required: true, message: "请输入规则名称" }]}>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={modalAlert.message}
+            description={modalAlert.description}
+          />
+          <Form.Item hidden name="ruleScope">
+            <Input />
+          </Form.Item>
+          {!editing && !isTemplateMode ? (
+            <>
+              <Form.Item
+                name="pageResourceId"
+                label="页面资源"
+                rules={[{ required: true, message: "请选择页面资源" }]}
+              >
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  options={resources.map((item) => ({ label: item.name, value: item.id }))}
+                />
+              </Form.Item>
+              <Form.Item name="templateRuleId" label="快速复用模板">
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder={templates.length > 0 ? "可选：套用已沉淀模板" : "暂无可复用模板"}
+                  optionFilterProp="label"
+                  options={templates.map((item) => ({
+                    label: `${item.name}（${item.ruleSetCode}）`,
+                    value: item.id
+                  }))}
+                  onChange={(value) => applyTemplate(value as number | undefined)}
+                />
+              </Form.Item>
+            </>
+          ) : !isTemplateMode ? (
+            <>
+              <Form.Item
+                name="pageResourceId"
+                label="页面资源"
+                rules={[{ required: true, message: "请选择页面资源" }]}
+              >
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  options={resources.map((item) => ({ label: item.name, value: item.id }))}
+                />
+              </Form.Item>
+              <Form.Item label="来源模板">
+                <Input value={editing?.sourceRuleName ?? "独立规则"} readOnly />
+              </Form.Item>
+            </>
+          ) : (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="模板不绑定页面"
+              description="模板只允许引用公共字段；若条件需要页面特有字段，请在页面规则中补充。"
+            />
+          )}
+          <Form.Item name="name" label={isTemplateMode ? "模板名称" : "规则名称"} rules={[{ required: true, message: `请输入${isTemplateMode ? "模板" : "规则"}名称` }]}>
             <Input />
           </Form.Item>
           <Form.Item name="ruleSetCode" label="规则集编码" rules={[{ required: true, message: "请输入规则集编码" }]}>
             <Input placeholder="如：loan_high_risk_prompt" />
-          </Form.Item>
-          <Form.Item name="ruleScope" label="适用范围" rules={[{ required: true, message: "请选择适用范围" }]}>
-            <Select
-              options={[
-                { label: "共享规则（仅公共字段）", value: "SHARED" },
-                { label: "页面专用规则（公共字段 + 页面字段）", value: "PAGE_RESOURCE" }
-              ]}
-            />
-          </Form.Item>
-          <Form.Item noStyle shouldUpdate>
-            {() =>
-              ruleForm.getFieldValue("ruleScope") === "PAGE_RESOURCE" ? (
-                <Form.Item
-                  name="pageResourceId"
-                  label="页面资源"
-                  rules={[{ required: true, message: "请选择页面资源" }]}
-                >
-                  <Select
-                    showSearch
-                    optionFilterProp="label"
-                    options={resources.map((item) => ({ label: item.name, value: item.id }))}
-                  />
-                </Form.Item>
-              ) : null
-            }
           </Form.Item>
           <Form.Item name="priority" label="优先级" rules={[{ required: true }]}>
             <InputNumber min={1} max={999} style={{ width: "100%" }} />
@@ -207,7 +275,7 @@ export function RulesPage() {
       </Modal>
 
       <Drawer
-        title={currentRule ? `条件编辑: ${currentRule.name}` : "条件编辑"}
+        title={currentRule ? `${isTemplateMode ? "模板条件编辑" : "条件编辑"}: ${currentRule.name}` : isTemplateMode ? "模板条件编辑" : "条件编辑"}
         placement="right"
         width={logicDrawerWidth}
         open={logicOpen}

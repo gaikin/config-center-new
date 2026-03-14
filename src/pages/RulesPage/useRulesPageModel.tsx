@@ -40,7 +40,10 @@ import {
   sourceOptions,
   valueTypeOptions
 } from "./rulesPageShared";
-export function useRulesPageModel() {
+
+export type RulesPageMode = "PAGE_RULE" | "TEMPLATE";
+
+export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE") {
   const screens = Grid.useBreakpoint();
   const logicDrawerWidth = getRightOverlayDrawerWidth(Boolean(screens.lg));
   const [loading, setLoading] = useState(true);
@@ -53,6 +56,7 @@ export function useRulesPageModel() {
   const [interfaces, setInterfaces] = useState<InterfaceDefinition[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RuleDefinition | null>(null);
+  const [reuseSourceRule, setReuseSourceRule] = useState<RuleDefinition | null>(null);
   const [ruleForm] = Form.useForm<RuleForm>();
   const watchedRuleScope = Form.useWatch("ruleScope", ruleForm);
   const watchedPageResourceId = Form.useWatch("pageResourceId", ruleForm);
@@ -96,6 +100,14 @@ export function useRulesPageModel() {
   useEffect(() => {
     void loadData();
   }, []);
+  const templateRows = useMemo(
+    () => rows.filter((row) => row.ruleScope === "SHARED"),
+    [rows]
+  );
+  const pageRuleRows = useMemo(
+    () => rows.filter((row) => row.ruleScope === "PAGE_RESOURCE"),
+    [rows]
+  );
   const pageFieldOptions = useMemo<RulePageFieldOption[]>(() => {
     const boundFieldCodes =
       activeRuleScope === "PAGE_RESOURCE" && typeof activePageResourceId === "number"
@@ -120,15 +132,16 @@ export function useRulesPageModel() {
     });
 
     return fields.map((field) => ({
-      label: `${field.scope === "GLOBAL" ? "公共字段" : "页面字段"} / ${field.name} (${field.code})`,
+      label: `${field.scope === "GLOBAL" ? "公共字段" : "页面特有字段"} / ${field.name} (${field.code})`,
       value: field.code,
-      group: field.scope === "GLOBAL" ? "公共字段" : "页面字段"
+      group: field.scope === "GLOBAL" ? "公共字段" : "页面特有字段"
     }));
   }, [activePageResourceId, activeRuleScope, businessFields, pageFieldBindings]);
   function buildRuleSnapshot(values: Partial<RuleForm>) {
     return JSON.stringify({
+      templateRuleId: values.templateRuleId ?? null,
       name: values.name ?? "",
-      ruleScope: values.ruleScope ?? "PAGE_RESOURCE",
+      ruleScope: values.ruleScope ?? (mode === "TEMPLATE" ? "SHARED" : "PAGE_RESOURCE"),
       ruleSetCode: values.ruleSetCode ?? "",
       pageResourceId: values.pageResourceId ?? null,
       priority: values.priority ?? 1,
@@ -150,6 +163,7 @@ export function useRulesPageModel() {
   function closeRuleModalDirectly() {
     setOpen(false);
     setEditing(null);
+    setReuseSourceRule(null);
     setRuleSnapshot("");
   }
   function closeRuleModal() {
@@ -201,10 +215,11 @@ export function useRulesPageModel() {
   }
   function openCreate() {
     const values: RuleForm = {
+      templateRuleId: undefined,
       name: "",
-      ruleScope: "PAGE_RESOURCE",
+      ruleScope: mode === "TEMPLATE" ? "SHARED" : "PAGE_RESOURCE",
       ruleSetCode: "",
-      pageResourceId: resources[0]?.id,
+      pageResourceId: mode === "TEMPLATE" ? undefined : resources[0]?.id,
       priority: 500,
       promptMode: "FLOATING",
       closeMode: "MANUAL_CLOSE",
@@ -215,12 +230,37 @@ export function useRulesPageModel() {
       ownerOrgId: "branch-east"
     };
     setEditing(null);
+    setReuseSourceRule(null);
     ruleForm.setFieldsValue(values);
     setRuleSnapshot(buildRuleSnapshot(values));
     setOpen(true);
   }
+  function applyTemplate(templateId?: number) {
+    const template = templateRows.find((item) => item.id === templateId) ?? null;
+    setReuseSourceRule(template);
+    if (!template) {
+      ruleForm.setFieldValue("templateRuleId", undefined);
+      return;
+    }
+    const currentValues = ruleForm.getFieldsValue();
+    ruleForm.setFieldsValue({
+      ...currentValues,
+      templateRuleId: template.id,
+      name: currentValues.name?.trim() ? currentValues.name : `${template.name}-副本`,
+      ruleScope: "PAGE_RESOURCE",
+      ruleSetCode: template.ruleSetCode,
+      priority: template.priority,
+      promptMode: template.promptMode,
+      closeMode: template.closeMode,
+      closeTimeoutSec: template.closeTimeoutSec,
+      hasConfirmButton: template.hasConfirmButton,
+      sceneId: template.sceneId,
+      ownerOrgId: currentValues.ownerOrgId?.trim() ? currentValues.ownerOrgId : template.ownerOrgId
+    });
+  }
   function openEdit(row: RuleDefinition) {
     const values: RuleForm = {
+      templateRuleId: row.sourceRuleId,
       name: row.name,
       ruleScope: row.ruleScope,
       ruleSetCode: row.ruleSetCode,
@@ -235,17 +275,19 @@ export function useRulesPageModel() {
       ownerOrgId: row.ownerOrgId
     };
     setEditing(row);
+    setReuseSourceRule(null);
     ruleForm.setFieldsValue(values);
     setRuleSnapshot(buildRuleSnapshot(values));
     setOpen(true);
   }
   async function submitRule() {
     const values = await ruleForm.validateFields();
+    const effectiveScope = mode === "TEMPLATE" ? "SHARED" : values.ruleScope;
     const resource =
-      values.ruleScope === "PAGE_RESOURCE"
+      effectiveScope === "PAGE_RESOURCE"
         ? resources.find((item) => item.id === values.pageResourceId)
         : undefined;
-    if (values.ruleScope === "PAGE_RESOURCE" && !resource) {
+    if (effectiveScope === "PAGE_RESOURCE" && !resource) {
       msgApi.error("请选择页面资源");
       return;
     }
@@ -253,10 +295,14 @@ export function useRulesPageModel() {
     const saved = await configCenterService.upsertRule({
       id: editing?.id ?? Date.now() + Math.floor(Math.random() * 1000),
       name: values.name,
-      ruleScope: values.ruleScope,
+      ruleScope: effectiveScope,
       ruleSetCode: values.ruleSetCode,
       pageResourceId: resource?.id,
       pageResourceName: resource?.name,
+      sourceRuleId:
+        mode === "PAGE_RULE" ? (!editing ? reuseSourceRule?.id : editing?.sourceRuleId) : undefined,
+      sourceRuleName:
+        mode === "PAGE_RULE" ? (!editing ? reuseSourceRule?.name : editing?.sourceRuleName) : undefined,
       priority: values.priority,
       promptMode: values.promptMode,
       closeMode: values.closeMode,
@@ -268,7 +314,10 @@ export function useRulesPageModel() {
       currentVersion: editing?.currentVersion ?? 1,
       ownerOrgId: values.ownerOrgId
     });
-    if (!editing) {
+    if (mode === "PAGE_RULE" && !editing && reuseSourceRule) {
+      await workflowService.cloneRuleLogic(reuseSourceRule.id, saved.id);
+      msgApi.success("规则模板已复用为页面规则");
+    } else if (!editing) {
       msgApi.success("规则已创建");
     } else if (saved.id !== editing.id) {
       msgApi.success("规则已更新，生效中的规则已自动生成待发布版本");
@@ -507,11 +556,14 @@ export function useRulesPageModel() {
     });
   }
   return {
-    holder, logicDrawerWidth, loading, rows, resources, scenes, preprocessors, interfaces,
+    mode, holder, logicDrawerWidth, loading,
+    rows: mode === "TEMPLATE" ? templateRows : pageRuleRows,
+    templates: templateRows,
+    resources, scenes, preprocessors, interfaces,
     open, editing, ruleForm, logicOpen, currentRule, globalLogicType, setGlobalLogicType,
     pageFieldOptions,
     conditionsDraft, selectedOperand, setSelectedOperand, savingQuery,
-    closeRuleModal, closeLogicDrawer, openCreate, openEdit, submitRule, switchStatus, openLogic,
+    closeRuleModal, closeLogicDrawer, openCreate, applyTemplate, openEdit, submitRule, switchStatus, openLogic,
     addCondition, removeCondition, selectedContext, changeSelectedSourceType,
     addPreprocessorBinding, updatePreprocessorBinding, removePreprocessorBinding,
     saveConditionLogic, selectedOutputPathOptions, selectedInterfaceInputParams,
