@@ -1,0 +1,71 @@
+{
+  "bundleVersion": "demo-bundle-20260315",
+  "etag": "demo-etag-v2",
+  "pageResourceId": "page-loan-apply",
+  "pageFields": [
+    {
+      "fieldKey": "customer_name",
+      "fieldScope": "PAGE_LOCAL",
+      "elementType": "INPUT",
+      "locator": {
+        "selectorType": "CSS",
+        "selector": "#customerName"
+      },
+      "readable": true,
+      "writable": true,
+      "watchable": true,
+      "extractor": "value",
+      "normalizers": ["trim"]
+    },
+    {
+      "fieldKey": "loan_amount",
+      "fieldScope": "PAGE_LOCAL",
+      "elementType": "INPUT",
+      "locator": {
+        "selectorType": "CSS",
+        "selector": "#loanAmount"
+      },
+      "readable": true,
+      "writable": true,
+      "watchable": true,
+      "extractor": "value",
+      "normalizers": ["trim", "digitsOnly"]
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "rule-high-amount",
+      "name": "大额贷款提示",
+      "priority": 100,
+      "evaluationMode": "INIT_AND_REACTIVE",
+      "logicType": "AND",
+      "watchFields": ["loan_amount"],
+      "debounceMs": 200,
+      "maxTriggerPerPageSession": 1,
+      "conditions": [
+        {
+          "id": "cond-loan-amount-gt-500k",
+          "left": {
+            "sourceType": "PAGE_FIELD",
+            "fieldKey": "loan_amount"
+          },
+          "operator": "GT",
+          "right": {
+            "sourceType": "CONST",
+            "value": "500000"
+          }
+        }
+      ],
+      "prompt": {
+        "traceId": "trace-high-amount-001",
+        "promptMode": "FLOATING",
+        "title": "贷款申请金额较高",
+        "content": "申请金额超过 50 万，请先复核客户授信与风险信息。",
+        "confirmText": "我知道了",
+        "closeText": "稍后处理"
+      }
+    }
+  ],
+  "sceneRefs": [],
+  "floatingEntryAvailable": false
+}

@@ -6,7 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:jssdk": "vite --config packages/jssdk/vite.config.ts",
+    "build:jssdk": "tsc -p packages/jssdk/tsconfig.json && vite build --config packages/jssdk/vite.config.ts",
+    "check:jssdk-demo": "tsc -p packages/jssdk/tsconfig.demo.json --noEmit",
+    "backend:dev": "mvn -f backend/pom.xml spring-boot:run",
+    "backend:build": "mvn -f backend/pom.xml -DskipTests package",
+    "backend:start": "java -jar backend/target/config-center-backend-0.1.0.jar"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.1",

@@ -188,7 +188,7 @@ export function InterfacesPage() {
               title: "方法与路径",
               width: 320,
               render: (_, row) => (
-                <Space direction="vertical" size={2}>
+                <Space direction="vertical" size={4}>
                   <Space>
                     <Tag color="geekblue">{row.method}</Tag>
                     <Typography.Text>{row.testPath || "-"}</Typography.Text>

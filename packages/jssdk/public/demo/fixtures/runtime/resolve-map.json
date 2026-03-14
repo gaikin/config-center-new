@@ -1,0 +1,21 @@
+{
+  "pages": [
+    {
+      "pageId": "page-loan-apply",
+      "pageCode": "loan_apply",
+      "menuCode": "loan_apply",
+      "regionId": "retail",
+      "route": "/loan/apply",
+      "matchedBy": "PAGE_CODE",
+      "pageIndexUrl": "/demo/fixtures/runtime/page-index/loan_apply.json",
+      "matchers": {
+        "pageCodes": ["loan_apply"],
+        "routes": ["/loan/apply"],
+        "markers": {
+          "data-page-code": "loan_apply",
+          "data-menu-code": "loan_apply"
+        }
+      }
+    }
+  ]
+}

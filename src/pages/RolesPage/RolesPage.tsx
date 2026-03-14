@@ -327,7 +327,7 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
           <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
             权限说明：
           </Typography.Paragraph>
-          <Space size={[6, 6]} wrap style={{ marginBottom: 12 }}>
+          <Space size={[8, 8]} wrap style={{ marginBottom: 12 }}>
             {allActions.map((action) => (
               <Tag key={action}>{`${action}: ${actionDescriptions[action]}`}</Tag>
             ))}

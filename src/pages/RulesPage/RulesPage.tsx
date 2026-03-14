@@ -500,7 +500,7 @@ export function RulesPage({
 
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 420px", gap: 12, alignItems: "start" }}>
             <Card size="small" title="条件链路">
-              <Space direction="vertical" style={{ width: "100%" }} size={10}>
+              <Space direction="vertical" style={{ width: "100%" }} size={12}>
                 {conditionsDraft.map((condition, index) => (
                   <Card
                     key={condition.id}
@@ -509,7 +509,7 @@ export function RulesPage({
                       borderColor:
                         selectedOperand?.conditionId === condition.id ? "var(--cc-source-selected, #84CAFF)" : "#f0f0f0"
                     }}
-                    bodyStyle={{ padding: 10 }}
+                    bodyStyle={{ padding: 12 }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", width: "100%", minWidth: 0, overflow: "hidden" }}>
                       <Tag color="blue">条件 {index + 1}</Tag>
@@ -559,7 +559,7 @@ export function RulesPage({
                   <div>
                     <Typography.Text>来源类型</Typography.Text>
                     <Select
-                      style={{ width: "100%", marginTop: 6 }}
+                      style={{ width: "100%", marginTop: 8 }}
                       value={selectedContext.operand.sourceType}
                       options={sourceOptions}
                       onChange={(value) => changeSelectedSourceType(normalizeSourceType(value))}
@@ -569,10 +569,10 @@ export function RulesPage({
                   <div>
                     <Typography.Text>值类型</Typography.Text>
                     {selectedContext.operand.sourceType === "INTERFACE_FIELD" ? (
-                      <Input style={{ marginTop: 6 }} value={selectedContext.operand.valueType} readOnly />
+                      <Input style={{ marginTop: 8 }} value={selectedContext.operand.valueType} readOnly />
                     ) : (
                       <Select
-                        style={{ width: "100%", marginTop: 6 }}
+                        style={{ width: "100%", marginTop: 8 }}
                         value={selectedContext.operand.valueType}
                         options={valueTypeOptions}
                         onChange={(value) => updateSelectedOperand({ valueType: value as RuleOperandValueType })}
@@ -584,7 +584,7 @@ export function RulesPage({
                     <div>
                       <Typography.Text>值</Typography.Text>
                       <Input
-                        style={{ marginTop: 6 }}
+                        style={{ marginTop: 8 }}
                         placeholder="请输入固定值"
                         value={selectedContext.operand.displayValue}
                         onChange={(event) =>
@@ -603,7 +603,7 @@ export function RulesPage({
                       <Select
                         showSearch
                         allowClear
-                        style={{ width: "100%", marginTop: 6 }}
+                        style={{ width: "100%", marginTop: 8 }}
                         placeholder="请选择页面字段"
                         value={selectedContext.operand.displayValue || undefined}
                         optionFilterProp="label"
@@ -624,7 +624,7 @@ export function RulesPage({
                       <Select
                         showSearch
                         allowClear
-                        style={{ width: "100%", marginTop: 6 }}
+                        style={{ width: "100%", marginTop: 8 }}
                         placeholder="请选择上下文变量"
                         value={selectedContext.operand.displayValue || undefined}
                         options={contextOptions.map((item) => ({ label: item, value: item }))}
@@ -645,7 +645,7 @@ export function RulesPage({
                         <Select
                           showSearch
                           allowClear
-                          style={{ width: "100%", marginTop: 6 }}
+                          style={{ width: "100%", marginTop: 8 }}
                           placeholder="请选择 API"
                           value={selectedContext.operand.interfaceId}
                           options={interfaces.map((item) => ({ label: item.name, value: item.id }))}
@@ -669,7 +669,7 @@ export function RulesPage({
                         <Select
                           showSearch
                           allowClear
-                          style={{ width: "100%", marginTop: 6 }}
+                          style={{ width: "100%", marginTop: 8 }}
                           placeholder="请选择API输出路径"
                           value={selectedContext.operand.outputPath || undefined}
                           options={selectedOutputPathOptions}
@@ -688,13 +688,13 @@ export function RulesPage({
                       <div>
                         <Typography.Text>入参配置（按 API注册定义）</Typography.Text>
                         {selectedInterfaceInputParams.length === 0 ? (
-                          <Typography.Paragraph type="secondary" style={{ marginTop: 6, marginBottom: 0 }}>
+                          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
                             当前 API 没有配置入参，可直接继续。
                           </Typography.Paragraph>
                         ) : (
                           <Table<InterfaceInputParamDraft>
                             size="small"
-                            style={{ marginTop: 6 }}
+                            style={{ marginTop: 8 }}
                             rowKey={(row) => `${row.tab}:${row.name}`}
                             pagination={false}
                             dataSource={selectedInterfaceInputParams}
@@ -752,7 +752,7 @@ export function RulesPage({
                     </Space>
 
                     {selectedContext.operand.preprocessors.length === 0 ? (
-                      <Typography.Paragraph type="secondary" style={{ marginTop: 6, marginBottom: 0 }}>
+                      <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
                         暂无预处理器
                       </Typography.Paragraph>
                     ) : (
@@ -791,3 +791,4 @@ export function RulesPage({
     </div>
   );
 }
+

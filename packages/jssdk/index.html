@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Config Center JSSDK Demo</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, "Microsoft YaHei", sans-serif;
+        background: #f5f7fa;
+        color: #1f2329;
+      }
+
+      .page {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 32px 24px 64px;
+      }
+
+      .card {
+        background: #fff;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+        margin-bottom: 16px;
+      }
+
+      h1,
+      h2 {
+        margin-top: 0;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .debug-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      label {
+        display: block;
+        font-size: 14px;
+        margin-bottom: 6px;
+      }
+
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        font-size: 14px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: #1677ff;
+        color: #fff;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: #4b5563;
+      }
+
+      .status-chip {
+        display: inline-block;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #e8f3ff;
+        color: #0958d9;
+        font-weight: 700;
+      }
+
+      .summary {
+        line-height: 1.7;
+        color: #374151;
+      }
+
+      pre {
+        margin: 0;
+        background: #111827;
+        color: #f3f4f6;
+        padding: 16px;
+        border-radius: 12px;
+        overflow: auto;
+        font-family: Consolas, "Courier New", monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page" data-page-code="loan_apply" data-menu-code="loan_apply">
+      <div class="card">
+        <h1>JSSDK 规则调试 Demo</h1>
+        <p>
+          这是一个最小规则调试页。你可以直接改页面字段，查看 `resolve -> page-index -> bundle`
+          加载结果，以及当前快照下的规则命中结果。
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>页面字段</h2>
+        <div class="grid">
+          <div>
+            <label for="customerName">客户姓名</label>
+            <input id="customerName" value="张三" />
+          </div>
+          <div>
+            <label for="loanAmount">贷款申请金额</label>
+            <input id="loanAmount" value="600000" />
+          </div>
+        </div>
+        <div class="actions">
+          <button id="bootstrap">启动 SDK</button>
+          <button id="refresh" class="secondary">刷新判定</button>
+          <button id="evaluate" class="secondary">仅重算规则</button>
+          <button id="destroy" class="secondary">销毁 SDK</button>
+        </div>
+      </div>
+
+      <div class="debug-grid">
+        <div class="card">
+          <h2>运行状态</h2>
+          <div id="status" class="status-chip">IDLE</div>
+        </div>
+
+        <div class="card">
+          <h2>命中摘要</h2>
+          <div id="matchSummary" class="summary">等待初始化...</div>
+        </div>
+      </div>
+
+      <div class="debug-grid">
+        <div class="card">
+          <h2>Resolved Page</h2>
+          <pre id="resolvedPage"></pre>
+        </div>
+        <div class="card">
+          <h2>Page Index</h2>
+          <pre id="pageIndex"></pre>
+        </div>
+      </div>
+
+      <div class="debug-grid">
+        <div class="card">
+          <h2>Bundle</h2>
+          <pre id="bundle"></pre>
+        </div>
+        <div class="card">
+          <h2>Field Snapshot</h2>
+          <pre id="snapshot"></pre>
+        </div>
+      </div>
+
+      <div class="debug-grid">
+        <div class="card">
+          <h2>Rule Evaluation</h2>
+          <pre id="evaluation"></pre>
+        </div>
+        <div class="card">
+          <h2>Runtime Events</h2>
+          <pre id="events"></pre>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/demo/main.ts"></script>
+  </body>
+  </html>

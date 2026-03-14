@@ -6,6 +6,7 @@ import { BrowserRouter } from "react-router-dom";
 import "antd/dist/reset.css";
 import App from "./App";
 import { GlobalStyle } from "./styles/global";
+import { antdComponentTokens, antdThemeToken } from "./styles/tokens";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -13,10 +14,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       locale={zhCN}
       theme={{
         algorithm: theme.defaultAlgorithm,
-        token: {
-          colorPrimary: "#1d4ed8",
-          borderRadius: 10
-        }
+        token: antdThemeToken,
+        components: antdComponentTokens
       }}
     >
       <BrowserRouter>

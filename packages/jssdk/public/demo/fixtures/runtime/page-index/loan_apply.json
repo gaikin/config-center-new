@@ -1,0 +1,9 @@
+{
+  "pageCode": "loan_apply",
+  "routePatterns": ["/loan/apply"],
+  "enablePrompt": true,
+  "hasJobScenes": false,
+  "needPreviewSupport": false,
+  "requiredModules": ["prompt"],
+  "pageConfigUrl": "/demo/fixtures/runtime/pages/page-loan-apply.bundle.json"
+}

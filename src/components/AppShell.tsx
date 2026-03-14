@@ -45,36 +45,85 @@ const HeaderBar = styled(Header)`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(95deg, #0f172a 0%, #1e3a8a 55%, #0ea5a4 100%);
-  color: #fff;
-  padding: 0 20px;
+  background: var(--color-top-region-bg);
+  color: var(--color-top-region-text);
+  padding: var(--space-12) var(--space-24);
+  border-bottom: 1px solid var(--color-top-region-border);
+  box-shadow: var(--shadow-1);
 `;
 
 const LogoBlock = styled.div`
   display: flex;
   flex-direction: column;
-  line-height: 1.1;
+  gap: var(--space-4);
+`;
+
+const LogoTitle = styled(Typography.Text)`
+  color: var(--color-top-region-text);
+`;
+
+const LogoSubtitle = styled(Typography.Text)`
+  color: var(--color-top-region-text-muted);
 `;
 
 const ContentWrap = styled(Content)`
-  margin: 16px;
-  padding: 16px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  margin: var(--space-24);
+  padding: var(--space-24);
+  border-radius: var(--radius-16);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-1);
+
+  @media (max-width: 1024px) {
+    margin: var(--space-16);
+    padding: var(--space-16);
+  }
 `;
 
 const StyledSider = styled(Sider)`
+  border-inline-end: 1px solid var(--color-border);
+
   @media (max-width: 1024px) {
     display: none;
   }
 `;
 
+const MainLayout = styled(Layout)`
+  background: var(--color-bg);
+`;
+
 const MobileNavButton = styled(Button)`
   display: none;
+  color: var(--color-top-region-text);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+
+  &:hover,
+  &:focus {
+    color: var(--color-top-region-text) !important;
+    border-color: rgba(255, 255, 255, 0.32) !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+  }
 
   @media (max-width: 1024px) {
     display: inline-flex;
+  }
+`;
+
+const HeaderActions = styled(Space)`
+  .ant-select-selector {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    color: var(--color-top-region-text) !important;
+  }
+
+  .ant-select-selection-item,
+  .ant-select-selection-placeholder {
+    color: var(--color-top-region-text) !important;
+  }
+
+  .ant-select-arrow {
+    color: var(--color-top-region-text-muted);
   }
 `;
 
@@ -120,19 +169,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [role]);
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
+    <MainLayout style={{ minHeight: "100vh" }}>
       <HeaderBar>
         <LogoBlock>
-          <Typography.Text style={{ color: "#fff", fontWeight: 700 }}>营小助配置中心（新版）</Typography.Text>
-          <Typography.Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 12 }}>
+          <LogoTitle className="type-20">营小助配置中心（新版）</LogoTitle>
+          <LogoSubtitle className="type-12">
             业务主路径：找页面、配规则、接接口、做发布、看结果
-          </Typography.Text>
+          </LogoSubtitle>
         </LogoBlock>
-        <Space>
+        <HeaderActions size={8}>
           <Select
             value={role}
             size="small"
-            style={{ width: 148 }}
             onChange={(next) => setRole(next as AppRole)}
             options={[
               { label: "业务人员视角", value: "BUSINESS" },
@@ -143,7 +191,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <MobileNavButton icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)}>
             导航
           </MobileNavButton>
-        </Space>
+        </HeaderActions>
       </HeaderBar>
       <Layout>
         <StyledSider width={248} theme="light">
@@ -165,6 +213,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           style={{ borderInlineEnd: 0 }}
         />
       </Drawer>
-    </Layout>
+    </MainLayout>
   );
 }

@@ -1,0 +1,19 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:h2}
+  application:
+    name: config-center-backend
+  jackson:
+    time-zone: Asia/Shanghai
+
+mybatis:
+  type-aliases-package: com.configcenter.backend
+  configuration:
+    map-underscore-to-camel-case: true
+
+logging:
+  level:
+    com.configcenter.backend: INFO
