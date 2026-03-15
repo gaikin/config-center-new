@@ -19,10 +19,12 @@ import {
   message
 } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { OrgSelect } from "../../components/DirectoryFields";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { configCenterService } from "../../services/configCenterService";
-import { getRightOverlayDrawerWidth } from "../../utils";
+import { createId, getRightOverlayDrawerWidth } from "../../utils";
 import type {
   BusinessFieldDefinition,
   LifecycleState,
@@ -34,11 +36,9 @@ import type {
   PageSite
 } from "../../types";
 
-type ResourceForm = Omit<PageResource, "id" | "updatedAt" | "elementCount">;
+type ResourceForm = Omit<PageResource, "id" | "updatedAt" | "elementCount" | "currentVersion" | "pageCode" | "frameCode">;
 type ElementForm = Omit<PageElement, "id" | "updatedAt">;
-type FieldForm = Omit<BusinessFieldDefinition, "id" | "updatedAt" | "currentVersion" | "aliases"> & {
-  aliasesText?: string;
-};
+type FieldForm = Omit<BusinessFieldDefinition, "id" | "updatedAt" | "currentVersion" | "aliases" | "code">;
 type BindingForm = Omit<PageFieldBinding, "id" | "updatedAt">;
 
 const statusColor: Record<LifecycleState, string> = {
@@ -52,12 +52,16 @@ const detectRuleOptions = [
   "业务标识优先 + URL兜底",
   "业务标识 + 页面标题 + URL兜底",
   "URL前缀 + DOM特征校验",
-  "menuCode + regionId + DOM特征校验"
+  "菜单与专区 + DOM特征校验"
 ];
 
 export function PageResourcesPage() {
   const screens = Grid.useBreakpoint();
   const drawerWidth = getRightOverlayDrawerWidth(Boolean(screens.lg));
+  const [searchParams] = useSearchParams();
+  const targetResourceId = Number(searchParams.get("resourceId") ?? "");
+  const targetAction = searchParams.get("action");
+  const hasAutoOpenedFieldDrawer = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState<PageSite[]>([]);
@@ -111,8 +115,8 @@ export function PageResourcesPage() {
     () => Object.fromEntries(elements.map((element) => [element.id, element.logicName])),
     [elements]
   );
-  const businessFieldLabelMap = useMemo(
-    () => Object.fromEntries(businessFields.map((field) => [field.code, `${field.name} (${field.code})`])),
+  const businessFieldMap = useMemo(
+    () => Object.fromEntries(businessFields.map((field) => [field.code, field])),
     [businessFields]
   );
 
@@ -170,6 +174,21 @@ export function PageResourcesPage() {
     void loadAll();
   }, []);
 
+  useEffect(() => {
+    if (hasAutoOpenedFieldDrawer.current) {
+      return;
+    }
+    if (targetAction !== "fields" || !Number.isFinite(targetResourceId) || targetResourceId <= 0 || resources.length === 0) {
+      return;
+    }
+    const target = resources.find((item) => item.id === targetResourceId);
+    if (!target) {
+      return;
+    }
+    hasAutoOpenedFieldDrawer.current = true;
+    void openFieldDrawer(target);
+  }, [resources, targetAction, targetResourceId]);
+
   async function loadElements(resourceId: number) {
     setElementLoading(true);
     try {
@@ -201,12 +220,9 @@ export function PageResourcesPage() {
     setEditing(null);
     form.setFieldsValue({
       menuId: defaultMenuId,
-      pageCode: "",
-      frameCode: "",
       name: "",
       status: "DRAFT",
       ownerOrgId: "branch-east",
-      currentVersion: 1,
       detectRulesSummary: "业务标识优先 + URL兜底"
     });
     setOpen(true);
@@ -216,12 +232,9 @@ export function PageResourcesPage() {
     setEditing(row);
     form.setFieldsValue({
       menuId: row.menuId,
-      pageCode: row.pageCode,
-      frameCode: row.frameCode,
       name: row.name,
       status: row.status,
       ownerOrgId: row.ownerOrgId,
-      currentVersion: row.currentVersion,
       detectRulesSummary: row.detectRulesSummary
     });
     setOpen(true);
@@ -232,6 +245,9 @@ export function PageResourcesPage() {
     await configCenterService.upsertPageResource({
       ...values,
       id: editing?.id ?? Date.now(),
+      frameCode: editing?.frameCode,
+      pageCode: editing?.pageCode ?? createId("page"),
+      currentVersion: editing?.currentVersion ?? 1,
       elementCount: editing?.elementCount ?? 0
     });
     msgApi.success(editing ? "页面资源已更新（生效中对象会自动生成待发布版本）" : "页面资源已创建");
@@ -337,16 +353,13 @@ export function PageResourcesPage() {
     }
     setEditingField(null);
     fieldForm.setFieldsValue({
-      code: "",
       name: "",
       scope,
       pageResourceId: scope === "PAGE_RESOURCE" ? currentResource.id : undefined,
-      valueType: "STRING",
       required: false,
       description: "",
       ownerOrgId: scope === "GLOBAL" ? "head-office" : currentResource.ownerOrgId,
-      status: "DRAFT",
-      aliasesText: ""
+      status: "DRAFT"
     });
     setFieldOpen(true);
   }
@@ -354,16 +367,13 @@ export function PageResourcesPage() {
   function openEditField(row: BusinessFieldDefinition) {
     setEditingField(row);
     fieldForm.setFieldsValue({
-      code: row.code,
       name: row.name,
       scope: row.scope,
       pageResourceId: row.pageResourceId,
-      valueType: row.valueType,
       required: row.required,
       description: row.description,
       ownerOrgId: row.ownerOrgId,
-      status: row.status,
-      aliasesText: row.aliases.join(", ")
+      status: row.status
     });
     setFieldOpen(true);
   }
@@ -372,20 +382,17 @@ export function PageResourcesPage() {
     const values = await fieldForm.validateFields();
     await configCenterService.upsertBusinessField({
       id: editingField?.id ?? Date.now(),
-      code: values.code,
+      code: editingField?.code ?? createId("field"),
       name: values.name,
       scope: values.scope,
       pageResourceId: values.scope === "PAGE_RESOURCE" ? values.pageResourceId : undefined,
-      valueType: values.valueType,
+      valueType: editingField?.valueType ?? "STRING",
       required: values.required,
       description: values.description,
       ownerOrgId: values.ownerOrgId,
       status: values.status,
       currentVersion: editingField?.currentVersion ?? 1,
-      aliases: (values.aliasesText ?? "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean)
+      aliases: editingField?.aliases ?? []
     });
     msgApi.success(editingField ? "业务字段已更新" : "业务字段已创建");
     setFieldOpen(false);
@@ -446,9 +453,9 @@ export function PageResourcesPage() {
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>页面资源中心</Typography.Title>
+      <Typography.Title level={4}>页面字段与元素维护</Typography.Title>
       <Typography.Paragraph type="secondary">
-        统一维护站点、专区、菜单、页面的资源台账与元素映射，支撑菜单级 SDK 版本控制和页面级智能提示启用策略。
+        当页面管理里需要补充字段维护时，在这里统一维护页面识别、字段字典和元素映射。这里属于高级维护区，默认不放在业务主路径首屏。
       </Typography.Paragraph>
 
       <Card style={{ marginBottom: 12 }}>
@@ -461,7 +468,7 @@ export function PageResourcesPage() {
       </Card>
 
       <Card
-        title="页面资源列表"
+        title="页面维护列表"
         extra={
           <Space wrap>
             <Segmented
@@ -520,20 +527,12 @@ export function PageResourcesPage() {
           pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             { title: "名称", dataIndex: "name", width: 200 },
-            { title: "pageCode", dataIndex: "pageCode", width: 180 },
-            {
-              title: "frameCode",
-              dataIndex: "frameCode",
-              width: 160,
-              render: (value?: string) => value ?? <Typography.Text type="secondary">主页面</Typography.Text>
-            },
             {
               title: "所属菜单",
               dataIndex: "menuId",
               width: 220,
               render: (menuId: number) => menuLabelMap[menuId] ?? `menu-${menuId}`
             },
-            { title: "版本", dataIndex: "currentVersion", width: 80 },
             { title: "元素数", dataIndex: "elementCount", width: 80 },
             { title: "识别口径", dataIndex: "detectRulesSummary" },
             {
@@ -552,7 +551,7 @@ export function PageResourcesPage() {
                     编辑
                   </Button>
                   <Button type="link" onClick={() => void openFieldDrawer(row)}>
-                    字段建模
+                    字段维护
                   </Button>
                   <Button type="link" onClick={() => void openElementsDrawer(row)}>
                     元素映射
@@ -573,16 +572,10 @@ export function PageResourcesPage() {
       >
         <Form form={form} layout="vertical">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            页面编号由系统自动生成，元素数量会根据已配置的元素映射自动统计。
+            页面编码、iframe 标识和版本由系统自动维护，需要时可在页面详情中查看。
           </Typography.Paragraph>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input maxLength={128} />
-          </Form.Item>
-          <Form.Item name="pageCode" label="页面编码" rules={[{ required: true, message: "请输入页面编码" }]}>
-            <Input maxLength={64} placeholder="如：loan_apply_main" />
-          </Form.Item>
-          <Form.Item name="frameCode" label="iframe 编码">
-            <Input maxLength={64} placeholder="主页面可为空；iframe 页面填写 frameCode" />
           </Form.Item>
           <Form.Item name="menuId" label="菜单" rules={[{ required: true, message: "请选择菜单" }]}>
             <Select
@@ -595,11 +588,8 @@ export function PageResourcesPage() {
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
             <Select options={lifecycleOptions} />
           </Form.Item>
-          <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请输入组织" }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="currentVersion" label="当前版本" rules={[{ required: true, message: "请输入版本" }]}>
-            <InputNumber min={1} style={{ width: "100%" }} />
+          <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请选择组织" }]}>
+            <OrgSelect />
           </Form.Item>
           <Form.Item name="detectRulesSummary" label="识别口径" rules={[{ required: true, message: "请选择或输入识别口径" }]}>
             <AutoComplete
@@ -681,8 +671,11 @@ export function PageResourcesPage() {
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
             元素编号由系统自动生成，你只需要维护业务字段和定位方式。
           </Typography.Paragraph>
-          <Form.Item name="pageResourceId" label="页面资源 ID" rules={[{ required: true, message: "请输入页面资源 ID" }]}>
+          <Form.Item name="pageResourceId" hidden rules={[{ required: true, message: "请选择所属页面" }]}>
             <InputNumber style={{ width: "100%" }} disabled />
+          </Form.Item>
+          <Form.Item label="所属页面">
+            <Input value={currentResource?.name ?? ""} disabled />
           </Form.Item>
           <Form.Item name="logicName" label="逻辑名" rules={[{ required: true, message: "请输入逻辑名" }]}>
             <Input />
@@ -700,14 +693,14 @@ export function PageResourcesPage() {
       </Modal>
 
       <Drawer
-        title={currentResource ? `字段建模：${currentResource.name}` : "字段建模"}
+        title={currentResource ? `字段维护：${currentResource.name}` : "字段维护"}
         placement="right"
         width={drawerWidth}
         open={fieldDrawerOpen}
         onClose={() => setFieldDrawerOpen(false)}
       >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          公共字段可在多个页面复用；页面特有字段只作用当前页面。规则和作业统一引用字段编码，不直接引用选择器。
+          公共字段可在多个页面复用；页面字段只作用当前页面。规则和作业统一引用这里维护的字段，不直接引用页面元素。
         </Typography.Paragraph>
 
         <Card
@@ -731,14 +724,16 @@ export function PageResourcesPage() {
             dataSource={businessFields}
             pagination={false}
             columns={[
-              { title: "字段编码", dataIndex: "code", width: 140 },
-              { title: "字段名称", dataIndex: "name", width: 140 },
+              {
+                title: "字段",
+                width: 220,
+                render: (_, row) => <Typography.Text>{row.name}</Typography.Text>
+              },
               {
                 title: "归属",
                 width: 100,
-                render: (_, row) => <Tag color={row.scope === "GLOBAL" ? "blue" : "geekblue"}>{row.scope === "GLOBAL" ? "公共字段" : "页面特有字段"}</Tag>
+                render: (_, row) => <Tag color={row.scope === "GLOBAL" ? "blue" : "geekblue"}>{row.scope === "GLOBAL" ? "公共字段" : "当前页面字段"}</Tag>
               },
-              { title: "类型", dataIndex: "valueType", width: 100 },
               { title: "说明", dataIndex: "description" },
               {
                 title: "操作",
@@ -771,12 +766,18 @@ export function PageResourcesPage() {
               {
                 title: "字段",
                 width: 180,
-                render: (_, row) => businessFieldLabelMap[row.businessFieldCode] ?? row.businessFieldCode
+                render: (_, row) => {
+                  const field = businessFieldMap[row.businessFieldCode];
+                  if (!field) {
+                    return <Typography.Text type="secondary">字段已删除</Typography.Text>;
+                  }
+                  return <Typography.Text>{field.name}</Typography.Text>;
+                }
               },
               {
                 title: "元素",
                 width: 180,
-                render: (_, row) => elementLabelMap[row.pageElementId] ?? row.pageElementId
+                render: (_, row) => elementLabelMap[row.pageElementId] ?? <Typography.Text type="secondary">元素已删除</Typography.Text>
               },
               {
                 title: "必填",
@@ -811,6 +812,9 @@ export function PageResourcesPage() {
         onOk={() => void submitField()}
       >
         <Form form={fieldForm} layout="vertical">
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            字段标识由系统自动维护，你只需要维护字段名称和业务含义。
+          </Typography.Paragraph>
           <Form.Item name="scope" label="字段归属" rules={[{ required: true, message: "请选择字段归属" }]}>
             <Select
               options={[
@@ -822,37 +826,25 @@ export function PageResourcesPage() {
           <Form.Item noStyle shouldUpdate>
             {() =>
               fieldForm.getFieldValue("scope") === "PAGE_RESOURCE" ? (
-                <Form.Item name="pageResourceId" label="所属页面" rules={[{ required: true, message: "请选择所属页面" }]}>
-                  <InputNumber style={{ width: "100%" }} disabled />
-                </Form.Item>
+                <>
+                  <Form.Item name="pageResourceId" hidden rules={[{ required: true, message: "请选择所属页面" }]}>
+                    <InputNumber style={{ width: "100%" }} disabled />
+                  </Form.Item>
+                  <Form.Item label="所属页面">
+                    <Input value={currentResource?.name ?? ""} disabled />
+                  </Form.Item>
+                </>
               ) : null
             }
-          </Form.Item>
-          <Form.Item name="code" label="字段编码" rules={[{ required: true, message: "请输入字段编码" }]}>
-            <Input />
           </Form.Item>
           <Form.Item name="name" label="字段名称" rules={[{ required: true, message: "请输入字段名称" }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="valueType" label="值类型" rules={[{ required: true, message: "请选择值类型" }]}>
-            <Select
-              options={[
-                { label: "STRING", value: "STRING" },
-                { label: "NUMBER", value: "NUMBER" },
-                { label: "BOOLEAN", value: "BOOLEAN" },
-                { label: "OBJECT", value: "OBJECT" },
-                { label: "ARRAY", value: "ARRAY" }
-              ]}
-            />
-          </Form.Item>
           <Form.Item name="description" label="说明">
             <Input.TextArea rows={3} />
           </Form.Item>
-          <Form.Item name="aliasesText" label="别名">
-            <Input placeholder="多个别名使用逗号分隔" />
-          </Form.Item>
-          <Form.Item name="ownerOrgId" label="归属组织" rules={[{ required: true, message: "请输入归属组织" }]}>
-            <Input />
+          <Form.Item name="ownerOrgId" label="归属组织" rules={[{ required: true, message: "请选择归属组织" }]}>
+            <OrgSelect />
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
             <Select options={lifecycleOptions} />
@@ -870,14 +862,17 @@ export function PageResourcesPage() {
         onOk={() => void submitBinding()}
       >
         <Form form={bindingForm} layout="vertical">
-          <Form.Item name="pageResourceId" label="页面资源" rules={[{ required: true, message: "请选择页面资源" }]}>
+          <Form.Item name="pageResourceId" hidden rules={[{ required: true, message: "请选择页面资源" }]}>
             <InputNumber style={{ width: "100%" }} disabled />
+          </Form.Item>
+          <Form.Item label="所属页面">
+            <Input value={currentResource?.name ?? ""} disabled />
           </Form.Item>
           <Form.Item name="businessFieldCode" label="字段" rules={[{ required: true, message: "请选择字段" }]}>
             <Select
               showSearch
               options={businessFields.map((field) => ({
-                label: `${field.name} (${field.code})`,
+                label: field.name,
                 value: field.code
               }))}
             />
@@ -886,7 +881,7 @@ export function PageResourcesPage() {
             <Select
               showSearch
               options={elements.map((element) => ({
-                label: `${element.logicName} (${element.selectorType})`,
+                label: element.logicName,
                 value: element.id
               }))}
             />

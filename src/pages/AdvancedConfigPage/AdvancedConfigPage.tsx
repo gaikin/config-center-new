@@ -1,8 +1,19 @@
 import { Alert, Card, Tabs, Typography } from "antd";
+import { useSearchParams } from "react-router-dom";
+import { ListDataPage } from "../ListDataPage/ListDataPage";
 import { PreprocessorsPage } from "../PreprocessorsPage/PreprocessorsPage";
 import { RolesPage } from "../RolesPage/RolesPage";
 
 export function AdvancedConfigPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (() => {
+    const picked = searchParams.get("tab");
+    if (picked === "roles" || picked === "platform" || picked === "list-data") {
+      return picked;
+    }
+    return "preprocessors";
+  })();
+
   return (
     <div>
       <Typography.Title level={4}>高级配置</Typography.Title>
@@ -20,10 +31,17 @@ export function AdvancedConfigPage() {
 
       <Card>
         <Tabs
+          activeKey={activeTab}
           destroyInactiveTabPane
+          onChange={(key) => {
+            const nextParams = new URLSearchParams(searchParams);
+            nextParams.set("tab", key);
+            setSearchParams(nextParams);
+          }}
           items={[
-            { key: "preprocessors", label: "预处理器", children: <PreprocessorsPage embedded /> },
-            { key: "roles", label: "权限治理", children: <RolesPage embedded /> },
+            { key: "preprocessors", label: "数据转换", children: <PreprocessorsPage embedded /> },
+            { key: "list-data", label: "名单数据", children: <ListDataPage embedded /> },
+            { key: "roles", label: "权限管理", children: <RolesPage embedded /> },
             {
               key: "platform",
               label: "平台参数",

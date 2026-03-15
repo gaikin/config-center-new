@@ -12,7 +12,6 @@ export type InputTabKey = "headers" | "query" | "path" | "body";
 export type DebugEnv = "TEST" | "PROD";
 
 export type ApiRegisterForm = {
-  id: number;
   name: string;
   description: string;
   method: InterfaceDefinition["method"];
@@ -22,7 +21,6 @@ export type ApiRegisterForm = {
   retryTimes: number;
   status: LifecycleState;
   ownerOrgId: string;
-  currentVersion: number;
   maskSensitive: boolean;
   bodyTemplateJson: string;
 };

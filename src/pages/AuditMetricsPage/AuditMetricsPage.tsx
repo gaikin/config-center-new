@@ -1,5 +1,6 @@
 import { Card, Col, Row, Segmented, Space, Statistic, Table, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { OrgText } from "../../components/DirectoryFields";
 import { configCenterService } from "../../services/configCenterService";
 import type { ExecutionLogItem, TriggerLogItem } from "../../types";
 
@@ -264,7 +265,7 @@ export function AuditMetricsPage() {
                     pagination={false}
                     dataSource={orgRanking}
                     columns={[
-                      { title: "机构", dataIndex: "name" },
+                      { title: "机构", dataIndex: "name", render: (value: string) => <OrgText value={value} /> },
                       { title: "触发次数", dataIndex: "count", width: 90 },
                       { title: "占比", dataIndex: "ratio", width: 90, render: (v: number) => `${v}%` }
                     ]}
@@ -328,7 +329,7 @@ export function AuditMetricsPage() {
             columns={[
               { title: "页面", dataIndex: "pageName", width: 180 },
               { title: "规则", dataIndex: "ruleName", width: 170 },
-              { title: "机构范围", dataIndex: "orgScope", width: 130 },
+              { title: "机构范围", dataIndex: "orgScope", width: 130, render: (value: string) => <OrgText value={value} /> },
               { title: "当前周期(7天)", dataIndex: "currentPeriod", width: 130 },
               { title: "对比周期(7天)", dataIndex: "baselinePeriod", width: 130 },
               {

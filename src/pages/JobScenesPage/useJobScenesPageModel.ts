@@ -4,14 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { configCenterService } from "../../services/configCenterService";
 import { workflowService } from "../../services/workflowService";
 import { getRightOverlayDrawerWidth } from "../../utils";
+import { createFieldIssue, validateJobSceneDraftPayload } from "../../validation/formRules";
 import type {
   ExecutionMode,
+  FieldValidationIssue,
   JobNodeDefinition,
   JobSceneDefinition,
   JobScenePreviewField,
   LifecycleState,
+  ListDataDefinition,
   PageResource,
-  RuleDefinition
+  RuleDefinition,
+  SaveValidationReport
 } from "../../types";
 import {
   buildFormValuesFromNode,
@@ -41,6 +45,7 @@ export function useJobScenesPageModel() {
   const [rows, setRows] = useState<JobSceneDefinition[]>([]);
   const [resources, setResources] = useState<PageResource[]>([]);
   const [rules, setRules] = useState<RuleDefinition[]>([]);
+  const [listDatas, setListDatas] = useState<ListDataDefinition[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<JobSceneDefinition | null>(null);
@@ -63,15 +68,26 @@ export function useJobScenesPageModel() {
   const [previewExecuting, setPreviewExecuting] = useState(false);
   const [previewRows, setPreviewRows] = useState<JobScenePreviewField[]>([]);
   const [previewSelectedKeys, setPreviewSelectedKeys] = useState<string[]>([]);
+  const [sceneSaveValidationReport, setSceneSaveValidationReport] = useState<SaveValidationReport | null>(null);
+  const [nodeValidationIssues, setNodeValidationIssues] = useState<FieldValidationIssue[]>([]);
+  const [previewValidationIssues, setPreviewValidationIssues] = useState<FieldValidationIssue[]>([]);
+  const [publishNotice, setPublishNotice] = useState<{ objectName: string; warningCount: number } | null>(null);
   const autoOpenCreateRef = useRef(false);
 
   const [nodeDetailForm] = Form.useForm<NodeDetailForm>();
   const watchedNodeType = Form.useWatch("nodeType", nodeDetailForm);
+  const watchedNodeListDataId = Form.useWatch("listDataId", nodeDetailForm);
+  const watchedSceneValues = Form.useWatch([], form) as Partial<SceneForm> | undefined;
+  const watchedNodeValues = Form.useWatch([], nodeDetailForm) as Partial<NodeDetailForm> | undefined;
   const [msgApi, holder] = message.useMessage();
 
   const selectedNode = useMemo(
     () => nodeRows.find((item) => String(item.id) === selectedNodeId) ?? null,
     [nodeRows, selectedNodeId]
+  );
+  const selectedNodeListData = useMemo(
+    () => listDatas.find((item) => item.id === watchedNodeListDataId) ?? null,
+    [listDatas, watchedNodeListDataId]
   );
 
   useEffect(() => {
@@ -85,14 +101,16 @@ export function useJobScenesPageModel() {
   async function loadData() {
     setLoading(true);
     try {
-      const [sceneData, resourceData, ruleData] = await Promise.all([
+      const [sceneData, resourceData, ruleData, listDataRows] = await Promise.all([
         configCenterService.listJobScenes(),
         configCenterService.listPageResources(),
-        configCenterService.listRules()
+        configCenterService.listRules(),
+        configCenterService.listListDatas()
       ]);
       setRows(sceneData);
       setResources(resourceData);
       setRules(ruleData);
+      setListDatas(listDataRows);
     } finally {
       setLoading(false);
     }
@@ -128,7 +146,6 @@ export function useJobScenesPageModel() {
       pageResourceId: values.pageResourceId ?? null,
       executionMode: values.executionMode ?? "PREVIEW_THEN_EXECUTE",
       status: values.status ?? "DRAFT",
-      currentVersion: values.currentVersion ?? 1,
       nodeCount: values.nodeCount ?? 1,
       manualDurationSec: values.manualDurationSec ?? 1
     });
@@ -138,6 +155,7 @@ export function useJobScenesPageModel() {
     setOpen(false);
     setEditing(null);
     setSceneSnapshot("");
+    setSceneSaveValidationReport(null);
   }
 
   function closeSceneModal() {
@@ -181,13 +199,14 @@ export function useJobScenesPageModel() {
       pageResourceId: pickedPageId,
       executionMode: pickedExecutionMode,
       status: "DRAFT",
-      currentVersion: 1,
       nodeCount: 3,
       manualDurationSec: 30
     };
     setEditing(null);
+    setPublishNotice(null);
     form.setFieldsValue(values);
     setSceneSnapshot(buildSceneSnapshot(values));
+    setSceneSaveValidationReport(null);
     setOpen(true);
   }
 
@@ -197,15 +216,37 @@ export function useJobScenesPageModel() {
       pageResourceId: row.pageResourceId,
       executionMode: row.executionMode,
       status: row.status,
-      currentVersion: row.currentVersion,
       nodeCount: row.nodeCount,
       manualDurationSec: row.manualDurationSec
     };
     setEditing(row);
+    setPublishNotice(null);
     form.setFieldsValue(values);
     setSceneSnapshot(buildSceneSnapshot(values));
+    setSceneSaveValidationReport(null);
     setOpen(true);
   }
+
+  const liveSceneSaveValidationReport = useMemo(() => {
+    if (!open) {
+      return null;
+    }
+    const values = watchedSceneValues ?? {};
+    return validateJobSceneDraftPayload(
+      {
+        id: editing?.id ?? -1,
+        name: values.name ?? "",
+        pageResourceId: values.pageResourceId ?? 0,
+        executionMode: values.executionMode ?? "PREVIEW_THEN_EXECUTE",
+        nodeCount: values.nodeCount ?? 0,
+        manualDurationSec: values.manualDurationSec ?? 0,
+        riskConfirmed: editing?.riskConfirmed ?? false
+      },
+      rows
+    );
+  }, [editing?.id, editing?.riskConfirmed, open, rows, watchedSceneValues]);
+
+  const activeSceneSaveValidationReport = liveSceneSaveValidationReport ?? sceneSaveValidationReport;
 
   async function submitScene() {
     const values = await form.validateFields();
@@ -214,13 +255,29 @@ export function useJobScenesPageModel() {
       msgApi.error("页面资源不存在");
       return;
     }
-    await configCenterService.upsertJobScene({
-      ...values,
+    const result = await configCenterService.saveJobSceneDraft({
       id: editing?.id ?? Date.now() + Math.floor(Math.random() * 1000),
+      ...values,
+      currentVersion: editing?.currentVersion ?? 1,
       pageResourceName: resource.name,
       riskConfirmed: editing?.riskConfirmed ?? false
     });
-    msgApi.success(editing ? "场景已更新" : "场景已创建");
+    setSceneSaveValidationReport(result.report);
+    if (!result.success) {
+      msgApi.error(result.report.summary);
+      return;
+    }
+    msgApi.success(
+      result.report.warningCount > 0
+        ? `场景已保存草稿，另有 ${result.report.warningCount} 个提醒可继续处理`
+        : editing
+          ? "场景已更新，并已进入待发布列表"
+          : "场景已创建，并已进入待发布列表"
+    );
+    setPublishNotice({
+      objectName: result.data?.name ?? values.name,
+      warningCount: result.report.warningCount
+    });
     closeSceneModalDirectly();
     await loadData();
   }
@@ -242,14 +299,30 @@ export function useJobScenesPageModel() {
     setPreviewScene(scene);
     setPreviewOpen(true);
     setPreviewLoading(true);
+    setPreviewValidationIssues([]);
     try {
       const fields = await configCenterService.previewJobScene(scene.id);
       setPreviewRows(fields);
       setPreviewSelectedKeys(fields.filter((item) => !item.abnormal).map((item) => item.key));
+      setPreviewValidationIssues(
+        fields
+          .filter((item) => item.abnormal)
+          .map((item) =>
+            createFieldIssue({
+              section: "preview",
+              field: item.key,
+              label: item.fieldName,
+              message: `预览发现异常来源：${item.source}`,
+              level: "warning",
+              action: "建议先取消勾选异常字段，再执行写入。"
+            })
+          )
+      );
     } catch (error) {
       msgApi.error(error instanceof Error ? error.message : "预览确认加载失败");
       setPreviewRows([]);
       setPreviewSelectedKeys([]);
+      setPreviewValidationIssues([]);
     } finally {
       setPreviewLoading(false);
     }
@@ -284,6 +357,7 @@ export function useJobScenesPageModel() {
     setBuilderScene(scene);
     setBuilderOpen(true);
     setSelectedNodeId(null);
+    setNodeValidationIssues([]);
     try {
       await loadBuilderData(scene.id);
     } catch (error) {
@@ -294,6 +368,7 @@ export function useJobScenesPageModel() {
   function closeBuilderDirectly() {
     setBuilderOpen(false);
     setSelectedNodeId(null);
+    setNodeValidationIssues([]);
   }
 
   function closeBuilder() {
@@ -319,7 +394,17 @@ export function useJobScenesPageModel() {
     const id = Date.now() + Math.floor(Math.random() * 1000);
     const maxX = flowNodes.length > 0 ? Math.max(...flowNodes.map((item) => item.position.x)) : 0;
     const position = { x: Math.max(80, maxX + 260), y: 120 + ((nextOrder - 1) % 3) * 120 };
-    const configJson = mergeFlowPosition(JSON.stringify(getDefaultNodeConfig(nodeType)), position);
+    const defaultListData = listDatas[0];
+    const configJson = mergeFlowPosition(
+      JSON.stringify(
+        getDefaultNodeConfig(nodeType, {
+          listDataId: defaultListData?.id,
+          matchColumn: defaultListData?.importColumns[0],
+          inputSource: defaultListData?.importColumns[0]
+        })
+      ),
+      position
+    );
 
     await workflowService.upsertJobNode({
       id,
@@ -336,12 +421,51 @@ export function useJobScenesPageModel() {
     setSelectedNodeId(String(id));
   }
 
+  function validateNodeDetail(values: Partial<NodeDetailForm>) {
+    const nextIssues: FieldValidationIssue[] = [];
+    if (values.nodeType === "page_get" && !values.field?.trim()) {
+      nextIssues.push(createFieldIssue({ section: "node", field: "field", label: "读取字段", message: "请输入读取字段" }));
+    }
+    if (values.nodeType === "api_call" && !values.interfaceId) {
+      nextIssues.push(createFieldIssue({ section: "node", field: "interfaceId", label: "接口", message: "请选择接口" }));
+    }
+    if (values.nodeType === "list_lookup") {
+      if (!values.listDataId) {
+        nextIssues.push(createFieldIssue({ section: "node", field: "listDataId", label: "名单数据", message: "请选择名单数据" }));
+      } else if (!listDatas.some((item) => item.id === values.listDataId)) {
+        nextIssues.push(createFieldIssue({ section: "node", field: "listDataId", label: "名单数据", message: "所选名单不存在" }));
+      }
+      if (!values.matchColumn?.trim()) {
+        nextIssues.push(createFieldIssue({ section: "node", field: "matchColumn", label: "匹配字段", message: "请选择匹配字段" }));
+      }
+      if (!values.inputSource?.trim()) {
+        nextIssues.push(createFieldIssue({ section: "node", field: "inputSource", label: "输入来源", message: "请输入输入来源" }));
+      }
+      if (!values.resultKey?.trim()) {
+        nextIssues.push(createFieldIssue({ section: "node", field: "resultKey", label: "结果键名", message: "请输入结果键名" }));
+      }
+    }
+    if (values.nodeType === "js_script" && !values.script?.trim()) {
+      nextIssues.push(createFieldIssue({ section: "node", field: "script", label: "脚本标识", message: "请输入脚本标识" }));
+    }
+    if (values.nodeType === "page_set" && !values.target?.trim()) {
+      nextIssues.push(createFieldIssue({ section: "node", field: "target", label: "写入目标字段", message: "请输入写入目标字段" }));
+    }
+    return nextIssues;
+  }
+
   async function saveSelectedNode() {
     if (!selectedNode || !builderScene) {
       return;
     }
 
     const values = await nodeDetailForm.validateFields();
+    const nextIssues = validateNodeDetail(values);
+    setNodeValidationIssues(nextIssues);
+    if (nextIssues.length > 0) {
+      msgApi.error("节点属性还有待处理问题，请先修复");
+      return;
+    }
     const flowNode = flowNodes.find((item) => item.id === String(selectedNode.id));
     const fallbackPosition = getFlowPosition(selectedNode.configJson, 80, 120);
     const configJson = mergeFlowPosition(
@@ -358,9 +482,17 @@ export function useJobScenesPageModel() {
     });
 
     msgApi.success("节点属性已保存");
+    setNodeValidationIssues([]);
     await loadBuilderData(builderScene.id);
     setSelectedNodeId(String(selectedNode.id));
   }
+
+  const liveNodeValidationIssues = useMemo(() => {
+    if (!selectedNode) {
+      return [] as FieldValidationIssue[];
+    }
+    return validateNodeDetail(watchedNodeValues ?? {});
+  }, [listDatas, selectedNode, watchedNodeValues]);
 
   async function removeSelectedNode() {
     if (!selectedNode || !builderScene) {
@@ -458,8 +590,13 @@ export function useJobScenesPageModel() {
     submitScene, form, resources, executionLabel, editing, builderOpen, closeBuilder, savingFlow, saveFlowLayout,
     autoLayoutNodes, builderScene, nodeRows, selectedNodeId, setSelectedNodeId, flowNodes, flowEdges,
     onFlowNodesChange, onFlowEdgesChange, onConnect, setReactFlowInstance, nodeLibrary, nodeTypeLabel,
-    addNodeFromLibrary, selectedNode, nodeDetailForm, watchedNodeType, saveSelectedNode, removeSelectedNode,
+    addNodeFromLibrary, selectedNode, selectedNodeListData, listDatas, nodeDetailForm, watchedNodeType, saveSelectedNode, removeSelectedNode,
     previewOpen, setPreviewOpen, previewScene, previewRows, previewSelectedKeys, setPreviewSelectedKeys,
-    previewLoading, previewExecuting, executePreview, holder, statusColor, autoOpenCreateRef
+    previewLoading, previewExecuting, executePreview, holder, statusColor, autoOpenCreateRef,
+    sceneSaveValidationReport: activeSceneSaveValidationReport,
+    nodeValidationIssues: liveNodeValidationIssues.length > 0 ? liveNodeValidationIssues : nodeValidationIssues,
+    previewValidationIssues,
+    publishNotice,
+    dismissPublishNotice: () => setPublishNotice(null)
   };
 }

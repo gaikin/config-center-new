@@ -14,6 +14,8 @@ import {  Button,
 } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
+import { OrgSelect, OrgText, PersonMultiSelect } from "../../components/DirectoryFields";
+import { getPersonLabel, normalizePersonValue, toPersonOption } from "../../directory";
 import { lifecycleLabelMap } from "../../enumLabels";
 import { configCenterService } from "../../services/configCenterService";
 import type { ActionType, RoleItem } from "../../types";
@@ -48,10 +50,23 @@ const allActions: ActionType[] = [
   "ROLE_MANAGE"
 ];
 
+const actionLabelMap: Record<ActionType, string> = {
+  VIEW: "查看",
+  CONFIG: "配置",
+  VALIDATE: "发布检查",
+  PUBLISH: "发布",
+  DISABLE: "停用",
+  DEFER: "延期",
+  ROLLBACK: "回滚",
+  AUDIT_VIEW: "审计查看",
+  RISK_CONFIRM: "风险确认",
+  ROLE_MANAGE: "角色维护"
+};
+
 const actionDescriptions: Record<ActionType, string> = {
   VIEW: "查看配置与运行结果",
   CONFIG: "创建和编辑业务对象",
-  VALIDATE: "触发发布前校验",
+  VALIDATE: "查看发布检查结果并处理阻断项",
   PUBLISH: "发布待生效对象",
   DISABLE: "停用已生效对象",
   DEFER: "延期即将到期对象",
@@ -88,9 +103,14 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
 
   async function loadMemberOptions(roleRows: RoleItem[]) {
     const memberGroups = await Promise.all(roleRows.map((role) => configCenterService.listRoleMembers(role.id)));
-    const merged = new Set<string>(["张三", "李四", "王五", "赵六"]);
-    memberGroups.flat().forEach((name) => merged.add(name));
-    setMemberOptions(Array.from(merged).sort((a, b) => a.localeCompare(b, "zh-CN")));
+    const merged = new Set<string>([
+      normalizePersonValue("张三"),
+      normalizePersonValue("李四"),
+      normalizePersonValue("王五"),
+      normalizePersonValue("赵六")
+    ]);
+    memberGroups.flat().forEach((personId) => merged.add(normalizePersonValue(personId)));
+    setMemberOptions(Array.from(merged).sort((left, right) => getPersonLabel(left).localeCompare(getPersonLabel(right), "zh-CN")));
   }
 
   async function loadData() {
@@ -188,7 +208,7 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   async function openMembers(role: RoleItem) {
     const members = await configCenterService.listRoleMembers(role.id);
     setMemberRole(role);
-    setMemberValues(members);
+    setMemberValues(members.map((item) => normalizePersonValue(item)));
     setMemberOpen(true);
   }
 
@@ -207,9 +227,9 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
       {holder}
       {!embedded ? (
         <>
-          <Typography.Title level={4}>角色管理</Typography.Title>
+          <Typography.Title level={4}>权限管理</Typography.Title>
           <Typography.Paragraph type="secondary">
-            角色按组织隔离配置，支持角色定义、复制、停用/恢复、组织范围绑定、操作类型配置与成员批量分配。
+            这是高级维护区，用来管理角色、组织范围和成员授权，避免在业务主路径里暴露复杂权限细节。
           </Typography.Paragraph>
         </>
       ) : null}
@@ -242,13 +262,13 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
               width: 120,
               render: (_, row) => <Tag color="blue">{roleTypeLabel[row.roleType]}</Tag>
             },
-            { title: "组织范围", dataIndex: "orgScopeId", width: 140 },
+            { title: "组织范围", dataIndex: "orgScopeId", width: 140, render: (value: string) => <OrgText value={value} /> },
             {
               title: "权限点",
               render: (_, row) => (
                 <Space size={[4, 4]} wrap>
                   {row.actions.map((action) => (
-                    <Tag key={action}>{action}</Tag>
+                    <Tag key={action}>{actionLabelMap[action]}</Tag>
                   ))}
                 </Space>
               )
@@ -314,13 +334,13 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
             按角色类型填充推荐权限
           </Button>
 
-          <Form.Item name="orgScopeId" label="组织范围" rules={[{ required: true, message: "请输入组织范围" }]}>
-            <Input />
+          <Form.Item name="orgScopeId" label="组织范围" rules={[{ required: true, message: "请选择组织范围" }]}>
+            <OrgSelect />
           </Form.Item>
           <Form.Item name="actions" label="操作类型" rules={[{ required: true, message: "请选择操作类型" }]}>
             <Select
               mode="multiple"
-              options={allActions.map((action) => ({ value: action, label: `${action} - ${actionDescriptions[action]}` }))}
+              options={allActions.map((action) => ({ value: action, label: `${actionLabelMap[action]} - ${actionDescriptions[action]}` }))}
               placeholder="可多选"
             />
           </Form.Item>
@@ -329,7 +349,7 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
           </Typography.Paragraph>
           <Space size={[8, 8]} wrap style={{ marginBottom: 12 }}>
             {allActions.map((action) => (
-              <Tag key={action}>{`${action}: ${actionDescriptions[action]}`}</Tag>
+              <Tag key={action}>{`${actionLabelMap[action]}：${actionDescriptions[action]}`}</Tag>
             ))}
           </Space>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
@@ -345,16 +365,14 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
         onOk={() => void saveMembers()}
       >
         <Typography.Paragraph type="secondary">
-          支持搜索选择，或直接输入新成员名称后回车。
+          支持按人员中文名搜索选择，保存时会自动关联到统一人员档案。
         </Typography.Paragraph>
-        <Select
-          mode="tags"
+        <PersonMultiSelect
           style={{ width: "100%" }}
           value={memberValues}
-          onChange={(values) => setMemberValues(values)}
-          tokenSeparators={[","]}
-          options={memberOptions.map((name) => ({ label: name, value: name }))}
-          placeholder="输入成员姓名并回车，或从下拉中选择"
+          onChange={(values) => setMemberValues((values as string[]).map((item) => normalizePersonValue(item)))}
+          options={memberOptions.map((personId) => toPersonOption(personId))}
+          placeholder="选择成员"
         />
       </Modal>
     </div>

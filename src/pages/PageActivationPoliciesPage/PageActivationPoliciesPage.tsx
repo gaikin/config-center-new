@@ -1,6 +1,7 @@
-import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
+import { Button, Card, Form, Modal, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
+import { OrgSelect } from "../../components/DirectoryFields";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { configCenterService } from "../../services/configCenterService";
 import type {
@@ -24,10 +25,10 @@ const statusColor: Record<LifecycleState, string> = {
 };
 
 const preloadOptions: Array<{ label: string; value: JobPreloadPolicy }> = [
-  { label: "immediate", value: "immediate" },
-  { label: "idle", value: "idle" },
-  { label: "intent", value: "intent" },
-  { label: "none", value: "none" }
+  { label: "立即准备", value: "immediate" },
+  { label: "空闲时准备", value: "idle" },
+  { label: "用户触发前准备", value: "intent" },
+  { label: "暂不准备", value: "none" }
 ];
 
 export function PageActivationPoliciesPage() {
@@ -58,8 +59,6 @@ export function PageActivationPoliciesPage() {
       return {
         ...policy,
         pageName: resource?.name ?? `page-${policy.pageResourceId}`,
-        pageCode: resource?.pageCode ?? "-",
-        frameCode: resource?.frameCode,
         menuName: menu?.menuName ?? "-",
         regionName: region?.regionName ?? "-"
       };
@@ -129,7 +128,7 @@ export function PageActivationPoliciesPage() {
       ...values,
       id: editing?.id ?? Date.now()
     });
-    msgApi.success(editing ? "页面启用策略已更新" : "页面启用策略已创建");
+    msgApi.success(editing ? "页面开通设置已更新，可前往发布与灰度继续处理" : "页面开通设置已创建，可前往发布与灰度查看待发布项");
     setOpen(false);
     await loadData();
   }
@@ -140,13 +139,13 @@ export function PageActivationPoliciesPage() {
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>页面启用策略</Typography.Title>
+      <Typography.Title level={4}>页面开通设置</Typography.Title>
       <Typography.Paragraph type="secondary">
-        业务人员在配置端控制菜单下哪些页面启用智能提示，是否带作业，以及 `job` 的预热策略；技术人员继续维护页面识别和字段模型。
+        在这里决定页面是否开通智能提示、是否带作业，以及作业在什么时机提前准备。技术定位细节继续放在高级维护区。
       </Typography.Paragraph>
 
       <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        业务人员只需要配置“这个页面是否启用、用哪套规则、是否带作业”。URL、XPath、iframe 定位等技术项由技术侧维护。
+        业务人员只需要配置“这个页面是否启用、用哪条提示规则、是否带作业”。页面定位和识别细节由技术侧维护。
       </Typography.Paragraph>
 
       <Space size={12} style={{ marginBottom: 16 }} wrap>
@@ -156,37 +155,31 @@ export function PageActivationPoliciesPage() {
       </Space>
 
       <Card
-        title="页面启用策略列表"
+        title="页面开通列表"
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建启用策略
+            新建开通设置
           </Button>
         }
       >
-        <Table<(PageActivationPolicy & { pageName: string; pageCode: string; frameCode?: string; menuName: string; regionName: string })>
+        <Table<(PageActivationPolicy & { pageName: string; menuName: string; regionName: string })>
           rowKey="id"
           loading={loading}
           dataSource={enhancedPolicies}
           pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
           columns={[
             { title: "页面", dataIndex: "pageName", width: 200 },
-            { title: "pageCode", dataIndex: "pageCode", width: 160 },
             {
               title: "归属",
               width: 220,
               render: (_, row) => `${row.regionName} / ${row.menuName}`
             },
             {
-              title: "frameCode",
-              width: 150,
-              render: (_, row) => row.frameCode ?? <Typography.Text type="secondary">主页面</Typography.Text>
-            },
-            {
               title: "启用提示",
               width: 100,
               render: (_, row) => (row.enabled ? <Tag color="green">启用</Tag> : <Tag>关闭</Tag>)
             },
-            { title: "规则集", dataIndex: "promptRuleSetName", width: 180 },
+            { title: "提示规则", dataIndex: "promptRuleSetName", width: 180 },
             {
               title: "作业能力",
               width: 200,
@@ -194,7 +187,7 @@ export function PageActivationPoliciesPage() {
                 row.hasJobScenes ? (
                   <Space wrap>
                     <Tag color="blue">{row.jobSceneName ?? "已绑定作业"}</Tag>
-                    <Tag>{row.jobPreloadPolicy}</Tag>
+                    <Tag>{preloadOptions.find((item) => item.value === row.jobPreloadPolicy)?.label ?? row.jobPreloadPolicy}</Tag>
                   </Space>
                 ) : (
                   <Typography.Text type="secondary">无</Typography.Text>
@@ -219,7 +212,7 @@ export function PageActivationPoliciesPage() {
       </Card>
 
       <Modal
-        title={editing ? "编辑页面启用策略" : "新建页面启用策略"}
+        title={editing ? "编辑页面开通设置" : "新建页面开通设置"}
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
@@ -244,11 +237,11 @@ export function PageActivationPoliciesPage() {
           <Form.Item name="enabled" label="启用智能提示" valuePropName="checked">
             <Switch checkedChildren="启用" unCheckedChildren="关闭" />
           </Form.Item>
-          <Form.Item name="promptRuleSetName" label="提示规则集" rules={[{ required: true, message: "请选择或输入规则集" }]}>
+          <Form.Item name="promptRuleSetName" label="提示规则" rules={[{ required: true, message: "请选择提示规则" }]}>
             <Select
               showSearch
               options={rules.map((rule) => ({ label: rule.name, value: rule.name }))}
-              placeholder="选择提示规则集"
+              placeholder="选择提示规则"
             />
           </Form.Item>
           <Form.Item name="hasJobScenes" label="是否启用作业" valuePropName="checked">
@@ -264,15 +257,20 @@ export function PageActivationPoliciesPage() {
                       options={scenes.map((scene) => ({ label: scene.name, value: scene.name }))}
                     />
                   </Form.Item>
-                  <Form.Item name="jobPreloadPolicy" label="作业预热策略" rules={[{ required: true, message: "请选择预热策略" }]}>
+                  <Form.Item name="jobPreloadPolicy" label="作业准备时机" rules={[{ required: true, message: "请选择作业准备时机" }]}>
                     <Select options={preloadOptions} />
                   </Form.Item>
                 </>
               ) : null
             }
           </Form.Item>
-          <Form.Item name="ownerOrgId" label="归属机构" rules={[{ required: true, message: "请输入归属机构" }]}>
-            <Input />
+          <Form.Item
+            name="ownerOrgId"
+            label="归属机构"
+            rules={[{ required: true, message: "请选择归属机构" }]}
+            extra="归属机构随页面自动带出，无需手工填写。"
+          >
+            <OrgSelect disabled />
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
             <Select options={lifecycleOptions} />

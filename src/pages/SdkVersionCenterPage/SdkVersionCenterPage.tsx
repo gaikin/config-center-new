@@ -1,7 +1,9 @@
 import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
+import { OrgSelect } from "../../components/DirectoryFields";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
+import { getOrgLabel } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
 import type {
   LifecycleState,
@@ -21,13 +23,6 @@ const statusColor: Record<LifecycleState, string> = {
   DISABLED: "orange",
   EXPIRED: "red"
 };
-
-const orgOptions = [
-  { label: "总行", value: "head-office" },
-  { label: "华东分行", value: "branch-east" },
-  { label: "华东分行二级支行", value: "branch-east-sub1" },
-  { label: "华南分行", value: "branch-south" }
-];
 
 export function SdkVersionCenterPage() {
   const [loading, setLoading] = useState(true);
@@ -159,11 +154,13 @@ export function SdkVersionCenterPage() {
 
   async function submit() {
     const values = await form.validateFields();
+    const matchedMenu = menus.find((item) => item.id === values.menuId);
     await configCenterService.upsertMenuSdkPolicy({
       ...values,
+      menuCode: matchedMenu?.menuCode ?? editing?.menuCode ?? "",
       id: editing?.id ?? Date.now()
     });
-    msgApi.success(editing ? "菜单级 SDK 策略已更新" : "菜单级 SDK 策略已创建");
+    msgApi.success(editing ? "版本灰度策略已更新，可前往发布与灰度继续处理" : "版本灰度策略已创建，可前往发布与灰度查看待发布项");
     setOpen(false);
     await loadData();
   }
@@ -174,26 +171,24 @@ export function SdkVersionCenterPage() {
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>SDK 版本中心</Typography.Title>
+      <Typography.Title level={4}>版本灰度策略（高级）</Typography.Title>
       <Typography.Paragraph type="secondary">
-        技术人员发布 SDK 制品版本与槽位，业务人员在菜单层级选择稳定槽位、灰度槽位和机构范围。运行时通过
-        <Typography.Text code>loader -&gt; sdk-release-index -&gt; core</Typography.Text>
-        解析真实版本。
+        这是高级维护区，用来维护菜单层级的版本发布与灰度范围。业务侧通常直接在“发布与灰度”查看结果，不需要先进入这里。
       </Typography.Paragraph>
 
       <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        当前口径：菜单挂在专区下（`regionId`），页面和 iframe 继承菜单命中的 SDK 版本。灰度范围只到机构，不到个人。
+        当前原型只保留三个业务可理解的信息：当前线上版本、试点版本、影响机构范围。
       </Typography.Paragraph>
 
       <Space size={12} style={{ marginBottom: 16 }} wrap>
         <Tag color="blue">制品版本：{artifacts.length}</Tag>
-        <Tag color="purple">版本槽位：{lanes.length}</Tag>
-        <Tag color="geekblue">菜单策略：{policies.length}</Tag>
+        <Tag color="purple">发布通道：{lanes.length}</Tag>
+        <Tag color="geekblue">版本策略：{policies.length}</Tag>
         <Tag color="orange">待灰度菜单：{grayPolicies}</Tag>
         <Tag color="red">待发布制品：{draftArtifacts}</Tag>
       </Space>
 
-      <Card title="SDK 制品版本" style={{ marginBottom: 16 }}>
+      <Card title="版本清单" style={{ marginBottom: 16 }}>
         <Table<SdkArtifactVersion>
           rowKey="id"
           loading={loading}
@@ -213,15 +208,14 @@ export function SdkVersionCenterPage() {
         />
       </Card>
 
-      <Card title="版本槽位" style={{ marginBottom: 16 }}>
+      <Card title="发布通道" style={{ marginBottom: 16 }}>
         <Table<SdkReleaseLane>
           rowKey="id"
           loading={loading}
           dataSource={lanes}
           pagination={false}
           columns={[
-            { title: "槽位编码", dataIndex: "laneCode", width: 120 },
-            { title: "槽位名称", dataIndex: "laneName", width: 140 },
+            { title: "通道", dataIndex: "laneName", width: 140 },
             { title: "指向版本", dataIndex: "sdkVersion", width: 160 },
             {
               title: "状态",
@@ -234,7 +228,7 @@ export function SdkVersionCenterPage() {
       </Card>
 
       <Card
-        title="菜单级 SDK 策略"
+        title="菜单版本灰度策略"
         extra={
           <Space wrap>
             <Select
@@ -259,7 +253,7 @@ export function SdkVersionCenterPage() {
               onChange={(value) => setRegionFilter(value)}
             />
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-              新建菜单策略
+              新建版本策略
             </Button>
           </Space>
         }
@@ -273,16 +267,15 @@ export function SdkVersionCenterPage() {
             {
               title: "菜单",
               width: 220,
-              render: (_, row) => menuLabelMap[row.menuId] ?? row.menuCode
+              render: (_, row) => menuLabelMap[row.menuId] ?? "未识别菜单"
             },
-            { title: "menuCode", dataIndex: "menuCode", width: 130 },
             {
-              title: "稳定槽位",
+              title: "线上版本",
               width: 160,
               render: (_, row) => laneLabelMap[row.stableLaneId] ?? row.stableLaneId
             },
             {
-              title: "灰度槽位",
+              title: "试点版本",
               width: 160,
               render: (_, row) =>
                 row.grayLaneId ? laneLabelMap[row.grayLaneId] ?? row.grayLaneId : <Typography.Text type="secondary">-</Typography.Text>
@@ -294,11 +287,11 @@ export function SdkVersionCenterPage() {
                 row.grayOrgIds.length > 0 ? (
                   <Space wrap>
                     {row.grayOrgIds.map((orgId) => (
-                      <Tag key={orgId}>{orgId}</Tag>
+                      <Tag key={orgId}>{getOrgLabel(orgId)}</Tag>
                     ))}
                   </Space>
                 ) : (
-                  <Typography.Text type="secondary">全部机构走 stable</Typography.Text>
+                  <Typography.Text type="secondary">全部机构走线上版本</Typography.Text>
                 )
             },
             { title: "生效时间", width: 220, render: (_, row) => `${row.effectiveStart} ~ ${row.effectiveEnd}` },
@@ -321,7 +314,7 @@ export function SdkVersionCenterPage() {
       </Card>
 
       <Modal
-        title={editing ? "编辑菜单级 SDK 策略" : "新建菜单级 SDK 策略"}
+        title={editing ? "编辑版本灰度策略" : "新建版本灰度策略"}
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
@@ -367,17 +360,17 @@ export function SdkVersionCenterPage() {
               );
             }}
           </Form.Item>
-          <Form.Item name="menuCode" label="menuCode" rules={[{ required: true, message: "请输入 menuCode" }]}>
+          <Form.Item name="menuCode" hidden>
             <Input />
           </Form.Item>
-          <Form.Item name="stableLaneId" label="稳定槽位" rules={[{ required: true, message: "请选择稳定槽位" }]}>
+          <Form.Item name="stableLaneId" label="线上版本" rules={[{ required: true, message: "请选择线上版本" }]}>
             <Select options={lanes.map((lane) => ({ label: `${lane.laneName} (${lane.sdkVersion})`, value: lane.id }))} />
           </Form.Item>
-          <Form.Item name="grayLaneId" label="灰度槽位">
+          <Form.Item name="grayLaneId" label="试点版本">
             <Select allowClear options={lanes.map((lane) => ({ label: `${lane.laneName} (${lane.sdkVersion})`, value: lane.id }))} />
           </Form.Item>
           <Form.Item name="grayOrgIds" label="灰度机构">
-            <Select mode="multiple" options={orgOptions} placeholder="未选择则全部机构走 stable" />
+            <OrgSelect mode="multiple" placeholder="未选择则全部机构走线上版本" />
           </Form.Item>
           <Form.Item name="effectiveStart" label="生效开始" rules={[{ required: true, message: "请输入开始时间" }]}>
             <Input />
@@ -385,8 +378,8 @@ export function SdkVersionCenterPage() {
           <Form.Item name="effectiveEnd" label="生效结束" rules={[{ required: true, message: "请输入结束时间" }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="ownerOrgId" label="归属组织" rules={[{ required: true, message: "请输入归属组织" }]}>
-            <Input />
+          <Form.Item name="ownerOrgId" label="归属组织" rules={[{ required: true, message: "请选择归属组织" }]}>
+            <OrgSelect />
           </Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
             <Select options={lifecycleOptions} />

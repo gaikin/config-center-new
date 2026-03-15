@@ -6,7 +6,6 @@ export type SceneForm = {
   pageResourceId: number;
   executionMode: JobSceneDefinition["executionMode"];
   status: LifecycleState;
-  currentVersion: number;
   nodeCount: number;
   manualDurationSec: number;
 };
@@ -30,6 +29,10 @@ export type NodeDetailForm = {
   field?: string;
   interfaceId?: number;
   forceFail?: boolean;
+  listDataId?: number;
+  matchColumn?: string;
+  inputSource?: string;
+  resultKey?: string;
   script?: string;
   target?: string;
   value?: string;
@@ -58,6 +61,7 @@ export const executionLabel: Record<JobSceneDefinition["executionMode"], string>
 export const nodeTypeLabel: Record<JobNodeDefinition["nodeType"], string> = {
   page_get: "页面取值",
   api_call: "接口调用",
+  list_lookup: "名单检索",
   js_script: "脚本处理",
   page_set: "页面写值"
 };
@@ -65,6 +69,7 @@ export const nodeTypeLabel: Record<JobNodeDefinition["nodeType"], string> = {
 export const nodeLibrary: NodeLibraryItem[] = [
   { label: "页面取值", nodeType: "page_get", description: "从页面字段读取值" },
   { label: "接口调用", nodeType: "api_call", description: "调用外部接口获取数据" },
+  { label: "名单检索", nodeType: "list_lookup", description: "到名单中心检索匹配结果" },
   { label: "脚本处理", nodeType: "js_script", description: "执行脚本进行加工" },
   { label: "页面写值", nodeType: "page_set", description: "将结果写回页面字段" }
 ];
@@ -188,12 +193,23 @@ export function deriveOrderedNodeIds(nodes: FlowNode[], edges: FlowEdge[]): stri
   return ordered;
 }
 
-export function getDefaultNodeConfig(nodeType: JobNodeDefinition["nodeType"]): NodeConfig {
+export function getDefaultNodeConfig(
+  nodeType: JobNodeDefinition["nodeType"],
+  options: { listDataId?: number; matchColumn?: string; inputSource?: string } = {}
+): NodeConfig {
   if (nodeType === "page_get") {
     return { field: "field_key" };
   }
   if (nodeType === "api_call") {
     return { interfaceId: 3001, forceFail: false };
+  }
+  if (nodeType === "list_lookup") {
+    return {
+      listDataId: options.listDataId,
+      matchColumn: options.matchColumn ?? "",
+      inputSource: options.inputSource ?? "",
+      resultKey: "list_lookup_result"
+    };
   }
   if (nodeType === "js_script") {
     return { script: "transform" };
@@ -211,6 +227,14 @@ export function buildNodeConfigFromForm(values: NodeDetailForm): NodeConfig {
     return {
       interfaceId: values.interfaceId ?? 3001,
       forceFail: Boolean(values.forceFail)
+    };
+  }
+  if (values.nodeType === "list_lookup") {
+    return {
+      listDataId: values.listDataId,
+      matchColumn: values.matchColumn?.trim() ?? "",
+      inputSource: values.inputSource?.trim() ?? "",
+      resultKey: values.resultKey?.trim() ?? ""
     };
   }
   if (values.nodeType === "js_script") {
@@ -233,6 +257,10 @@ export function buildFormValuesFromNode(node: JobNodeDefinition): NodeDetailForm
     field: typeof config.field === "string" ? config.field : "",
     interfaceId: typeof config.interfaceId === "number" ? config.interfaceId : 3001,
     forceFail: Boolean(config.forceFail),
+    listDataId: typeof config.listDataId === "number" ? config.listDataId : undefined,
+    matchColumn: typeof config.matchColumn === "string" ? config.matchColumn : "",
+    inputSource: typeof config.inputSource === "string" ? config.inputSource : "",
+    resultKey: typeof config.resultKey === "string" ? config.resultKey : "",
     script: typeof config.script === "string" ? config.script : "",
     target: typeof config.target === "string" ? config.target : "",
     value: typeof config.value === "string" ? config.value : ""

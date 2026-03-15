@@ -5,6 +5,7 @@ import type {
   PromptMode,
   RuleCondition,
   RuleOperand,
+  RuleLookupSourceType,
   RuleOperandSourceType,
   RuleOperandValueType,
   RuleOperator
@@ -14,7 +15,6 @@ export type RuleForm = {
   templateRuleId?: number;
   name: string;
   ruleScope: "SHARED" | "PAGE_RESOURCE";
-  ruleSetCode: string;
   pageResourceId?: number;
   priority: number;
   promptMode: PromptMode;
@@ -34,6 +34,13 @@ export type PreprocessorDraft = {
   params: string;
 };
 
+export type ListLookupMatcherDraft = {
+  id: string;
+  matchColumn: string;
+  sourceType: RuleLookupSourceType;
+  sourceValue: string;
+};
+
 export type OperandDraft = {
   sourceType: RuleOperandSourceType;
   valueType: RuleOperandValueType;
@@ -43,6 +50,13 @@ export type OperandDraft = {
   interfaceName?: string;
   outputPath?: string;
   interfaceInputConfig: string;
+  listDataId?: number;
+  listDataName?: string;
+  matchColumn?: string;
+  lookupSourceType?: RuleLookupSourceType;
+  lookupSourceValue?: string;
+  listMatchers: ListLookupMatcherDraft[];
+  resultField?: string;
   preprocessors: PreprocessorDraft[];
 };
 
@@ -85,6 +99,14 @@ export const closeModeLabel: Record<PromptCloseMode, string> = {
 };
 
 export const sourceOptions: Array<{ label: string; value: RuleOperandSourceType }> = [
+  { label: "页面字段", value: "PAGE_FIELD" },
+  { label: "API字段", value: "INTERFACE_FIELD" },
+  { label: "名单字段", value: "LIST_LOOKUP_FIELD" },
+  { label: "上下文变量", value: "CONTEXT" },
+  { label: "固定值", value: "CONST" }
+];
+
+export const listLookupSourceOptions: Array<{ label: string; value: RuleLookupSourceType }> = [
   { label: "页面字段", value: "PAGE_FIELD" },
   { label: "API字段", value: "INTERFACE_FIELD" },
   { label: "上下文变量", value: "CONTEXT" },
@@ -138,6 +160,12 @@ export const sourceVisualMap: Record<RuleOperandSourceType, { label: string; col
     color: "var(--cc-source-api, #027A48)",
     bg: "var(--cc-source-api-bg, #ECFDF3)",
     border: "var(--cc-source-api-border, #ABEFC6)"
+  },
+  LIST_LOOKUP_FIELD: {
+    label: "名单字段",
+    color: "var(--cc-source-list, #7A00E6)",
+    bg: "var(--cc-source-list-bg, #F4EBFF)",
+    border: "var(--cc-source-list-border, #D9B8FF)"
   },
   CONTEXT: {
     label: "上下文变量",
@@ -245,6 +273,19 @@ export function buildPreprocessorId() {
   return `pre-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 }
 
+export function buildListLookupMatcherId() {
+  return `lookup-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+}
+
+export function buildDefaultListLookupMatcher(): ListLookupMatcherDraft {
+  return {
+    id: buildListLookupMatcherId(),
+    matchColumn: "",
+    sourceType: "PAGE_FIELD",
+    sourceValue: ""
+  };
+}
+
 export function buildDefaultOperand(sourceType: RuleOperandSourceType = "PAGE_FIELD"): OperandDraft {
   return {
     sourceType,
@@ -252,6 +293,8 @@ export function buildDefaultOperand(sourceType: RuleOperandSourceType = "PAGE_FI
     displayValue: "",
     machineKey: "",
     interfaceInputConfig: "",
+    lookupSourceType: "PAGE_FIELD",
+    listMatchers: sourceType === "LIST_LOOKUP_FIELD" ? [buildDefaultListLookupMatcher()] : [],
     preprocessors: []
   };
 }
@@ -266,6 +309,13 @@ export function buildDefaultCondition(): FlatConditionDraft {
 }
 
 export function normalizeSourceType(value: string | undefined): RuleOperandSourceType {
+  if (value === "INTERFACE_FIELD" || value === "LIST_LOOKUP_FIELD" || value === "CONST" || value === "CONTEXT") {
+    return value;
+  }
+  return "PAGE_FIELD";
+}
+
+export function normalizeLookupSourceType(value: string | undefined): RuleLookupSourceType {
   if (value === "INTERFACE_FIELD" || value === "CONST" || value === "CONTEXT") {
     return value;
   }
@@ -325,6 +375,32 @@ export function toOperandDraft(operand: RuleOperand | undefined): OperandDraft {
     interfaceName: binding?.interfaceName ?? parsedApi.interfaceName,
     outputPath: binding?.outputPath ?? parsedApi.outputPath,
     interfaceInputConfig: binding?.inputConfig ?? "",
+    listDataId: operand.listBinding?.listDataId,
+    listDataName: operand.listBinding?.listDataName,
+    matchColumn: operand.listBinding?.matchColumn,
+    lookupSourceType: operand.listBinding?.lookupSourceType ?? "PAGE_FIELD",
+    lookupSourceValue: operand.listBinding?.lookupSourceValue ?? "",
+    listMatchers:
+      operand.listBinding?.matchers && operand.listBinding.matchers.length > 0
+        ? operand.listBinding.matchers.map((item) => ({
+            id: buildListLookupMatcherId(),
+            matchColumn: item.matchColumn,
+            sourceType: item.sourceType,
+            sourceValue: item.sourceValue
+          }))
+        : operand.listBinding?.matchColumn
+          ? [
+              {
+                id: buildListLookupMatcherId(),
+                matchColumn: operand.listBinding.matchColumn,
+                sourceType: operand.listBinding.lookupSourceType ?? "PAGE_FIELD",
+                sourceValue: operand.listBinding.lookupSourceValue ?? ""
+              }
+            ]
+          : operand.sourceType === "LIST_LOOKUP_FIELD"
+            ? [buildDefaultListLookupMatcher()]
+            : [],
+    resultField: operand.listBinding?.resultField ?? "",
     preprocessors
   };
 }
@@ -346,6 +422,12 @@ export function hasDirtyOperandConfig(operand: OperandDraft) {
       operand.interfaceName?.trim() ||
       operand.outputPath?.trim() ||
       operand.interfaceInputConfig.trim() ||
+      operand.listDataId ||
+      operand.listDataName?.trim() ||
+      operand.matchColumn?.trim() ||
+      operand.lookupSourceValue?.trim() ||
+      operand.listMatchers.some((item) => item.matchColumn.trim() || item.sourceValue.trim()) ||
+      operand.resultField?.trim() ||
       operand.preprocessors.length > 0
   );
 }
@@ -357,6 +439,8 @@ export function resetOperandBySource(sourceType: RuleOperandSourceType, previous
     displayValue: "",
     machineKey: "",
     interfaceInputConfig: "",
+    lookupSourceType: "PAGE_FIELD",
+    listMatchers: sourceType === "LIST_LOOKUP_FIELD" ? [buildDefaultListLookupMatcher()] : [],
     preprocessors: []
   };
 }
@@ -372,6 +456,18 @@ export function resolveOperandSummary(operand: OperandDraft) {
       warning,
       mainText: `${interfaceName}.${outputPath || "(未绑定输出值)"}`,
       subText: operand.interfaceInputConfig.trim() ? "含入参配置" : "未配置入参"
+    };
+  }
+  if (operand.sourceType === "LIST_LOOKUP_FIELD") {
+    const listName = operand.listDataName?.trim() || "名单";
+    const resultField = operand.resultField?.trim();
+    const warning = !operand.listDataId || !resultField;
+    const matcherCount = operand.listMatchers.filter((item) => item.matchColumn.trim()).length;
+    return {
+      visual,
+      warning,
+      mainText: `${listName}.${resultField || "(未绑定输出字段)"}`,
+      subText: matcherCount > 0 ? `检索键 ${matcherCount} 个` : "未配置检索键"
     };
   }
 
@@ -401,6 +497,42 @@ export function toRuleOperand(draft: OperandDraft): RuleOperand {
         interfaceName,
         outputPath,
         inputConfig: draft.interfaceInputConfig.trim() || undefined
+      },
+      preprocessorConfigs: selectedPreprocessors.map((item) => ({
+        preprocessorId: item.preprocessorId as number,
+        params: item.params.trim() || undefined
+      }))
+    };
+  }
+  if (draft.sourceType === "LIST_LOOKUP_FIELD") {
+    const listName = draft.listDataName?.trim() || "名单";
+    const resultField = draft.resultField?.trim();
+    const lookupSourceValue = draft.lookupSourceValue?.trim() || "";
+    const fallbackMatchColumn = draft.matchColumn?.trim();
+    const matchers = draft.listMatchers
+      .map((item) => ({
+        matchColumn: item.matchColumn.trim(),
+        sourceType: item.sourceType,
+        sourceValue: item.sourceValue.trim()
+      }))
+      .filter((item) => item.matchColumn && item.sourceValue);
+    const primaryMatcher = matchers[0];
+    const displayValue = `${listName}.${resultField || "(未绑定输出字段)"}`;
+    const machineKey = resultField || draft.machineKey.trim() || "list_result";
+    return {
+      sourceType: draft.sourceType,
+      key: machineKey,
+      preprocessorIds: selectedPreprocessors.map((item) => item.preprocessorId as number),
+      valueType: draft.valueType,
+      displayValue,
+      listBinding: {
+        listDataId: draft.listDataId,
+        listDataName: listName,
+        matchColumn: primaryMatcher?.matchColumn ?? fallbackMatchColumn ?? undefined,
+        lookupSourceType: primaryMatcher?.sourceType ?? draft.lookupSourceType ?? "PAGE_FIELD",
+        lookupSourceValue: primaryMatcher?.sourceValue ?? lookupSourceValue,
+        matchers,
+        resultField
       },
       preprocessorConfigs: selectedPreprocessors.map((item) => ({
         preprocessorId: item.preprocessorId as number,

@@ -1,6 +1,7 @@
 ﻿import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
+import { OrgSelect, OrgText } from "../../components/DirectoryFields";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { configCenterService } from "../../services/configCenterService";
 import type { LifecycleState, PreprocessorDefinition } from "../../types";
@@ -82,7 +83,7 @@ export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) 
       id: editing?.id ?? Date.now(),
       usedByCount: editing?.usedByCount ?? 0
     });
-    msgApi.success(editing ? "预处理器已更新" : "预处理器已创建");
+    msgApi.success(editing ? "数据转换规则已更新，可前往发布与灰度继续处理" : "数据转换规则已创建，可前往发布与灰度查看待发布项");
     setOpen(false);
     await loadData();
   }
@@ -114,9 +115,9 @@ export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) 
       {holder}
       {!embedded ? (
         <>
-          <Typography.Title level={4}>预处理器中心</Typography.Title>
+          <Typography.Title level={4}>数据转换规则</Typography.Title>
           <Typography.Paragraph type="secondary">
-            统一维护规则和作业共用的数据转换逻辑，优先使用内置能力，脚本能力仅作受控增强。
+            这是高级维护区，用来统一管理规则和作业共用的数据转换逻辑。优先使用内置能力，脚本方式仅作受控增强。
           </Typography.Paragraph>
         </>
       ) : null}
@@ -143,7 +144,7 @@ export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) 
               width: 100,
               render: (_, row) => <Tag>{categoryLabel[row.category]}</Tag>
             },
-            { title: "组织范围", dataIndex: "ownerOrgId", width: 140 },
+            { title: "组织范围", dataIndex: "ownerOrgId", width: 140, render: (value: string) => <OrgText value={value} /> },
             { title: "被引用次数", dataIndex: "usedByCount", width: 110 },
             {
               title: "状态",
@@ -181,7 +182,7 @@ export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) 
       >
         <Form form={form} layout="vertical">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            编号由系统自动生成；被引用次数会自动统计，你只需维护转换规则本身。
+            标识由系统自动生成；被引用次数会自动统计，你只需维护转换逻辑本身。
           </Typography.Paragraph>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input maxLength={128} />
@@ -202,8 +203,8 @@ export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) 
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
             <Select options={lifecycleOptions} />
           </Form.Item>
-          <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请输入组织" }]}>
-            <Input />
+          <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请选择组织" }]}>
+            <OrgSelect />
           </Form.Item>
 
           {watchedProcessorType === "SCRIPT" ? (

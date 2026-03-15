@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Card,
   Descriptions,
@@ -12,7 +13,9 @@ import {
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { OrgSelect, OrgText } from "../../components/DirectoryFields";
 import { lifecycleLabelMap } from "../../enumLabels";
+import { getOrgLabel, toOrgOption } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
 import type {
   InterfaceDefinition,
@@ -146,7 +149,6 @@ export function PageManagementPage() {
       const normalized = keyword.trim().toLowerCase();
       return (
         row.name.toLowerCase().includes(normalized) ||
-        row.pageCode.toLowerCase().includes(normalized) ||
         row.menuName.toLowerCase().includes(normalized)
       );
     });
@@ -178,7 +180,7 @@ export function PageManagementPage() {
   );
 
   const orgOptions = useMemo(() => {
-    return Array.from(new Set(resources.map((item) => item.ownerOrgId))).map((item) => ({ label: item, value: item }));
+    return Array.from(new Set(resources.map((item) => item.ownerOrgId))).map((item) => toOrgOption(item));
   }, [resources]);
 
   return (
@@ -203,15 +205,16 @@ export function PageManagementPage() {
             value={keyword}
             allowClear
             style={{ width: 260 }}
-            placeholder="搜索页面名称 / pageCode / 菜单"
+            placeholder="搜索页面名称 / 菜单"
             onChange={(event) => setKeyword(event.target.value)}
             onSearch={(value) => setKeyword(value)}
           />
-          <Select
+          <OrgSelect
+            includeAll
             value={orgFilter}
             style={{ width: 180 }}
             onChange={setOrgFilter}
-            options={[{ label: "全部机构", value: "ALL" }, ...orgOptions]}
+            options={orgOptions}
           />
           <Select
             value={enabledFilter}
@@ -238,13 +241,12 @@ export function PageManagementPage() {
           rowClassName={(row) => (row.id === selectedPageId ? "ant-table-row-selected" : "")}
           columns={[
             { title: "页面", dataIndex: "name", width: 210 },
-            { title: "页面编码", dataIndex: "pageCode", width: 160 },
             {
               title: "归属",
               width: 180,
               render: (_, row) => `${row.regionName} / ${row.menuName}`
             },
-            { title: "机构", dataIndex: "ownerOrgId", width: 130 },
+            { title: "机构", dataIndex: "ownerOrgId", width: 130, render: (value: string) => <OrgText value={value} /> },
             {
               title: "启用状态",
               width: 110,
@@ -312,16 +314,35 @@ export function PageManagementPage() {
                   )
                 }
               >
-                查看关联 API
+                新建关联 API
+              </Button>
+              <Button
+                onClick={() =>
+                  navigate(`/page-resources?resourceId=${selectedPage.id}&action=fields`)
+                }
+              >
+                字段维护
+              </Button>
+              <Button type="primary" onClick={() => navigate("/publish")}>
+                去发布与灰度
               </Button>
             </Space>
           }
         >
           <Space direction="vertical" style={{ width: "100%" }} size={12}>
+            <Alert
+              type="info"
+              showIcon
+              message="推荐路径：先补提示规则、作业或 API，再进入“发布与灰度”完成上线。"
+              description="发布完成后，再到“运行统计”确认触发情况和是否出现明显下降。"
+            />
             <Card size="small" title="基本信息">
               <Descriptions size="small" column={2}>
                 <Descriptions.Item label="页面名称">{selectedPage.name}</Descriptions.Item>
                 <Descriptions.Item label="页面编码">{selectedPage.pageCode}</Descriptions.Item>
+                <Descriptions.Item label="iframe 标识">
+                  {selectedPage.frameCode ?? <Typography.Text type="secondary">主页面</Typography.Text>}
+                </Descriptions.Item>
                 <Descriptions.Item label="所属专区">{selectedPage.regionName}</Descriptions.Item>
                 <Descriptions.Item label="所属菜单">{selectedPage.menuName}</Descriptions.Item>
                 <Descriptions.Item label="页面状态">{lifecycleLabelMap[selectedPage.status]}</Descriptions.Item>
@@ -331,11 +352,11 @@ export function PageManagementPage() {
 
             <Card size="small" title="启用范围">
               <Descriptions size="small" column={2}>
-                <Descriptions.Item label="覆盖机构">{selectedPage.ownerOrgId}</Descriptions.Item>
+                <Descriptions.Item label="覆盖机构">{getOrgLabel(selectedPage.ownerOrgId)}</Descriptions.Item>
                 <Descriptions.Item label="页面是否启用">
                   {selectedPage.enabled ? <Tag color="green">启用</Tag> : <Tag color="default">关闭</Tag>}
                 </Descriptions.Item>
-                <Descriptions.Item label="提示规则集">
+                <Descriptions.Item label="提示规则">
                   {selectedPage.policy?.promptRuleSetName ?? <Typography.Text type="secondary">未配置</Typography.Text>}
                 </Descriptions.Item>
                 <Descriptions.Item label="作业预热策略">

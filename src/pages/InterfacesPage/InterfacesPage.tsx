@@ -19,8 +19,12 @@ import {
   Typography
 } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { OrgSelect } from "../../components/DirectoryFields";
+import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
+import { ValidationReportPanel } from "../../components/ValidationReportPanel";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
+import { getOrgLabel } from "../../orgOptions";
 import { useInterfacesPageModel } from "./useInterfacesPageModel";
 import {
   ApiRegisterForm,
@@ -37,6 +41,7 @@ import type { ApiOutputParam, ApiValueType, InterfaceDefinition } from "../../ty
 const wizardSteps = ["选用途", "基础信息", "参数示例", "在线测试", "保存"];
 
 export function InterfacesPage() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const ownerOrgFilter = searchParams.get("ownerOrgId");
   const quickAction = searchParams.get("action");
@@ -89,7 +94,12 @@ export function InterfacesPage() {
     setDebugEnv,
     debugPayload,
     setDebugPayload,
-    debugResult
+    debugResult,
+    saveValidationReport,
+    inputValidationIssues,
+    outputValidationIssues,
+    publishNotice,
+    dismissPublishNotice
   } = useInterfacesPageModel();
 
   const visibleRows = useMemo(() => {
@@ -143,15 +153,24 @@ export function InterfacesPage() {
       {holder}
       <Typography.Title level={4}>API注册</Typography.Title>
       <Typography.Paragraph type="secondary">
-        保留 API注册 术语，主流程改为五步向导：选用途 → 填基础信息 → 填参数示例 → 在线测试 → 保存。
+        保留 API注册 术语，主流程改为五步向导：选用途 → 填基础信息 → 填参数示例 → 在线测试 → 保存。保存后继续到“发布与灰度”完成上线。
       </Typography.Paragraph>
+      {publishNotice ? (
+        <PublishContinuationAlert
+          objectLabel="API"
+          objectName={publishNotice.objectName}
+          warningCount={publishNotice.warningCount}
+          onGoPublish={() => navigate("/publish")}
+          onClose={dismissPublishNotice}
+        />
+      ) : null}
       {ownerOrgFilter ? (
         <Alert
           showIcon
           type="info"
           style={{ marginBottom: 12 }}
-          message={`已按机构过滤：${ownerOrgFilter}`}
-          description="该过滤来自页面管理详情中的“查看关联 API”快捷动作。"
+          message={`已按机构过滤：${getOrgLabel(ownerOrgFilter)}`}
+          description="该过滤来自页面管理详情中的“新建关联 API”快捷动作。"
         />
       ) : null}
 
@@ -207,7 +226,7 @@ export function InterfacesPage() {
               width: 240,
               render: (_, row) => (
                 <Space size={[4, 4]} wrap>
-                  <Tag>{`页面(${row.ownerOrgId})`}</Tag>
+                  <Tag>{`页面(${getOrgLabel(row.ownerOrgId)})`}</Tag>
                   <Tag>规则(2)</Tag>
                   <Tag>作业(1)</Tag>
                 </Space>
@@ -275,6 +294,10 @@ export function InterfacesPage() {
 
         <Form form={form} layout="vertical">
           {wizardStep === 0 ? (
+            <ValidationReportPanel report={saveValidationReport} sections={["purpose"]} title="当前步骤还有待处理问题" />
+          ) : null}
+
+          {wizardStep === 0 ? (
             <Card title="步骤 1：选用途" size="small">
               <Typography.Paragraph type="secondary">
                 先明确接口用途和调用方式，后续再补参数和测试。可先从模板或复制已有 API 创建。
@@ -295,16 +318,18 @@ export function InterfacesPage() {
           ) : null}
 
           {wizardStep === 1 ? (
+            <ValidationReportPanel report={saveValidationReport} sections={["basic"]} title="基础信息还有待处理问题" />
+          ) : null}
+
+          {wizardStep === 1 ? (
             <Card title="步骤 2：填基础信息" size="small">
+              <Typography.Paragraph type="secondary">
+                接口编号和版本由系统自动维护，你只需要填写业务信息。
+              </Typography.Paragraph>
               <Row gutter={12}>
-                <Col span={12}>
-                  <Form.Item name="id" label="ID" rules={[{ required: true, message: "请输入 ID" }]}>
-                    <InputNumber style={{ width: "100%" }} />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item name="ownerOrgId" label="机构范围" rules={[{ required: true, message: "请输入机构范围" }]}>
-                    <Input />
+                <Col span={24}>
+                  <Form.Item name="ownerOrgId" label="机构范围" rules={[{ required: true, message: "请选择机构范围" }]}>
+                    <OrgSelect />
                   </Form.Item>
                 </Col>
               </Row>
@@ -331,11 +356,6 @@ export function InterfacesPage() {
                     <InputNumber min={0} max={3} style={{ width: "100%" }} />
                   </Form.Item>
                 </Col>
-                <Col span={8}>
-                  <Form.Item name="currentVersion" label="版本" rules={[{ required: true, message: "请输入版本" }]}>
-                    <InputNumber min={1} style={{ width: "100%" }} />
-                  </Form.Item>
-                </Col>
               </Row>
               <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
                 <Select options={lifecycleOptions} />
@@ -348,6 +368,13 @@ export function InterfacesPage() {
 
           {wizardStep === 2 ? (
             <Space direction="vertical" style={{ width: "100%" }} size={12}>
+              <ValidationReportPanel
+                report={saveValidationReport}
+                sections={["params"]}
+                title="参数示例还有待处理问题"
+              />
+              <ValidationReportPanel issues={inputValidationIssues} title="请求参数还有待处理问题" />
+              <ValidationReportPanel issues={outputValidationIssues} title="返回参数还有待处理问题" />
               <Card title="步骤 3：填参数示例" size="small">
                 <Tabs
                   activeKey={inputTab}
@@ -487,7 +514,7 @@ export function InterfacesPage() {
 
           {wizardStep === 4 ? (
             <Card title="步骤 5：保存前确认" size="small">
-              <DescriptionsSummary form={form} outputCount={outputConfig.length} />
+              <DescriptionsSummary form={form} outputCount={outputConfig.length} report={saveValidationReport} />
             </Card>
           ) : null}
         </Form>
@@ -636,10 +663,11 @@ export function InterfacesPage() {
   );
 }
 
-function DescriptionsSummary({ form, outputCount }: { form: any; outputCount: number }) {
+function DescriptionsSummary({ form, outputCount, report }: { form: any; outputCount: number; report: any }) {
   const values = form.getFieldsValue() as Partial<ApiRegisterForm>;
   return (
     <Space direction="vertical" style={{ width: "100%" }}>
+      <ValidationReportPanel report={report} title="保存前检查结果" />
       <Alert
         showIcon
         type="info"
@@ -649,7 +677,7 @@ function DescriptionsSummary({ form, outputCount }: { form: any; outputCount: nu
       <Space wrap>
         <Tag color="blue">{values.name || "未命名接口"}</Tag>
         <Tag>{values.method || "POST"}</Tag>
-        <Tag>{values.ownerOrgId || "-"}</Tag>
+        <Tag>{getOrgLabel(values.ownerOrgId)}</Tag>
         <Tag color="purple">出参字段 {outputCount}</Tag>
       </Space>
       <Typography.Text type="secondary">测试路径：{values.testPath || "-"}</Typography.Text>

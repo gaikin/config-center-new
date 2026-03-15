@@ -1,0 +1,986 @@
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Input,
+  Modal,
+  Row,
+  Segmented,
+  Select,
+  Space,
+  Statistic,
+  Steps,
+  Table,
+  Tag,
+  Typography,
+  message
+} from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { OrgText, PersonText } from "../../components/DirectoryFields";
+import { auditActionLabelMap, pendingTypeLabelMap, resourceTypeLabelMap } from "../../enumLabels";
+import { getOrgLabel } from "../../orgOptions";
+import { configCenterService } from "../../services/configCenterService";
+import { mockUserPersonaMetaMap, useMockSession } from "../../session/mockSession";
+import type {
+  PublishAuditLog,
+  PublishPendingItem,
+  MenuSdkPolicy,
+  PageMenu,
+  PageRegion,
+  PublishValidationReport,
+  SdkReleaseLane,
+  ValidationReport
+} from "../../types";
+
+type PendingFilter = "ALL" | PublishPendingItem["pendingType"];
+type PublishTab = "CONFIG_RELEASE" | "MENU_CAPABILITY";
+
+const pendingColor: Record<PublishPendingItem["pendingType"], string> = {
+  DRAFT: "default",
+  EXPIRING_SOON: "orange",
+  VALIDATION_FAILED: "red",
+  CONFLICT: "volcano",
+  RISK_CONFIRM: "gold"
+};
+
+const publishResourceTypes: PublishPendingItem["resourceType"][] = ["INTERFACE", "LIST_DATA", "RULE", "JOB_SCENE"];
+
+function getMenuCapabilityMeta(menuCode: string) {
+  if (menuCode === "loan_apply") {
+    return {
+      promptEnabled: true,
+      jobEnabled: true,
+      grayIps: ["10.8.1.15", "10.8.1.16"],
+      summary: "贷款专区先放开智能提示与自动查数能力"
+    };
+  }
+  if (menuCode === "open_account") {
+    return {
+      promptEnabled: true,
+      jobEnabled: false,
+      grayIps: [],
+      summary: "开户菜单仅开放智能提示，作业能力仍关闭"
+    };
+  }
+  return {
+    promptEnabled: false,
+    jobEnabled: false,
+    grayIps: [],
+    summary: "当前菜单尚未开通智能提示 / 智能作业"
+  };
+}
+
+function splitIpDraft(raw: string) {
+  return Array.from(
+    new Set(
+      raw
+        .split(/[\n,，;\s]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+export function PublishPage() {
+  const { persona } = useMockSession();
+  const [loading, setLoading] = useState(true);
+  const [pendingItems, setPendingItems] = useState<PublishPendingItem[]>([]);
+  const [logs, setLogs] = useState<PublishAuditLog[]>([]);
+  const [policies, setPolicies] = useState<MenuSdkPolicy[]>([]);
+  const [regions, setRegions] = useState<PageRegion[]>([]);
+  const [menus, setMenus] = useState<PageMenu[]>([]);
+  const [lanes, setLanes] = useState<SdkReleaseLane[]>([]);
+  const [filter, setFilter] = useState<PendingFilter>("ALL");
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [releaseStep, setReleaseStep] = useState(0);
+  const [selectedPendingIds, setSelectedPendingIds] = useState<number[]>([]);
+  const [selectedOrgIds, setSelectedOrgIds] = useState<string[]>([]);
+  const [trialIpDraft, setTrialIpDraft] = useState("");
+  const [effectiveType, setEffectiveType] = useState<"IMMEDIATE" | "SCHEDULED">("IMMEDIATE");
+  const [effectiveAt, setEffectiveAt] = useState("");
+  const [publishingBatch, setPublishingBatch] = useState(false);
+  const [publishingId, setPublishingId] = useState<number>();
+  const [reportingId, setReportingId] = useState<number>();
+  const [batchPublishResult, setBatchPublishResult] = useState<{
+    open: boolean;
+    published: string[];
+    blocked: Array<{ name: string; reason: string; impactSummary?: string; riskItems: string[] }>;
+    skippedRiskPending: string[];
+  }>({ open: false, published: [], blocked: [], skippedRiskPending: [] });
+  const [validationModal, setValidationModal] = useState<{
+    open: boolean;
+    item: PublishPendingItem | null;
+    report: PublishValidationReport | null;
+  }>({ open: false, item: null, report: null });
+  const [msgApi, holder] = message.useMessage();
+  const activeTab: PublishTab = persona === "MENU_ADMIN" ? "MENU_CAPABILITY" : "CONFIG_RELEASE";
+  const roleView = persona;
+  const personaMeta = mockUserPersonaMetaMap[persona];
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [pendingData, logData, policyData, regionData, menuData, laneData] = await Promise.all([
+        configCenterService.listPendingItems(),
+        configCenterService.listAuditLogs(),
+        configCenterService.listMenuSdkPolicies(),
+        configCenterService.listPageRegions(),
+        configCenterService.listPageMenus(),
+        configCenterService.listSdkReleaseLanes()
+      ]);
+      setPendingItems(pendingData);
+      setLogs(logData);
+      setPolicies(policyData);
+      setRegions(regionData);
+      setMenus(menuData);
+      setLanes(laneData);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  const publishPendingItems = useMemo(
+    () => pendingItems.filter((item) => publishResourceTypes.includes(item.resourceType)),
+    [pendingItems]
+  );
+
+  const filteredPendingItems = useMemo(() => {
+    if (filter === "ALL") {
+      return publishPendingItems;
+    }
+    return publishPendingItems.filter((item) => item.pendingType === filter);
+  }, [filter, publishPendingItems]);
+
+  const menuCapabilityPendingItems = useMemo(
+    () => pendingItems.filter((item) => item.resourceType === "MENU_SDK_POLICY" || item.resourceType === "PAGE_ACTIVATION_POLICY"),
+    [pendingItems]
+  );
+
+  const otherRelatedItems = useMemo(
+    () =>
+      pendingItems.filter(
+        (item) =>
+          !publishResourceTypes.includes(item.resourceType) &&
+          item.resourceType !== "MENU_SDK_POLICY" &&
+          item.resourceType !== "PAGE_ACTIVATION_POLICY"
+      ),
+    [pendingItems]
+  );
+
+  const regionMap = useMemo(() => Object.fromEntries(regions.map((item) => [item.id, item.regionName])), [regions]);
+  const menuMap = useMemo(() => Object.fromEntries(menus.map((item) => [item.id, item])), [menus]);
+  const laneSlotMap = useMemo(() => Object.fromEntries(lanes.map((item) => [item.id, item.laneName])), [lanes]);
+
+  const pilotPolicies = policies.filter((item) => item.grayOrgIds.length > 0);
+  const publishLogs = logs.filter((item) => item.action === "PUBLISH" && publishResourceTypes.includes(item.resourceType as PublishPendingItem["resourceType"]));
+  const menuCapabilityLogs = logs.filter((item) => item.resourceType === "MENU_SDK_POLICY" || item.resourceType === "PAGE_ACTIVATION_POLICY");
+  const draftPendingItems = publishPendingItems.filter((item) => item.pendingType === "DRAFT");
+  const orgOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of publishPendingItems) {
+      if (item.ownerOrgId) {
+        set.add(item.ownerOrgId);
+      }
+    }
+    return Array.from(set);
+  }, [publishPendingItems]);
+  const selectedPublishItems = useMemo(
+    () => draftPendingItems.filter((item) => selectedPendingIds.includes(item.id)),
+    [draftPendingItems, selectedPendingIds]
+  );
+  const selectedTrialIps = useMemo(() => splitIpDraft(trialIpDraft), [trialIpDraft]);
+  const promptEnabledMenus = useMemo(() => policies.filter((item) => getMenuCapabilityMeta(item.menuCode).promptEnabled).length, [policies]);
+  const jobEnabledMenus = useMemo(() => policies.filter((item) => getMenuCapabilityMeta(item.menuCode).jobEnabled).length, [policies]);
+  const ipPilotMenus = useMemo(() => policies.filter((item) => getMenuCapabilityMeta(item.menuCode).grayIps.length > 0).length, [policies]);
+
+  function openReleaseFlow() {
+    setSelectedPendingIds(draftPendingItems.map((item) => item.id));
+    setSelectedOrgIds([]);
+    setTrialIpDraft("");
+    setEffectiveType("IMMEDIATE");
+    setEffectiveAt("2026-03-15 20:00");
+    setReleaseStep(0);
+    setReleaseOpen(true);
+  }
+
+  function validateReleaseStep(step: number) {
+    if (step === 0 && selectedPendingIds.length === 0) {
+      msgApi.warning("请至少选择一个待发布对象");
+      return false;
+    }
+    if (step === 2 && effectiveType === "SCHEDULED" && !effectiveAt.trim()) {
+      msgApi.warning("请选择定时生效时间");
+      return false;
+    }
+    return true;
+  }
+
+  function handleReleaseNext() {
+    if (!validateReleaseStep(releaseStep)) {
+      return;
+    }
+    if (releaseStep < 3) {
+      setReleaseStep((prev) => Math.min(prev + 1, 3));
+      return;
+    }
+    void publishBatch();
+  }
+
+  async function publishBatch() {
+    setPublishingBatch(true);
+    try {
+      const published: string[] = [];
+      const blocked: Array<{ name: string; reason: string; impactSummary?: string; riskItems: string[] }> = [];
+      for (const item of selectedPublishItems) {
+        const result = await configCenterService.publishPendingItem(item.id);
+        if (result.success) {
+          published.push(item.resourceName);
+        } else {
+          blocked.push({
+            name: item.resourceName,
+            reason:
+              result.report.items
+                .filter((reportItem) => !reportItem.passed)
+                .map((reportItem) => reportItem.label)
+                .join("；") || "存在阻断项",
+            impactSummary: result.report.impactSummary,
+            riskItems: result.report.riskItems ?? []
+          });
+        }
+      }
+      setBatchPublishResult({
+        open: true,
+        published,
+        blocked,
+        skippedRiskPending: publishPendingItems.filter((item) => item.pendingType === "RISK_CONFIRM").map((item) => item.resourceName)
+      });
+      msgApi.success("配置发布已执行，已生成结果汇总");
+      setReleaseOpen(false);
+      await loadData();
+    } finally {
+      setPublishingBatch(false);
+    }
+  }
+
+  async function openValidationReport(item: PublishPendingItem) {
+    setReportingId(item.id);
+    try {
+      const report = await configCenterService.getPendingValidationReport(item.id);
+      setValidationModal({ open: true, item, report });
+    } finally {
+      setReportingId(undefined);
+    }
+  }
+
+  async function publish(item: PublishPendingItem) {
+    setPublishingId(item.id);
+    try {
+      const result = await configCenterService.publishPendingItem(item.id);
+      if (!result.success) {
+        setValidationModal({ open: true, item, report: result.report });
+        msgApi.error("发布前检查未通过，请先处理阻断项");
+        await loadData();
+        return;
+      }
+      msgApi.success(`已发布：${item.resourceName}`);
+      await loadData();
+    } catch (error) {
+      msgApi.error(error instanceof Error ? error.message : "发布失败");
+      await loadData();
+    } finally {
+      setPublishingId(undefined);
+    }
+  }
+
+  async function defer(item: PublishPendingItem) {
+    await configCenterService.deferPendingItem(item.id);
+    msgApi.success(`已延期处理：${item.resourceName}`);
+    await loadData();
+  }
+
+  async function confirmRisk(item: PublishPendingItem) {
+    if (item.resourceType !== "JOB_SCENE") {
+      return;
+    }
+    await configCenterService.confirmJobSceneRisk(item.resourceId);
+    msgApi.success(`已完成风险确认：${item.resourceName}`);
+    await loadData();
+  }
+
+  async function resolve(item: PublishPendingItem) {
+    await configCenterService.resolvePendingItem(item.id);
+    msgApi.success(`已标记处理完成：${item.resourceName}`);
+    await loadData();
+  }
+
+  function requestAdminSupport(item: PublishPendingItem) {
+    msgApi.success(`已通知管理员处理：${item.resourceName}（原型提示）`);
+  }
+
+  return (
+    <div>
+      {holder}
+      <Typography.Title level={4}>发布与灰度</Typography.Title>
+      <Typography.Paragraph type="secondary">
+        业务侧统一看两件事：一是配置对象如何正式生效，二是菜单是否启用智能提示 / 智能作业以及试点范围。所有菜单默认已预注入 JSSDK。
+      </Typography.Paragraph>
+
+      <Card style={{ marginBottom: 12 }}>
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Space wrap>
+            <Typography.Text type="secondary">模拟登录身份</Typography.Text>
+            <Tag color={roleView === "MENU_ADMIN" ? "purple" : roleView === "PUBLISH_MANAGER" ? "blue" : "green"}>
+              {personaMeta.label}
+            </Tag>
+            <Typography.Text type="secondary">
+              当前模块：{activeTab === "CONFIG_RELEASE" ? "配置发布" : "菜单能力"}
+            </Typography.Text>
+          </Space>
+          {activeTab === "CONFIG_RELEASE" ? (
+            roleView === "CONFIG_USER" ? (
+              <Alert
+                showIcon
+                type="info"
+                message="当前是业务配置人员视角"
+                description="你可以查看待发布对象、检查阻断原因并提交管理员处理，但不能直接发布。正式发布由发布管理员完成。"
+              />
+            ) : (
+              <Alert
+                showIcon
+                type="success"
+                message="当前是发布管理员视角"
+                description="可对 API、名单、智能提示、作业四类对象执行最终检查与正式发布。菜单能力开通不在本页签处理。"
+              />
+            )
+          ) : roleView === "MENU_ADMIN" ? (
+            <Alert
+              showIcon
+              type="success"
+              message="当前是菜单开通管理员视角"
+              description="你可以只管理菜单是否启用智能提示 / 智能作业、菜单槽位、机构范围和 IP 试点；这不等同于内容发布。"
+            />
+          ) : (
+            <Alert
+              showIcon
+              type="info"
+              message="当前是只读菜单能力视角"
+              description="普通业务配置人员和发布管理员默认只读查看菜单能力状态，不具备直接修改权限。"
+            />
+          )}
+        </Space>
+      </Card>
+
+      {activeTab === "CONFIG_RELEASE" ? (
+        <>
+      <Row gutter={[12, 12]}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title="待发布对象" value={draftPendingItems.length} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title="检查未通过" value={publishPendingItems.filter((item) => item.pendingType === "VALIDATION_FAILED").length} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title="待风险确认" value={publishPendingItems.filter((item) => item.pendingType === "RISK_CONFIRM").length} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title="发布记录" value={publishLogs.length} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Card
+        style={{ marginTop: 12 }}
+        title="配置发布主流程"
+        extra={
+          roleView === "PUBLISH_MANAGER" ? (
+            <Button type="primary" onClick={openReleaseFlow}>
+              发起配置发布
+            </Button>
+          ) : null
+        }
+      >
+        <Steps
+          items={[
+            { title: "汇总待发布对象" },
+            { title: "选择机构 / IP 试点" },
+            { title: "选择生效时间" },
+            { title: "确认影响并发布" }
+          ]}
+        />
+      </Card>
+
+      <Card
+        title="待发布对象"
+        style={{ marginTop: 12 }}
+        extra={
+          <Segmented
+            options={[
+              { label: "全部", value: "ALL" },
+              { label: "待发布", value: "DRAFT" },
+              { label: "检查未通过", value: "VALIDATION_FAILED" },
+              { label: "待风险确认", value: "RISK_CONFIRM" }
+            ]}
+            value={filter}
+            onChange={(value) => setFilter(value as PendingFilter)}
+          />
+        }
+      >
+        <Table<PublishPendingItem>
+          rowKey="id"
+          loading={loading}
+          dataSource={filteredPendingItems}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
+          columns={[
+            { title: "变更对象", dataIndex: "resourceName" },
+            {
+              title: "对象类型",
+              dataIndex: "resourceType",
+              width: 130,
+              render: (value: PublishPendingItem["resourceType"]) => resourceTypeLabelMap[value]
+            },
+            { title: "机构范围", dataIndex: "ownerOrgId", width: 140, render: (value: string) => <OrgText value={value} /> },
+            {
+              title: "当前状态",
+              width: 120,
+              render: (_, row) => <Tag color={pendingColor[row.pendingType]}>{pendingTypeLabelMap[row.pendingType]}</Tag>
+            },
+            { title: "更新时间", dataIndex: "updatedAt", width: 180 },
+            {
+              title: "操作",
+              width: roleView === "PUBLISH_MANAGER" ? 330 : 220,
+              render: (_, row) => (
+                <Space wrap>
+                  {roleView === "PUBLISH_MANAGER" ? (
+                    <Button size="small" type="primary" loading={publishingId === row.id} onClick={() => void publish(row)}>
+                      发布
+                    </Button>
+                  ) : (
+                    <Button size="small" onClick={() => requestAdminSupport(row)}>
+                      提交管理员处理
+                    </Button>
+                  )}
+                  <Button size="small" loading={reportingId === row.id} onClick={() => void openValidationReport(row)}>
+                    查看检查结果
+                  </Button>
+                  {row.pendingType === "EXPIRING_SOON" && roleView === "PUBLISH_MANAGER" ? (
+                    <Button size="small" onClick={() => void defer(row)}>
+                      延期
+                    </Button>
+                  ) : null}
+                  {row.pendingType === "RISK_CONFIRM" && row.resourceType === "JOB_SCENE" && roleView === "PUBLISH_MANAGER" ? (
+                    <Button size="small" onClick={() => void confirmRisk(row)}>
+                      风险确认
+                    </Button>
+                  ) : null}
+                  {roleView === "PUBLISH_MANAGER" ? (
+                    <Button size="small" onClick={() => void resolve(row)}>
+                      标记完成
+                    </Button>
+                  ) : null}
+                </Space>
+              )
+            }
+          ]}
+        />
+      </Card>
+
+      {roleView === "PUBLISH_MANAGER" && otherRelatedItems.length > 0 ? (
+        <Card title="关联配置项" style={{ marginTop: 12 }}>
+          <Typography.Paragraph type="secondary">
+            这里只展示仍需发布管理员感知的关联配置项，如数据转换规则。菜单能力与页面开通走单独处理路径，不在本页展示。
+          </Typography.Paragraph>
+          <Table<PublishPendingItem>
+            rowKey="id"
+            loading={loading}
+            dataSource={otherRelatedItems}
+            pagination={false}
+            columns={[
+              { title: "配置项", dataIndex: "resourceName" },
+              {
+                title: "类型",
+                dataIndex: "resourceType",
+                width: 150,
+                render: (value: PublishPendingItem["resourceType"]) => resourceTypeLabelMap[value]
+              },
+              { title: "归属机构", dataIndex: "ownerOrgId", width: 140, render: (value: string) => <OrgText value={value} /> },
+              {
+                title: "当前状态",
+                width: 120,
+                render: (_, row) => <Tag color={pendingColor[row.pendingType]}>{pendingTypeLabelMap[row.pendingType]}</Tag>
+              }
+            ]}
+          />
+        </Card>
+      ) : null}
+
+      <Card title="配置发布记录" style={{ marginTop: 12 }}>
+        <Table<PublishAuditLog>
+          rowKey="id"
+          loading={loading}
+          dataSource={publishLogs}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
+          columns={[
+            {
+              title: "动作",
+              width: 120,
+              render: (_, row) => <Tag color={row.action === "PUBLISH" ? "green" : "blue"}>{auditActionLabelMap[row.action]}</Tag>
+            },
+            {
+              title: "对象类型",
+              dataIndex: "resourceType",
+              width: 140,
+              render: (value: string) => resourceTypeLabelMap[(value as keyof typeof resourceTypeLabelMap) ?? "PAGE_RESOURCE"] ?? value
+            },
+            { title: "对象名称", dataIndex: "resourceName" },
+            { title: "操作人", dataIndex: "operator", width: 140, render: (value: string) => <PersonText value={value} /> },
+            { title: "时间", dataIndex: "createdAt", width: 180 }
+          ]}
+        />
+      </Card>
+        </>
+      ) : (
+        <>
+      <Row gutter={[12, 12]}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title="启用智能提示菜单" value={promptEnabledMenus} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title="启用智能作业菜单" value={jobEnabledMenus} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title="机构试点策略" value={pilotPolicies.length} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card loading={loading}>
+            <Statistic title="IP 试点菜单" value={ipPilotMenus} />
+          </Card>
+        </Col>
+      </Row>
+
+      <Card title="菜单能力说明" style={{ marginTop: 12 }}>
+        <Space direction="vertical" size={8} style={{ width: "100%" }}>
+          <Typography.Text>1. 所有菜单默认已预注入 JSSDK，不在这里控制注入。</Typography.Text>
+          <Typography.Text>2. 这里真正管理的是菜单是否启用智能提示 / 智能作业，以及对应菜单命中的能力槽位。</Typography.Text>
+          <Typography.Text>3. 机构是正式灰度主维度，IP 仅用于小范围试点验证。</Typography.Text>
+        </Space>
+      </Card>
+
+      <Card title="菜单能力与试点范围" style={{ marginTop: 12 }}>
+        <Table<MenuSdkPolicy>
+          rowKey="id"
+          loading={loading}
+          dataSource={policies}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
+          columns={[
+            {
+              title: "专区 / 菜单",
+              width: 240,
+              render: (_, row) => {
+                const menu = menuMap[row.menuId];
+                return `${regionMap[row.regionId] ?? "-"} / ${menu?.menuName ?? "未识别菜单"}`;
+              }
+            },
+            {
+              title: "智能提示",
+              width: 100,
+              render: (_, row) => (getMenuCapabilityMeta(row.menuCode).promptEnabled ? <Tag color="green">已启用</Tag> : <Tag>未启用</Tag>)
+            },
+            {
+              title: "智能作业",
+              width: 100,
+              render: (_, row) => (getMenuCapabilityMeta(row.menuCode).jobEnabled ? <Tag color="green">已启用</Tag> : <Tag>未启用</Tag>)
+            },
+            {
+              title: "正式槽位",
+              width: 120,
+              render: (_, row) => laneSlotMap[row.stableLaneId] ?? "-"
+            },
+            {
+              title: "试点槽位",
+              width: 120,
+              render: (_, row) => (row.grayLaneId ? laneSlotMap[row.grayLaneId] ?? "-" : <Typography.Text type="secondary">未配置</Typography.Text>)
+            },
+            {
+              title: "机构范围",
+              width: 200,
+              render: (_, row) =>
+                row.grayOrgIds.length > 0 ? (
+                  <Space wrap>
+                    {row.grayOrgIds.map((org) => (
+                      <Tag key={org}>{getOrgLabel(org)}</Tag>
+                    ))}
+                  </Space>
+                ) : (
+                  <Tag color="green">全部机构</Tag>
+                )
+            },
+            {
+              title: "IP 试点",
+              width: 180,
+              render: (_, row) => {
+                const ips = getMenuCapabilityMeta(row.menuCode).grayIps;
+                return ips.length > 0 ? (
+                  <Space wrap>
+                    {ips.map((ip) => (
+                      <Tag key={ip}>{ip}</Tag>
+                    ))}
+                  </Space>
+                ) : (
+                  <Typography.Text type="secondary">未配置</Typography.Text>
+                );
+              }
+            },
+            {
+              title: "能力说明",
+              width: 220,
+              render: (_, row) => <Typography.Text type="secondary">{getMenuCapabilityMeta(row.menuCode).summary}</Typography.Text>
+            }
+          ]}
+        />
+      </Card>
+
+      <Card title="菜单能力待办" style={{ marginTop: 12 }}>
+        <Table<PublishPendingItem>
+          rowKey="id"
+          loading={loading}
+          dataSource={menuCapabilityPendingItems}
+          pagination={false}
+          columns={[
+            { title: "待办项", dataIndex: "resourceName" },
+            {
+              title: "类型",
+              dataIndex: "resourceType",
+              width: 150,
+              render: (value: PublishPendingItem["resourceType"]) => resourceTypeLabelMap[value]
+            },
+            { title: "归属机构", dataIndex: "ownerOrgId", width: 140, render: (value: string) => <OrgText value={value} /> },
+            {
+              title: "当前状态",
+              width: 120,
+              render: (_, row) => <Tag color={pendingColor[row.pendingType]}>{pendingTypeLabelMap[row.pendingType]}</Tag>
+            },
+            {
+              title: "处理方式",
+              width: 220,
+              render: () =>
+                roleView === "MENU_ADMIN" ? (
+              <Typography.Text>由菜单能力管理员进入特殊权限流程处理</Typography.Text>
+                ) : (
+                  <Typography.Text type="secondary">当前视角只读查看</Typography.Text>
+                )
+            }
+          ]}
+        />
+      </Card>
+
+      <Card title="菜单能力记录" style={{ marginTop: 12 }}>
+        <Table<PublishAuditLog>
+          rowKey="id"
+          loading={loading}
+          dataSource={menuCapabilityLogs}
+          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
+          columns={[
+            {
+              title: "动作",
+              width: 120,
+              render: (_, row) => <Tag color={row.action === "PUBLISH" ? "green" : "blue"}>{auditActionLabelMap[row.action]}</Tag>
+            },
+            {
+              title: "对象类型",
+              dataIndex: "resourceType",
+              width: 150,
+              render: (value: string) => resourceTypeLabelMap[(value as keyof typeof resourceTypeLabelMap) ?? "PAGE_RESOURCE"] ?? value
+            },
+            { title: "对象名称", dataIndex: "resourceName" },
+            { title: "操作人", dataIndex: "operator", width: 140, render: (value: string) => <PersonText value={value} /> },
+            { title: "时间", dataIndex: "createdAt", width: 180 }
+          ]}
+        />
+      </Card>
+        </>
+      )}
+
+      <Modal
+        title="发布检查结果"
+        open={validationModal.open}
+        onCancel={() => setValidationModal({ open: false, item: null, report: null })}
+        footer={
+          validationModal.report?.pass && validationModal.item && roleView === "PUBLISH_MANAGER" ? (
+            <Button
+              type="primary"
+              onClick={() => {
+                void publish(validationModal.item as PublishPendingItem);
+                setValidationModal({ open: false, item: null, report: null });
+              }}
+            >
+              继续发布
+            </Button>
+          ) : undefined
+        }
+      >
+        {validationModal.report ? (
+          <Space direction="vertical" style={{ width: "100%" }}>
+            <Alert
+              type={validationModal.report.pass ? "success" : "error"}
+              showIcon
+              message={validationModal.report.pass ? "检查通过，可继续正式发布" : "存在阻断项，请先修复"}
+              description={validationModal.report.impactSummary}
+            />
+            {validationModal.report.riskItems && validationModal.report.riskItems.length > 0 ? (
+              <Card size="small" title="风险确认项">
+                <Space direction="vertical" style={{ width: "100%" }} size={4}>
+                  {validationModal.report.riskItems.map((item) => (
+                    <Typography.Text key={item} type="secondary">
+                      {item}
+                    </Typography.Text>
+                  ))}
+                </Space>
+              </Card>
+            ) : null}
+            <Table
+              rowKey="key"
+              size="small"
+              pagination={false}
+              dataSource={validationModal.report.items}
+              columns={[
+                { title: "检查项", dataIndex: "label", width: 170 },
+                {
+                  title: "结果",
+                  width: 90,
+                  render: (_, row: ValidationReport["items"][number]) =>
+                    row.passed ? <Tag color="green">通过</Tag> : <Tag color="red">阻断</Tag>
+                },
+                { title: "说明", dataIndex: "detail" }
+              ]}
+            />
+          </Space>
+        ) : null}
+      </Modal>
+
+      <Modal
+        title="配置发布结果"
+        open={batchPublishResult.open}
+        onCancel={() => setBatchPublishResult({ open: false, published: [], blocked: [], skippedRiskPending: [] })}
+        footer={null}
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Alert
+            showIcon
+            type={batchPublishResult.blocked.length > 0 ? "warning" : "success"}
+            message={
+              batchPublishResult.blocked.length > 0
+                ? `已发布 ${batchPublishResult.published.length} 个对象，另有 ${batchPublishResult.blocked.length} 个对象被阻断`
+                : `已发布 ${batchPublishResult.published.length} 个对象`
+            }
+            description={
+              batchPublishResult.skippedRiskPending.length > 0
+                ? `另有 ${batchPublishResult.skippedRiskPending.length} 个对象因待风险确认未参与本次发布。`
+                : "本次没有待风险确认的跳过对象。"
+            }
+          />
+          <Card size="small" title="已发布">
+            {batchPublishResult.published.length > 0 ? (
+              <Space size={[8, 8]} wrap>
+                {batchPublishResult.published.map((name) => (
+                  <Tag color="green" key={name}>
+                    {name}
+                  </Tag>
+                ))}
+              </Space>
+            ) : (
+              <Typography.Text type="secondary">本次没有对象成功发布。</Typography.Text>
+            )}
+          </Card>
+          <Card size="small" title="被阻断">
+            {batchPublishResult.blocked.length > 0 ? (
+              <Table
+                rowKey="name"
+                size="small"
+                pagination={false}
+                dataSource={batchPublishResult.blocked}
+                columns={[
+                  { title: "对象", dataIndex: "name", width: 220 },
+                  { title: "阻断原因", dataIndex: "reason" },
+                  { title: "影响范围", dataIndex: "impactSummary" }
+                ]}
+              />
+            ) : (
+              <Typography.Text type="secondary">本次没有阻断对象。</Typography.Text>
+            )}
+          </Card>
+          <Card size="small" title="待风险确认（未参与本次发布）">
+            {batchPublishResult.skippedRiskPending.length > 0 ? (
+              <Space size={[8, 8]} wrap>
+                {batchPublishResult.skippedRiskPending.map((name) => (
+                  <Tag color="gold" key={name}>
+                    {name}
+                  </Tag>
+                ))}
+              </Space>
+            ) : (
+              <Typography.Text type="secondary">本次没有因风险确认被跳过的对象。</Typography.Text>
+            )}
+          </Card>
+        </Space>
+      </Modal>
+
+      <Modal
+        title="配置发布向导"
+        open={releaseOpen}
+        width={820}
+        onCancel={() => setReleaseOpen(false)}
+        footer={[
+          <Button
+            key="prev"
+            onClick={() => {
+              if (releaseStep === 0) {
+                setReleaseOpen(false);
+                return;
+              }
+              setReleaseStep((prev) => Math.max(prev - 1, 0));
+            }}
+          >
+            {releaseStep === 0 ? "取消" : "上一步"}
+          </Button>,
+          <Button key="next" type="primary" loading={publishingBatch} onClick={handleReleaseNext}>
+            {releaseStep === 3 ? "确认发布" : "下一步"}
+          </Button>
+        ]}
+      >
+        <Steps
+          current={releaseStep}
+          size="small"
+          style={{ marginBottom: 12 }}
+          items={[
+            { title: "选择待发布对象" },
+            { title: "选择机构 / IP 试点" },
+            { title: "选择生效时间" },
+            { title: "确认影响范围" }
+          ]}
+        />
+
+        {releaseStep === 0 ? (
+          <Card size="small" title="选择待发布对象">
+            <Typography.Paragraph type="secondary">
+              当前主发布路径只承载 API、名单、智能提示、作业四类对象。菜单能力、页面开通设置等不在本次发布内。
+            </Typography.Paragraph>
+            <Select
+              mode="multiple"
+              style={{ width: "100%" }}
+              value={selectedPendingIds}
+              onChange={(value) => setSelectedPendingIds(value)}
+              options={draftPendingItems.map((item) => ({
+                label: `${resourceTypeLabelMap[item.resourceType]} / ${item.resourceName}`,
+                value: item.id
+              }))}
+            />
+          </Card>
+        ) : null}
+
+        {releaseStep === 1 ? (
+          <Card size="small" title="机构与 IP 试点">
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <div>
+                <Typography.Text>机构范围</Typography.Text>
+                <Select
+                  mode="multiple"
+                  style={{ width: "100%", marginTop: 8 }}
+                  value={selectedOrgIds}
+                  onChange={(value) => setSelectedOrgIds(value)}
+                  options={orgOptions.map((item) => ({ label: getOrgLabel(item), value: item }))}
+                  placeholder="未选择时默认按对象归属机构发布"
+                />
+              </div>
+              <div>
+                <Typography.Text>IP 试点（可选）</Typography.Text>
+                <Input.TextArea
+                  rows={3}
+                  style={{ marginTop: 8 }}
+                  value={trialIpDraft}
+                  onChange={(event) => setTrialIpDraft(event.target.value)}
+                  placeholder="多个 IP 使用换行、逗号或空格分隔；主要用于小范围试点验证"
+                />
+              </div>
+              <Typography.Text type="secondary">
+                当前已录入 IP：{selectedTrialIps.length > 0 ? selectedTrialIps.join("、") : "未配置"}
+              </Typography.Text>
+            </Space>
+          </Card>
+        ) : null}
+
+        {releaseStep === 2 ? (
+          <Card size="small" title="生效时间">
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Segmented
+                value={effectiveType}
+                onChange={(value) => setEffectiveType(value as "IMMEDIATE" | "SCHEDULED")}
+                options={[
+                  { label: "立即生效", value: "IMMEDIATE" },
+                  { label: "定时生效", value: "SCHEDULED" }
+                ]}
+              />
+              {effectiveType === "SCHEDULED" ? (
+                <Input value={effectiveAt} onChange={(event) => setEffectiveAt(event.target.value)} placeholder="YYYY-MM-DD HH:mm" />
+              ) : (
+                <Typography.Text type="secondary">将于当前提交后立即生效。</Typography.Text>
+              )}
+            </Space>
+          </Card>
+        ) : null}
+
+        {releaseStep === 3 ? (
+          <Card size="small" title="影响确认">
+            <Space direction="vertical">
+              <Alert
+                showIcon
+                type="warning"
+                message="请确认本次配置发布影响范围"
+                description="确认后将对选中对象逐项执行最终检查并发布；存在阻断项的对象会留在待发布列表。"
+              />
+              <Space wrap>
+                <Tag color="blue">选中对象 {selectedPublishItems.length}</Tag>
+                <Tag color="purple">影响机构 {selectedOrgIds.length > 0 ? selectedOrgIds.length : orgOptions.length}</Tag>
+                <Tag color="gold">IP 试点 {selectedTrialIps.length}</Tag>
+                <Tag>{effectiveType === "IMMEDIATE" ? "立即生效" : `定时生效：${effectiveAt || "未填写"}`}</Tag>
+              </Space>
+              <Table<PublishPendingItem>
+                rowKey="id"
+                size="small"
+                pagination={false}
+                dataSource={selectedPublishItems}
+                columns={[
+                  { title: "对象", dataIndex: "resourceName" },
+                  {
+                    title: "类型",
+                    dataIndex: "resourceType",
+                    width: 140,
+                    render: (value: PublishPendingItem["resourceType"]) => resourceTypeLabelMap[value]
+                  },
+                  { title: "归属机构", dataIndex: "ownerOrgId", width: 140, render: (value: string) => <OrgText value={value} /> }
+                ]}
+              />
+            </Space>
+          </Card>
+        ) : null}
+      </Modal>
+    </div>
+  );
+}

@@ -20,13 +20,16 @@ import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { Background, Controls, MiniMap, ReactFlow, ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
+import { ValidationReportPanel } from "../../components/ValidationReportPanel";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { useJobScenesPageModel } from "./useJobScenesPageModel";
 import { executionLabel, nodeTypeLabel, StatusFilter } from "./jobScenesPageShared";
 import type { JobSceneDefinition, JobScenePreviewField } from "../../types";
 
 export function JobScenesPage() {
+  const navigate = useNavigate();
   const {
     holder,
     statusFilter,
@@ -63,6 +66,8 @@ export function JobScenesPage() {
     nodeLibrary,
     addNodeFromLibrary,
     selectedNode,
+    selectedNodeListData,
+    listDatas,
     nodeDetailForm,
     watchedNodeType,
     saveSelectedNode,
@@ -78,7 +83,12 @@ export function JobScenesPage() {
     executePreview,
     drawerWidth,
     statusColor,
-    autoOpenCreateRef
+    autoOpenCreateRef,
+    sceneSaveValidationReport,
+    nodeValidationIssues,
+    previewValidationIssues,
+    publishNotice,
+    dismissPublishNotice
   } = useJobScenesPageModel();
   const [searchParams] = useSearchParams();
   const pageResourceFilter = Number(searchParams.get("pageResourceId") ?? "");
@@ -86,6 +96,7 @@ export function JobScenesPage() {
   const sceneNameParam = searchParams.get("sceneName");
   const quickAction = searchParams.get("action");
   const hasPageFilter = Number.isFinite(pageResourceFilter) && pageResourceFilter > 0;
+  const presetPageName = resources.find((item) => item.id === pageResourceFilter)?.name;
   const presetExecutionMode = (
     executionModeParam === "AUTO_WITHOUT_PROMPT" ||
     executionModeParam === "AUTO_AFTER_PROMPT" ||
@@ -139,15 +150,24 @@ export function JobScenesPage() {
       {holder}
       <Typography.Title level={4}>智能作业</Typography.Title>
       <Typography.Paragraph type="secondary">
-        从页面上下文进入场景配置，优先表达业务场景与触发方式，再进入高级编排与节点细节。
+        从页面上下文进入场景配置，优先表达业务场景与触发方式，再进入高级编排与节点细节。保存后可继续到“发布与灰度”完成上线。
       </Typography.Paragraph>
+      {publishNotice ? (
+        <PublishContinuationAlert
+          objectLabel="作业场景"
+          objectName={publishNotice.objectName}
+          warningCount={publishNotice.warningCount}
+          onGoPublish={() => navigate("/publish")}
+          onClose={dismissPublishNotice}
+        />
+      ) : null}
       {hasPageFilter ? (
         <Alert
           showIcon
           type="info"
           style={{ marginBottom: 12 }}
-          message={`已按页面 ID ${pageResourceFilter} 过滤场景`}
-          description="你可以直接新建该页面的作业配置，默认会自动带入页面。"
+          message={`已切换到页面：${presetPageName ?? "当前页面"}`}
+          description="你可以直接新建该页面的作业配置，系统会自动带入页面；保存后可前往“发布与灰度”继续处理。"
         />
       ) : null}
 
@@ -214,7 +234,7 @@ export function JobScenesPage() {
           pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 10, 20] }}
           columns={[
             { title: "场景名称", dataIndex: "name", width: 220 },
-            { title: "页面资源", dataIndex: "pageResourceName", width: 160 },
+            { title: "所属页面", dataIndex: "pageResourceName", width: 160 },
             { title: "执行模式", width: 170, render: (_, row) => <Tag color="blue">{executionLabel[row.executionMode]}</Tag> },
             {
               title: "触发关联",
@@ -267,8 +287,9 @@ export function JobScenesPage() {
       <Modal title={editing ? "编辑场景" : "新建场景"} open={open} onCancel={closeSceneModal} onOk={() => void submitScene()} width={680}>
         <Form form={form} layout="vertical">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            {editing ? `当前场景编号：${editing.id}` : "场景编号会在保存后由系统自动生成。"}
+            场景编号和版本由系统自动维护，你只需要关注页面、执行方式和风险控制。保存后可继续到“发布与灰度”上线。
           </Typography.Paragraph>
+          <ValidationReportPanel report={sceneSaveValidationReport} title="保存前检查结果" />
           <Alert
             type={editing?.riskConfirmed ? "success" : "warning"}
             showIcon
@@ -279,7 +300,6 @@ export function JobScenesPage() {
           <Form.Item name="pageResourceId" label="页面资源" rules={[{ required: true }]}><Select options={resources.map((r) => ({ label: r.name, value: r.id }))} /></Form.Item>
           <Form.Item name="executionMode" label="执行模式" rules={[{ required: true }]}><Select options={Object.entries(executionLabel).map(([value, label]) => ({ label, value }))} /></Form.Item>
           <Form.Item name="status" label="状态" rules={[{ required: true }]}><Select options={lifecycleOptions} /></Form.Item>
-          <Form.Item name="currentVersion" label="版本" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="nodeCount" label="节点数" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="manualDurationSec" label="人工基准(秒)" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
         </Form>
@@ -348,14 +368,14 @@ export function JobScenesPage() {
             </Space>
           </Card>
 
-          <Card title="校验与发布区" size="small">
+          <Card title="发布检查与上线" size="small">
             <Alert
               type={builderScene?.riskConfirmed ? "success" : "warning"}
               showIcon
               message={
                 builderScene?.riskConfirmed
-                  ? "风险确认已完成：可进入发布校验流程。"
-                  : "风险确认未完成：自动化场景发布前需完成责任确认与留痕。"
+                  ? "风险确认已完成：保存后可直接进入发布与灰度，系统会自动完成最终检查。"
+                  : "风险确认未完成：自动化场景上线前需先完成责任确认，否则发布时会被阻断。"
               }
             />
           </Card>
@@ -365,7 +385,12 @@ export function JobScenesPage() {
               <Card title="节点库" style={{ flex: "0 0 220px" }}>
                 <Space direction="vertical" style={{ width: "100%" }}>
                   {nodeLibrary.map((item) => (
-                    <Button key={item.nodeType} block onClick={() => void addNodeFromLibrary(item.nodeType)}>
+                    <Button
+                      key={item.nodeType}
+                      block
+                      disabled={item.nodeType === "list_lookup" && listDatas.length === 0}
+                      onClick={() => void addNodeFromLibrary(item.nodeType)}
+                    >
                       {item.label}
                     </Button>
                   ))}
@@ -373,6 +398,22 @@ export function JobScenesPage() {
                 <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
                   点击节点类型即可加入画布。
                 </Typography.Paragraph>
+                {listDatas.length === 0 ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginTop: 12 }}
+                    message="名单检索节点暂不可用"
+                    description={
+                      <Space direction="vertical" size={4}>
+                        <Typography.Text type="secondary">请先到高级配置维护名单数据后，再添加名单检索节点。</Typography.Text>
+                        <Button size="small" type="primary" onClick={() => navigate("/advanced?tab=list-data")}>
+                          去维护名单
+                        </Button>
+                      </Space>
+                    }
+                  />
+                ) : null}
               </Card>
 
               <Card title="编排画布" style={{ flex: "1 1 680px", minWidth: 540 }}>
@@ -410,6 +451,7 @@ export function JobScenesPage() {
                   <Typography.Text type="secondary">请先在画布中点击一个节点，再编辑节点属性。</Typography.Text>
                 ) : (
                   <>
+                    <ValidationReportPanel issues={nodeValidationIssues} title="节点属性还有待处理问题" />
                     <Form form={nodeDetailForm} layout="vertical">
                       <Form.Item name="name" label="节点名称" rules={[{ required: true, message: "请输入节点名称" }]}>
                         <Input placeholder="请输入节点名称" />
@@ -436,6 +478,62 @@ export function JobScenesPage() {
                             <Select options={[{ label: "否", value: false }, { label: "是", value: true }]} />
                           </Form.Item>
                         </>
+                      ) : null}
+
+                      {watchedNodeType === "list_lookup" ? (
+                        listDatas.length === 0 ? (
+                          <Alert
+                            type="warning"
+                            showIcon
+                            style={{ marginBottom: 12 }}
+                            message="当前没有可用名单数据"
+                            description={
+                              <Space direction="vertical" size={4}>
+                                <Typography.Text type="secondary">名单检索节点依赖名单中心资产，请先维护名单数据。</Typography.Text>
+                                <Button size="small" type="primary" onClick={() => navigate("/advanced?tab=list-data")}>
+                                  去维护名单
+                                </Button>
+                              </Space>
+                            }
+                          />
+                        ) : (
+                          <>
+                            <Form.Item name="listDataId" label="名单数据" rules={[{ required: true, message: "请选择名单数据" }]}>
+                              <Select
+                                showSearch
+                                optionFilterProp="label"
+                                options={listDatas.map((item) => ({
+                                  label: `${item.name} / ${item.importColumns.length} 个导入字段`,
+                                  value: item.id
+                                }))}
+                                onChange={(value) => {
+                                  const picked = listDatas.find((item) => item.id === value);
+                                  const currentMatchColumn = nodeDetailForm.getFieldValue("matchColumn");
+                                  nodeDetailForm.setFieldsValue({
+                                    listDataId: value as number | undefined,
+                                    matchColumn:
+                                      picked?.importColumns.includes(currentMatchColumn)
+                                        ? currentMatchColumn
+                                        : picked?.importColumns[0] ?? ""
+                                  });
+                                }}
+                              />
+                            </Form.Item>
+                            <Form.Item name="matchColumn" label="匹配字段" rules={[{ required: true, message: "请选择匹配字段" }]}>
+                              <Select
+                                showSearch
+                                placeholder={selectedNodeListData ? "请选择匹配字段" : "请先选择名单数据"}
+                                options={(selectedNodeListData?.importColumns ?? []).map((item) => ({ label: item, value: item }))}
+                              />
+                            </Form.Item>
+                            <Form.Item name="inputSource" label="输入来源" rules={[{ required: true, message: "请输入输入来源" }]}>
+                              <Input placeholder="如: customer_id（页面字段或上游结果键）" />
+                            </Form.Item>
+                            <Form.Item name="resultKey" label="结果键名" rules={[{ required: true, message: "请输入结果键名" }]}>
+                              <Input placeholder="如: high_risk_match" />
+                            </Form.Item>
+                          </>
+                        )
                       ) : null}
 
                       {watchedNodeType === "js_script" ? (
@@ -508,6 +606,8 @@ export function JobScenesPage() {
           ) : (
             <Typography.Text type="secondary">请勾选需要写入的字段，确认后执行。</Typography.Text>
           )}
+
+          <ValidationReportPanel issues={previewValidationIssues} title="预览提醒" />
 
           <Table<JobScenePreviewField>
             rowKey="key"

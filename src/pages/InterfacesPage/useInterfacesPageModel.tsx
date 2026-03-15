@@ -2,13 +2,16 @@ import { Button, Form, Grid, Input, Select, Switch, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { configCenterService } from "../../services/configCenterService";
 import { getRightOverlayDrawerWidth } from "../../utils";
+import { createFieldIssue, tryParseJson, validateInterfaceDraftPayload } from "../../validation/formRules";
 import type {
   ApiInputParam,
   ApiOutputParam,
   ApiValueSourceType,
   ApiValueType,
+  FieldValidationIssue,
   InterfaceDefinition,
-  LifecycleState
+  LifecycleState,
+  SaveValidationReport
 } from "../../types";
 import {
   buildInputSummary,
@@ -56,9 +59,14 @@ export function useInterfacesPageModel() {
   const [propertyOpen, setPropertyOpen] = useState(false);
   const [propertyTargetId, setPropertyTargetId] = useState<string | null>(null);
   const [propertyRows, setPropertyRows] = useState<ApiOutputParam[]>([]);
+  const [saveValidationReport, setSaveValidationReport] = useState<SaveValidationReport | null>(null);
+  const [inputValidationIssues, setInputValidationIssues] = useState<FieldValidationIssue[]>([]);
+  const [outputValidationIssues, setOutputValidationIssues] = useState<FieldValidationIssue[]>([]);
+  const [publishNotice, setPublishNotice] = useState<{ objectName: string; warningCount: number } | null>(null);
 
   const [form] = Form.useForm<ApiRegisterForm>();
   const [msgApi, holder] = message.useMessage();
+  const watchedFormValues = Form.useWatch([], form) as Partial<ApiRegisterForm> | undefined;
 
   async function loadData() {
     setLoading(true);
@@ -86,6 +94,9 @@ export function useInterfacesPageModel() {
     setInputConfig(emptyInputConfig());
     setOutputConfig([]);
     setOutputSampleJson("{\n  \"data\": {\n    \"score\": 90\n  }\n}");
+    setSaveValidationReport(null);
+    setInputValidationIssues([]);
+    setOutputValidationIssues([]);
   }
 
   function openCreate(preset?: {
@@ -97,9 +108,9 @@ export function useInterfacesPageModel() {
     prodPath?: string;
   }) {
     setEditing(null);
+    setPublishNotice(null);
     resetFormState();
     form.setFieldsValue({
-      id: Date.now(),
       name: preset?.name ?? "",
       description: preset?.description ?? "",
       method: preset?.method ?? "POST",
@@ -107,7 +118,6 @@ export function useInterfacesPageModel() {
       prodPath: preset?.prodPath ?? "",
       status: "DRAFT",
       ownerOrgId: preset?.ownerOrgId ?? "branch-east",
-      currentVersion: 1,
       timeoutMs: 3000,
       retryTimes: 1,
       maskSensitive: true,
@@ -118,12 +128,12 @@ export function useInterfacesPageModel() {
 
   function openEdit(row: InterfaceDefinition) {
     setEditing(row);
+    setPublishNotice(null);
     setInputConfig(normalizeInputConfig(row.inputConfigJson));
     setOutputConfig(normalizeOutputConfig(row.outputConfigJson));
     setOutputSampleJson("{\n  \"data\": {}\n}");
 
     form.setFieldsValue({
-      id: row.id,
       name: row.name,
       description: row.description,
       method: row.method,
@@ -131,7 +141,6 @@ export function useInterfacesPageModel() {
       prodPath: row.prodPath,
       status: row.status,
       ownerOrgId: row.ownerOrgId,
-      currentVersion: row.currentVersion,
       timeoutMs: row.timeoutMs,
       retryTimes: row.retryTimes,
       maskSensitive: row.maskSensitive,
@@ -142,11 +151,11 @@ export function useInterfacesPageModel() {
 
   function openClone(row: InterfaceDefinition) {
     setEditing(null);
+    setPublishNotice(null);
     setInputConfig(normalizeInputConfig(row.inputConfigJson));
     setOutputConfig(normalizeOutputConfig(row.outputConfigJson));
     setOutputSampleJson("{\n  \"data\": {}\n}");
     form.setFieldsValue({
-      id: Date.now(),
       name: `${row.name}-副本`,
       description: row.description,
       method: row.method,
@@ -154,7 +163,6 @@ export function useInterfacesPageModel() {
       prodPath: row.prodPath,
       status: "DRAFT",
       ownerOrgId: row.ownerOrgId,
-      currentVersion: 1,
       timeoutMs: row.timeoutMs,
       retryTimes: row.retryTimes,
       maskSensitive: row.maskSensitive,
@@ -167,6 +175,53 @@ export function useInterfacesPageModel() {
     setDrawerOpen(false);
     setEditing(null);
   }
+
+  const liveSaveValidationReport = useMemo(() => {
+    if (!drawerOpen) {
+      return null;
+    }
+    const values = watchedFormValues ?? {};
+    return validateInterfaceDraftPayload(
+      {
+        id: editing?.id ?? -1,
+        name: values.name?.trim() ?? "",
+        description: values.description?.trim() ?? "",
+        method: values.method ?? "POST",
+        testPath: values.testPath?.trim() ?? "",
+        prodPath: values.prodPath?.trim() ?? "",
+        ownerOrgId: values.ownerOrgId ?? "",
+        timeoutMs: values.timeoutMs ?? 0,
+        retryTimes: values.retryTimes ?? 0,
+        bodyTemplateJson: values.bodyTemplateJson?.trim() ?? "",
+        maskSensitive: values.maskSensitive ?? true
+      },
+      inputConfig,
+      outputConfig,
+      rows
+    );
+  }, [drawerOpen, editing?.id, inputConfig, outputConfig, rows, watchedFormValues]);
+
+  const liveOutputSampleIssues = useMemo(() => {
+    const raw = outputSampleJson.trim();
+    if (!raw) {
+      return [] as FieldValidationIssue[];
+    }
+    const parsed = tryParseJson(raw);
+    if (parsed.ok) {
+      return [] as FieldValidationIssue[];
+    }
+    return [
+      createFieldIssue({
+        section: "params",
+        field: "outputSampleJson",
+        label: "返回 JSON 示例",
+        message: "JSON 格式错误，当前还不能解析为返回字段",
+        action: parsed.error
+      })
+    ];
+  }, [outputSampleJson]);
+
+  const activeSaveValidationReport = liveSaveValidationReport ?? saveValidationReport;
 
   function addInputRow(tab: InputTabKey) {
     setInputConfig((prev) => ({
@@ -212,7 +267,17 @@ export function useInterfacesPageModel() {
       });
 
       msgApi.success("Body JSON 解析成功（同名字段已按后者覆盖）");
+      setInputValidationIssues([]);
     } catch {
+      setInputValidationIssues([
+        createFieldIssue({
+          section: "params",
+          field: "bodyTemplateJson",
+          label: "Body JSON 模板",
+          message: "JSON 格式错误，无法解析为请求参数",
+          action: "请检查括号、引号和逗号是否完整。"
+        })
+      ]);
       msgApi.error("Body JSON 解析失败，请检查格式");
     }
   }
@@ -267,25 +332,26 @@ export function useInterfacesPageModel() {
           : parsed;
       const generated = parseOutputFromSampleObject(base, "$.data");
       setOutputConfig(generated);
+      setOutputValidationIssues([]);
       msgApi.success("出参 JSON 解析成功");
     } catch {
+      setOutputValidationIssues([
+        createFieldIssue({
+          section: "params",
+          field: "outputSampleJson",
+          label: "返回 JSON 示例",
+          message: "JSON 格式错误，无法解析为返回字段",
+          action: "请检查 JSON 结构是否完整。"
+        })
+      ]);
       msgApi.error("出参 JSON 解析失败，请检查格式");
     }
   }
   async function submit() {
     const values = await form.validateFields();
 
-    if (values.bodyTemplateJson?.trim()) {
-      try {
-        JSON.parse(values.bodyTemplateJson);
-      } catch {
-        msgApi.error("Body JSON 格式错误，请先修正");
-        return;
-      }
-    }
-
     const payload: Omit<InterfaceDefinition, "updatedAt"> = {
-      id: values.id,
+      id: editing?.id ?? Date.now() + Math.floor(Math.random() * 1000),
       name: values.name.trim(),
       description: values.description.trim(),
       method: values.method,
@@ -294,7 +360,7 @@ export function useInterfacesPageModel() {
       url: values.prodPath.trim() || values.testPath.trim(),
       status: values.status,
       ownerOrgId: values.ownerOrgId,
-      currentVersion: values.currentVersion,
+      currentVersion: editing?.currentVersion ?? 1,
       timeoutMs: values.timeoutMs,
       retryTimes: values.retryTimes,
       bodyTemplateJson: values.bodyTemplateJson?.trim() ?? "",
@@ -305,8 +371,25 @@ export function useInterfacesPageModel() {
       maskSensitive: values.maskSensitive
     };
 
-    await configCenterService.upsertInterface(payload);
-    msgApi.success(editing ? "API注册已更新" : "API注册已创建");
+    setInputValidationIssues([]);
+    setOutputValidationIssues([]);
+    const result = await configCenterService.saveInterfaceDraft(payload, { inputConfig, outputConfig });
+    setSaveValidationReport(result.report);
+    if (!result.success) {
+      msgApi.error(result.report.summary);
+      return;
+    }
+    msgApi.success(
+      result.report.warningCount > 0
+        ? `API注册已保存草稿，另有 ${result.report.warningCount} 个提醒可继续处理`
+        : editing
+          ? "API注册已更新，并已进入待发布列表"
+          : "API注册已创建，并已进入待发布列表"
+    );
+    setPublishNotice({
+      objectName: payload.name,
+      warningCount: result.report.warningCount
+    });
     closeDrawer();
     await loadData();
   }
@@ -329,7 +412,7 @@ export function useInterfacesPageModel() {
   function openDebugDraft() {
     const values = form.getFieldsValue() as Partial<ApiRegisterForm>;
     const target: InterfaceDefinition = {
-      id: values.id ?? Date.now(),
+      id: editing?.id ?? Date.now() + Math.floor(Math.random() * 1000),
       name: values.name?.trim() || "未命名接口",
       description: values.description?.trim() || "",
       method: values.method ?? "POST",
@@ -338,7 +421,7 @@ export function useInterfacesPageModel() {
       url: values.prodPath?.trim() || values.testPath?.trim() || "/prod/path",
       status: values.status ?? "DRAFT",
       ownerOrgId: values.ownerOrgId ?? "branch-east",
-      currentVersion: values.currentVersion ?? 1,
+      currentVersion: editing?.currentVersion ?? 1,
       timeoutMs: values.timeoutMs ?? 3000,
       retryTimes: values.retryTimes ?? 1,
       bodyTemplateJson: values.bodyTemplateJson?.trim() ?? "{}",
@@ -461,6 +544,11 @@ export function useInterfacesPageModel() {
     debugPayload, setDebugPayload, debugResult, propertyOpen, setPropertyOpen, propertyRows, setPropertyRows, form, holder,
     filteredRows, openCreate, openEdit, openClone, closeDrawer, addInputRow, updateInputRow, removeInputRow, parseBodyTemplate, addOutputRow,
     updateOutputRow, removeOutputRow, openOutputProperty, saveOutputProperty, parseOutputSample, submit, switchStatus, openDebug, openDebugDraft,
-    runDebug, inputColumns, defaultOutputParam, valueTypeOptions, tabLabels, statusColor
+    runDebug, inputColumns, defaultOutputParam, valueTypeOptions, tabLabels, statusColor,
+    saveValidationReport: activeSaveValidationReport,
+    inputValidationIssues,
+    outputValidationIssues: [...outputValidationIssues, ...liveOutputSampleIssues],
+    publishNotice,
+    dismissPublishNotice: () => setPublishNotice(null)
   };
 }

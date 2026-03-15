@@ -1,28 +1,27 @@
 import { MenuOutlined } from "@ant-design/icons";
 import { Button, Drawer, Layout, Menu, Select, Space, Typography } from "antd";
-import { useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
+import { MockSessionProvider, mockUserPersonaMetaMap, mockUserPersonaOptions, type MockUserPersona } from "../session/mockSession";
 
 const { Header, Sider, Content } = Layout;
-
-type AppRole = "BUSINESS" | "ADVANCED" | "ADMIN";
 
 type NavItem = {
   key: string;
   label: string;
-  minRole?: Exclude<AppRole, "BUSINESS">;
+  personas: MockUserPersona[];
 };
 
 const navItems: NavItem[] = [
-  { key: "/", label: "我的工作台" },
-  { key: "/page-management", label: "页面管理" },
-  { key: "/prompts", label: "智能提示" },
-  { key: "/jobs", label: "智能作业" },
-  { key: "/interfaces", label: "API注册" },
-  { key: "/publish", label: "发布与灰度" },
-  { key: "/stats", label: "运行统计" },
-  { key: "/advanced", label: "高级配置", minRole: "ADVANCED" }
+  { key: "/", label: "我的工作台", personas: ["CONFIG_USER", "PUBLISH_MANAGER", "MENU_ADMIN"] },
+  { key: "/page-management", label: "页面管理", personas: ["CONFIG_USER"] },
+  { key: "/prompts", label: "智能提示", personas: ["CONFIG_USER"] },
+  { key: "/jobs", label: "智能作业", personas: ["CONFIG_USER"] },
+  { key: "/interfaces", label: "API注册", personas: ["CONFIG_USER"] },
+  { key: "/publish", label: "发布与灰度", personas: ["CONFIG_USER", "PUBLISH_MANAGER", "MENU_ADMIN"] },
+  { key: "/stats", label: "运行统计", personas: ["CONFIG_USER", "PUBLISH_MANAGER"] },
+  { key: "/advanced", label: "高级配置", personas: ["CONFIG_USER"] }
 ];
 
 const compatiblePathToBizPath: Array<{ from: string; to: string }> = [
@@ -32,7 +31,6 @@ const compatiblePathToBizPath: Array<{ from: string; to: string }> = [
   { from: "/rule-templates", to: "/prompts" },
   { from: "/job-scenes", to: "/jobs" },
   { from: "/sdk-version-center", to: "/publish" },
-  { from: "/governance", to: "/publish" },
   { from: "/audit-metrics", to: "/stats" },
   { from: "/preprocessors", to: "/advanced" },
   { from: "/roles", to: "/advanced" }
@@ -151,68 +149,81 @@ function renderMenuItems(items: NavItem[]) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
   const location = useLocation();
-  const [role, setRole] = useState<AppRole>("BUSINESS");
+  const [persona, setPersona] = useState<MockUserPersona>(() => {
+    const cached = window.localStorage.getItem("config-center:mock-persona");
+    return cached === "CONFIG_USER" || cached === "PUBLISH_MANAGER" || cached === "MENU_ADMIN" ? cached : "CONFIG_USER";
+  });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const selected = getSelectedKey(location.pathname);
+  const currentMeta = mockUserPersonaMetaMap[persona];
 
   const visibleNavItems = useMemo(() => {
-    return navItems.filter((item) => {
-      if (!item.minRole) {
-        return true;
+    return navItems.filter((item) => item.personas.includes(persona));
+  }, [persona]);
+
+  useEffect(() => {
+    window.localStorage.setItem("config-center:mock-persona", persona);
+  }, [persona]);
+
+  useEffect(() => {
+    const normalized = normalizePath(location.pathname);
+    const canAccess = visibleNavItems.some((item) => {
+      if (item.key === "/") {
+        return normalized === "/";
       }
-      if (item.minRole === "ADVANCED") {
-        return role === "ADVANCED" || role === "ADMIN";
-      }
-      return role === "ADMIN";
+      return normalized.startsWith(item.key);
     });
-  }, [role]);
+    if (!canAccess) {
+      navigate(currentMeta.defaultPath, { replace: true });
+    }
+  }, [currentMeta.defaultPath, location.pathname, navigate, visibleNavItems]);
 
   return (
-    <MainLayout style={{ minHeight: "100vh" }}>
-      <HeaderBar>
-        <LogoBlock>
-          <LogoTitle className="type-20">营小助配置中心（新版）</LogoTitle>
-          <LogoSubtitle className="type-12">
-            业务主路径：找页面、配规则、接接口、做发布、看结果
-          </LogoSubtitle>
-        </LogoBlock>
-        <HeaderActions size={8}>
-          <Select
-            value={role}
-            size="small"
-            onChange={(next) => setRole(next as AppRole)}
-            options={[
-              { label: "业务人员视角", value: "BUSINESS" },
-              { label: "高级运营视角", value: "ADVANCED" },
-              { label: "平台管理员视角", value: "ADMIN" }
-            ]}
-          />
-          <MobileNavButton icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)}>
-            导航
-          </MobileNavButton>
-        </HeaderActions>
-      </HeaderBar>
-      <Layout>
-        <StyledSider width={248} theme="light">
+    <MockSessionProvider value={{ persona, setPersona }}>
+      <MainLayout style={{ minHeight: "100vh" }}>
+        <HeaderBar>
+          <LogoBlock>
+            <LogoTitle className="type-20">营小助配置中心（新版）</LogoTitle>
+            <LogoSubtitle className="type-12">
+              模拟登录：{currentMeta.label} · {currentMeta.description}
+            </LogoSubtitle>
+          </LogoBlock>
+          <HeaderActions size={8}>
+            <Select
+              value={persona}
+              size="small"
+              style={{ minWidth: 172 }}
+              onChange={(next) => setPersona(next as MockUserPersona)}
+              options={mockUserPersonaOptions}
+            />
+            <MobileNavButton icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)}>
+              导航
+            </MobileNavButton>
+          </HeaderActions>
+        </HeaderBar>
+        <Layout>
+          <StyledSider width={248} theme="light">
+            <Menu
+              mode="inline"
+              selectedKeys={[selected]}
+              items={renderMenuItems(visibleNavItems)}
+              style={{ height: "100%", borderInlineEnd: 0 }}
+            />
+          </StyledSider>
+          <ContentWrap>{children}</ContentWrap>
+        </Layout>
+        <Drawer title="业务导航" placement="left" width={248} onClose={() => setDrawerOpen(false)} open={drawerOpen}>
           <Menu
             mode="inline"
             selectedKeys={[selected]}
             items={renderMenuItems(visibleNavItems)}
-            style={{ height: "100%", borderInlineEnd: 0 }}
+            onClick={() => setDrawerOpen(false)}
+            style={{ borderInlineEnd: 0 }}
           />
-        </StyledSider>
-        <ContentWrap>{children}</ContentWrap>
-      </Layout>
-      <Drawer title="业务导航" placement="left" width={248} onClose={() => setDrawerOpen(false)} open={drawerOpen}>
-        <Menu
-          mode="inline"
-          selectedKeys={[selected]}
-          items={renderMenuItems(visibleNavItems)}
-          onClick={() => setDrawerOpen(false)}
-          style={{ borderInlineEnd: 0 }}
-        />
-      </Drawer>
-    </MainLayout>
+        </Drawer>
+      </MainLayout>
+    </MockSessionProvider>
   );
 }

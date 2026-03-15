@@ -3,9 +3,10 @@ import { Button, Card, Col, List, Row, Space, Statistic, Tag, Typography } from 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
-import { pendingTypeLabelMap } from "../../enumLabels";
+import { pendingTypeLabelMap, resourceTypeLabelMap } from "../../enumLabels";
+import { getOrgLabel } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
-import type { DashboardOverview, ExecutionLogItem, GovernancePendingItem, GovernancePendingSummary, TriggerLogItem } from "../../types";
+import type { DashboardOverview, ExecutionLogItem, PublishPendingItem, PublishPendingSummary, TriggerLogItem } from "../../types";
 
 type DropReminder = {
   key: string;
@@ -56,8 +57,8 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
-  const [pendingSummary, setPendingSummary] = useState<GovernancePendingSummary | null>(null);
-  const [pendingItems, setPendingItems] = useState<GovernancePendingItem[]>([]);
+  const [pendingSummary, setPendingSummary] = useState<PublishPendingSummary | null>(null);
+  const [pendingItems, setPendingItems] = useState<PublishPendingItem[]>([]);
   const [triggerLogs, setTriggerLogs] = useState<TriggerLogItem[]>([]);
   const [executionLogs, setExecutionLogs] = useState<ExecutionLogItem[]>([]);
 
@@ -140,7 +141,7 @@ export function DashboardPage() {
       <PageHeader>
         <PageTitle className="type-24">我的工作台</PageTitle>
         <PageIntro className="type-14">
-        今天先看待处理和下降提醒，再从常用入口进入页面管理、智能提示、API注册和发布与灰度。
+          今天先看待处理和下降提醒，再从“页面管理”进入主路径，继续完成配置、发布和结果查看。
         </PageIntro>
       </PageHeader>
 
@@ -204,7 +205,7 @@ export function DashboardPage() {
                   <Space direction="vertical" size={4}>
                     <Typography.Text strong>{item.pageName}</Typography.Text>
                     <Typography.Text type="secondary" className="card-info">
-                      {item.scope} · 下降 {item.dropRatio}%
+                      {getOrgLabel(item.scope)} · 下降 {item.dropRatio}%
                     </Typography.Text>
                     <Typography.Text type="secondary" className="card-info">{item.detail}</Typography.Text>
                   </Space>
@@ -223,7 +224,7 @@ export function DashboardPage() {
           renderItem={(item) => (
             <List.Item>
               <Space direction="vertical" size={4} style={{ width: "100%" }}>
-                <Tag>{item.type}</Tag>
+                <Tag>{resourceTypeLabelMap[item.type]}</Tag>
                 <Typography.Text className="card-info">{item.name}</Typography.Text>
                 <Typography.Text type="secondary" className="type-12">
                   {item.updatedAt}
@@ -238,11 +239,11 @@ export function DashboardPage() {
         <Col xs={24} lg={12}>
           <Card title="常用入口">
             <DashboardSpace direction="vertical" size={12}>
+              <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/page-management")}>进入页面管理</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/prompts?action=create")}>新建提示规则</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/prompts")}>复制已有规则</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/interfaces")}>注册 API</Button>
-              <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/publish")}>查看发布结果</Button>
-              <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/page-management")}>进入页面管理</Button>
+              <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/publish")}>进入发布与灰度</Button>
             </DashboardSpace>
           </Card>
         </Col>

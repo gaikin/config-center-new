@@ -1,48 +1,514 @@
-﻿import type { Rule } from "antd/es/form";
+import type {
+  ApiInputParam,
+  ApiOutputParam,
+  FieldValidationIssue,
+  InterfaceDefinition,
+  JobSceneDefinition,
+  ListDataDefinition,
+  ObjectValidationIssue,
+  RuleDefinition,
+  SaveValidationReport,
+  SectionValidationIssue,
+  ValidationIssue,
+  ValidationLevel
+} from "../types";
 
-export function requiredRule(label: string): Rule {
+let validationCounter = 0;
+
+function nextValidationKey(prefix: string) {
+  validationCounter += 1;
+  return `${prefix}-${validationCounter}`;
+}
+
+export function createFieldIssue(params: {
+  section: string;
+  field: string;
+  label: string;
+  message: string;
+  level?: ValidationLevel;
+  action?: string;
+}): FieldValidationIssue {
   return {
-    required: true,
-    message: `请输入${label}`
+    kind: "field",
+    key: nextValidationKey("field"),
+    level: params.level ?? "blocking",
+    section: params.section,
+    field: params.field,
+    label: params.label,
+    message: params.message,
+    action: params.action
   };
 }
 
-export function maxLenRule(label: string, max: number): Rule {
+export function createSectionIssue(params: {
+  section: string;
+  title: string;
+  message: string;
+  level?: ValidationLevel;
+  action?: string;
+}): SectionValidationIssue {
   return {
-    max,
-    message: `${label}长度不能超过 ${max} 个字符`
+    kind: "section",
+    key: nextValidationKey("section"),
+    level: params.level ?? "blocking",
+    section: params.section,
+    title: params.title,
+    message: params.message,
+    action: params.action
   };
 }
 
-export function idRule(label: string, prefix: string): Rule {
+export function createObjectIssue(params: {
+  section: string;
+  objectType: string;
+  title: string;
+  message: string;
+  objectName?: string;
+  level?: ValidationLevel;
+  action?: string;
+}): ObjectValidationIssue {
   return {
-    pattern: new RegExp(`^${prefix}[a-zA-Z0-9-]*$`),
-    message: `${label}需以“${prefix}”开头`
+    kind: "object",
+    key: nextValidationKey("object"),
+    level: params.level ?? "blocking",
+    section: params.section,
+    objectType: params.objectType,
+    title: params.title,
+    message: params.message,
+    objectName: params.objectName,
+    action: params.action
   };
 }
 
-export const xpathLikeRule: Rule = {
-  validator: (_, value: string | undefined) => {
-    if (!value) {
-      return Promise.resolve();
-    }
-    if (value.startsWith("/") || value.startsWith("#") || value.startsWith(".")) {
-      return Promise.resolve();
-    }
-    return Promise.reject(new Error("定位表达式需以 '/'（XPath）或 '#/.'（CSS）开头。"));
+export function isBlank(value: string | undefined | null) {
+  return !value || !value.trim();
+}
+
+export function validateUrlPath(path: string | undefined) {
+  if (isBlank(path)) {
+    return "请输入路径";
   }
-};
+  if (!path?.startsWith("/")) {
+    return "路径需以 / 开头";
+  }
+  return null;
+}
 
-export const jsonTextRule: Rule = {
-  validator: (_, value: string | undefined) => {
-    if (!value) {
-      return Promise.resolve();
-    }
-    try {
-      JSON.parse(value);
-      return Promise.resolve();
-    } catch {
-      return Promise.reject(new Error("JSON 格式不合法。"));
+export function validatePositiveInteger(value: number | undefined, min = 1) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "请输入有效数值";
+  }
+  if (value < min) {
+    return `数值需大于等于 ${min}`;
+  }
+  return null;
+}
+
+export function tryParseJson(text: string) {
+  try {
+    return { ok: true as const, value: JSON.parse(text) as unknown };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : "JSON 解析失败"
+    };
+  }
+}
+
+export function buildSaveValidationReport(params: {
+  objectLabel: string;
+  fieldIssues?: FieldValidationIssue[];
+  sectionIssues?: SectionValidationIssue[];
+  objectIssues?: ObjectValidationIssue[];
+}): SaveValidationReport {
+  const fieldIssues = params.fieldIssues ?? [];
+  const sectionIssues = params.sectionIssues ?? [];
+  const objectIssues = params.objectIssues ?? [];
+  const allIssues: ValidationIssue[] = [...fieldIssues, ...sectionIssues, ...objectIssues];
+  const blockingCount = allIssues.filter((issue) => issue.level === "blocking").length;
+  const warningCount = allIssues.filter((issue) => issue.level === "warning").length;
+  const canSaveDraft = blockingCount === 0;
+
+  let summary = `${params.objectLabel}检查通过，可继续保存。`;
+  if (blockingCount > 0) {
+    summary = `${params.objectLabel}存在 ${blockingCount} 个阻断项，请先修复后再保存。`;
+  } else if (warningCount > 0) {
+    summary = `${params.objectLabel}可保存草稿，但还有 ${warningCount} 个提醒建议处理。`;
+  }
+
+  return {
+    ok: blockingCount === 0,
+    canSaveDraft,
+    summary,
+    fieldIssues,
+    sectionIssues,
+    objectIssues,
+    blockingCount,
+    warningCount
+  };
+}
+
+export function getIssuesFromReport(report: SaveValidationReport | null | undefined, sections?: string[]) {
+  if (!report) {
+    return [] as ValidationIssue[];
+  }
+  const allIssues: ValidationIssue[] = [...report.fieldIssues, ...report.sectionIssues, ...report.objectIssues];
+  if (!sections || sections.length === 0) {
+    return allIssues;
+  }
+  return allIssues.filter((issue) => sections.includes(issue.section));
+}
+
+export function validateRuleDraftPayload(
+  payload: Pick<
+    RuleDefinition,
+    "id" | "name" | "ruleScope" | "pageResourceId" | "priority" | "promptMode" | "closeMode" | "closeTimeoutSec" | "hasConfirmButton" | "sceneId" | "ownerOrgId"
+  >,
+  existingRules: RuleDefinition[]
+) {
+  const fieldIssues: FieldValidationIssue[] = [];
+  const objectIssues: ObjectValidationIssue[] = [];
+
+  if (payload.ruleScope === "PAGE_RESOURCE" && !payload.pageResourceId) {
+    fieldIssues.push(createFieldIssue({ section: "page", field: "pageResourceId", label: "页面资源", message: "请选择页面资源" }));
+  }
+  if (isBlank(payload.name)) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "name", label: "规则名称", message: "请输入规则名称" }));
+  }
+  const priorityError = validatePositiveInteger(payload.priority, 1);
+  if (priorityError) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "priority", label: "优先级", message: priorityError }));
+  }
+  if (isBlank(payload.ownerOrgId)) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "ownerOrgId", label: "组织范围", message: "请选择组织范围" }));
+  }
+  if (payload.closeMode === "TIMER_THEN_MANUAL") {
+    const timeoutError = validatePositiveInteger(payload.closeTimeoutSec, 1);
+    if (timeoutError) {
+      fieldIssues.push(createFieldIssue({ section: "basic", field: "closeTimeoutSec", label: "关闭超时", message: timeoutError }));
     }
   }
-};
+  if (payload.hasConfirmButton && !payload.sceneId) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "sceneId", label: "关联作业场景", message: "开启确认按钮时请选择作业场景" }));
+  }
+
+  const duplicated = existingRules.some((item) => item.name === payload.name && item.id !== payload.id);
+  if (duplicated) {
+    objectIssues.push(
+      createObjectIssue({
+        section: "confirm",
+        objectType: "RULE",
+        title: "规则名称重复",
+        message: `已存在同名规则：${payload.name}`,
+        objectName: payload.name,
+        action: "请更换规则名称后再保存。"
+      })
+    );
+  }
+
+  if (payload.promptMode === "SILENT" && !payload.hasConfirmButton) {
+    objectIssues.push(
+      createObjectIssue({
+        section: "confirm",
+        objectType: "RULE",
+        title: "提醒体验较弱",
+        message: "当前配置为静默提示且未开启确认按钮，用户可能感知不到规则触发。",
+        level: "warning",
+        action: "建议至少保留可感知的提示或确认动作。"
+      })
+    );
+  }
+
+  return buildSaveValidationReport({
+    objectLabel: "规则保存",
+    fieldIssues,
+    objectIssues
+  });
+}
+
+export function validateInterfaceDraftPayload(
+  payload: Pick<
+    InterfaceDefinition,
+    "id" | "name" | "description" | "method" | "testPath" | "prodPath" | "ownerOrgId" | "timeoutMs" | "retryTimes" | "bodyTemplateJson" | "maskSensitive"
+  >,
+  inputConfig: Record<string, ApiInputParam[]>,
+  outputConfig: ApiOutputParam[],
+  existingInterfaces: InterfaceDefinition[]
+) {
+  const fieldIssues: FieldValidationIssue[] = [];
+  const sectionIssues: SectionValidationIssue[] = [];
+  const objectIssues: ObjectValidationIssue[] = [];
+
+  if (isBlank(payload.name)) {
+    fieldIssues.push(createFieldIssue({ section: "purpose", field: "name", label: "名称", message: "请输入接口名称" }));
+  }
+  if (isBlank(payload.description)) {
+    fieldIssues.push(createFieldIssue({ section: "purpose", field: "description", label: "用途说明", message: "请输入用途说明" }));
+  }
+  if (isBlank(payload.ownerOrgId)) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "ownerOrgId", label: "机构范围", message: "请选择机构范围" }));
+  }
+  const testPathError = validateUrlPath(payload.testPath);
+  if (testPathError) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "testPath", label: "测试环境路径", message: testPathError }));
+  }
+  const prodPathError = validateUrlPath(payload.prodPath);
+  if (prodPathError) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "prodPath", label: "生产环境路径", message: prodPathError }));
+  }
+  const timeoutError = validatePositiveInteger(payload.timeoutMs, 1);
+  if (timeoutError || payload.timeoutMs > 5000) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "timeoutMs", label: "超时", message: timeoutError ?? "超时不能超过 5000ms" }));
+  }
+  if (typeof payload.retryTimes !== "number" || payload.retryTimes < 0 || payload.retryTimes > 3) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "retryTimes", label: "重试次数", message: "重试次数需在 0 到 3 之间" }));
+  }
+
+  if (!isBlank(payload.bodyTemplateJson)) {
+    const bodyResult = tryParseJson(payload.bodyTemplateJson);
+    if (!bodyResult.ok) {
+      fieldIssues.push(
+        createFieldIssue({
+          section: "params",
+          field: "bodyTemplateJson",
+          label: "Body JSON 模板",
+          message: "JSON 格式错误，无法解析为请求示例",
+          action: bodyResult.error
+        })
+      );
+    }
+  }
+
+  const inputEntries = Object.entries(inputConfig);
+  for (const [tab, rows] of inputEntries) {
+    const seenNames = new Set<string>();
+    for (const row of rows) {
+      if (isBlank(row.name)) {
+        fieldIssues.push(createFieldIssue({ section: "params", field: `input:${row.id}:name`, label: `${tab} 参数名`, message: "参数名不能为空" }));
+      } else if (seenNames.has(row.name.trim())) {
+        fieldIssues.push(createFieldIssue({ section: "params", field: `input:${row.id}:name`, label: `${tab} 参数名`, message: `参数名重复：${row.name}` }));
+      } else {
+        seenNames.add(row.name.trim());
+      }
+      if (row.required && isBlank(row.sourceValue)) {
+        fieldIssues.push(createFieldIssue({ section: "params", field: `input:${row.id}:sourceValue`, label: `${row.name || tab} 映射值`, message: "必填参数需要提供映射值" }));
+      }
+    }
+  }
+
+  const outputPaths = new Set<string>();
+  for (const row of outputConfig) {
+    if (isBlank(row.name)) {
+      fieldIssues.push(createFieldIssue({ section: "params", field: `output:${row.id}:name`, label: "返回字段名", message: "返回字段名不能为空" }));
+    }
+    if (isBlank(row.path)) {
+      fieldIssues.push(createFieldIssue({ section: "params", field: `output:${row.id}:path`, label: row.name || "返回字段路径", message: "返回字段路径不能为空" }));
+    } else if (outputPaths.has(row.path.trim())) {
+      fieldIssues.push(createFieldIssue({ section: "params", field: `output:${row.id}:path`, label: row.name || "返回字段路径", message: `返回字段路径重复：${row.path}` }));
+    } else {
+      outputPaths.add(row.path.trim());
+    }
+  }
+
+  if (outputConfig.length === 0) {
+    sectionIssues.push(
+      createSectionIssue({
+        section: "params",
+        title: "返回参数示例",
+        message: "当前还没有维护任何返回字段，保存后会影响规则和作业对该 API 的复用。",
+        level: "warning",
+        action: "建议至少补充一个核心返回字段。"
+      })
+    );
+  }
+
+  const duplicated = existingInterfaces.some((item) => item.name === payload.name && item.id !== payload.id);
+  if (duplicated) {
+    objectIssues.push(
+      createObjectIssue({
+        section: "confirm",
+        objectType: "INTERFACE",
+        title: "接口名称重复",
+        message: `已存在同名 API：${payload.name}`,
+        objectName: payload.name,
+        action: "请更换接口名称后再保存。"
+      })
+    );
+  }
+
+  if (!payload.maskSensitive) {
+    objectIssues.push(
+      createObjectIssue({
+        section: "confirm",
+        objectType: "INTERFACE",
+        title: "未开启敏感字段脱敏",
+        message: "如果返回内容包含手机号、证件号等字段，建议开启脱敏。",
+        level: "warning"
+      })
+    );
+  }
+
+  return buildSaveValidationReport({
+    objectLabel: "API 保存",
+    fieldIssues,
+    sectionIssues,
+    objectIssues
+  });
+}
+
+export function validateJobSceneDraftPayload(
+  payload: Pick<JobSceneDefinition, "id" | "name" | "pageResourceId" | "executionMode" | "nodeCount" | "manualDurationSec" | "riskConfirmed">,
+  existingScenes: JobSceneDefinition[]
+) {
+  const fieldIssues: FieldValidationIssue[] = [];
+  const objectIssues: ObjectValidationIssue[] = [];
+
+  if (isBlank(payload.name)) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "name", label: "场景名称", message: "请输入场景名称" }));
+  }
+  if (!payload.pageResourceId) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "pageResourceId", label: "页面资源", message: "请选择页面资源" }));
+  }
+  const nodeCountError = validatePositiveInteger(payload.nodeCount, 1);
+  if (nodeCountError) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "nodeCount", label: "节点数", message: nodeCountError }));
+  }
+  const durationError = validatePositiveInteger(payload.manualDurationSec, 1);
+  if (durationError) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "manualDurationSec", label: "人工基准时长", message: durationError }));
+  }
+
+  const duplicated = existingScenes.some((item) => item.name === payload.name && item.id !== payload.id);
+  if (duplicated) {
+    objectIssues.push(
+      createObjectIssue({
+        section: "basic",
+        objectType: "JOB_SCENE",
+        title: "场景名称重复",
+        message: `已存在同名作业场景：${payload.name}`,
+        objectName: payload.name,
+        action: "请更换场景名称后再保存。"
+      })
+    );
+  }
+
+  if ((payload.executionMode === "AUTO_AFTER_PROMPT" || payload.executionMode === "AUTO_WITHOUT_PROMPT") && !payload.riskConfirmed) {
+    objectIssues.push(
+      createObjectIssue({
+        section: "basic",
+        objectType: "JOB_SCENE",
+        title: "自动执行风险待确认",
+        message: "当前场景已配置为自动执行，但风险责任尚未确认。",
+        level: "warning",
+        action: "可以先保存草稿，发布前需完成风险确认。"
+      })
+    );
+  }
+
+  return buildSaveValidationReport({
+    objectLabel: "作业场景保存",
+    fieldIssues,
+    objectIssues
+  });
+}
+
+export function validateListDataDraftPayload(
+  payload: Pick<
+    ListDataDefinition,
+    | "id"
+    | "name"
+    | "description"
+    | "ownerOrgId"
+    | "scope"
+    | "effectiveStartAt"
+    | "effectiveEndAt"
+    | "rowCount"
+    | "importColumns"
+    | "outputFields"
+    | "importFileName"
+  >,
+  existingListDatas: ListDataDefinition[]
+) {
+  const fieldIssues: FieldValidationIssue[] = [];
+  const objectIssues: ObjectValidationIssue[] = [];
+
+  if (isBlank(payload.name)) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "name", label: "名单名称", message: "请输入名单名称" }));
+  }
+  if (isBlank(payload.ownerOrgId)) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "ownerOrgId", label: "归属机构", message: "请选择归属机构" }));
+  }
+  if (isBlank(payload.scope)) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "scope", label: "适用范围", message: "请输入适用范围" }));
+  }
+  if (isBlank(payload.effectiveStartAt)) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "effectiveStartAt", label: "生效开始时间", message: "请输入生效开始时间" }));
+  }
+  if (isBlank(payload.effectiveEndAt)) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "effectiveEndAt", label: "生效结束时间", message: "请输入生效结束时间" }));
+  }
+  if (!isBlank(payload.effectiveStartAt) && !isBlank(payload.effectiveEndAt) && payload.effectiveStartAt > payload.effectiveEndAt) {
+    fieldIssues.push(createFieldIssue({ section: "basic", field: "effectiveEndAt", label: "生效结束时间", message: "结束时间不能早于开始时间" }));
+  }
+  if (isBlank(payload.importFileName)) {
+    fieldIssues.push(createFieldIssue({ section: "parse", field: "importFileName", label: "导入文件", message: "请填写导入文件名" }));
+  }
+  if (!Array.isArray(payload.importColumns) || payload.importColumns.length === 0) {
+    fieldIssues.push(createFieldIssue({ section: "parse", field: "importColumns", label: "导入字段", message: "请先解析表头" }));
+  }
+  if (!Array.isArray(payload.outputFields) || payload.outputFields.length === 0) {
+    fieldIssues.push(createFieldIssue({ section: "parse", field: "outputFields", label: "输出字段", message: "请至少配置一个输出字段" }));
+  }
+  if (
+    Array.isArray(payload.importColumns) &&
+    payload.importColumns.length > 0 &&
+    Array.isArray(payload.outputFields) &&
+    payload.outputFields.some((item) => !payload.importColumns.includes(item))
+  ) {
+    fieldIssues.push(
+      createFieldIssue({
+        section: "parse",
+        field: "outputFields",
+        label: "输出字段",
+        message: "输出字段必须从解析表头中选择"
+      })
+    );
+  }
+  const rowCountError = validatePositiveInteger(payload.rowCount, 1);
+  if (rowCountError) {
+    fieldIssues.push(createFieldIssue({ section: "parse", field: "rowCount", label: "数据条数", message: rowCountError }));
+  }
+
+  const duplicated = existingListDatas.some((item) => item.name === payload.name && item.id !== payload.id);
+  if (duplicated) {
+    objectIssues.push(
+      createObjectIssue({
+        section: "confirm",
+        objectType: "LIST_DATA",
+        title: "名单名称重复",
+        message: `已存在同名名单：${payload.name}`,
+        objectName: payload.name,
+        action: "请更换名单名称后再保存。"
+      })
+    );
+  }
+
+  if (isBlank(payload.description)) {
+    objectIssues.push(
+      createObjectIssue({
+        section: "confirm",
+        objectType: "LIST_DATA",
+        title: "建议补充名单说明",
+        message: "当前名单未填写说明，后续规则和作业复用时不利于理解用途。",
+        level: "warning",
+        action: "建议补充名单说明、适用场景和维护责任。"
+      })
+    );
+  }
+
+  return buildSaveValidationReport({
+    objectLabel: "名单数据保存",
+    fieldIssues,
+    objectIssues
+  });
+}

@@ -2,14 +2,15 @@
   BusinessFieldDefinition,
   DashboardOverview,
   ExecutionLogItem,
-  GovernanceAuditLog,
-  GovernancePendingItem,
-  GovernancePendingSummary,
+  PublishAuditLog,
+  PublishPendingItem,
+  PublishPendingSummary,
   InterfaceDefinition,
   JobExecutionSummary,
   JobNodeDefinition,
   JobNodeRunLog,
   JobSceneDefinition,
+  ListDataDefinition,
   MenuSdkPolicy,
   PageElement,
   PageFieldBinding,
@@ -499,7 +500,7 @@ export const seedJobScenes: JobSceneDefinition[] = [
     executionMode: "PREVIEW_THEN_EXECUTE",
     status: "ACTIVE",
     currentVersion: 4,
-    nodeCount: 4,
+    nodeCount: 5,
     manualDurationSec: 55,
     riskConfirmed: true,
     updatedAt: now()
@@ -533,29 +534,39 @@ export const seedJobNodes: JobNodeDefinition[] = [
   {
     id: 51002,
     sceneId: 5001,
-    nodeType: "api_call",
-    name: "查询风险评分",
+    nodeType: "list_lookup",
+    name: "查询高风险名单",
     orderNo: 2,
     enabled: true,
-    configJson: "{\"interfaceId\":3001}",
+    configJson: "{\"listDataId\":6001,\"inputSource\":\"customer_id\",\"resultKey\":\"high_risk_match\"}",
     updatedAt: now()
   },
   {
     id: 51003,
     sceneId: 5001,
-    nodeType: "js_script",
-    name: "格式化手机号",
+    nodeType: "api_call",
+    name: "查询风险评分",
     orderNo: 3,
     enabled: true,
-    configJson: "{\"script\":\"maskMobile\"}",
+    configJson: "{\"interfaceId\":3001}",
     updatedAt: now()
   },
   {
     id: 51004,
     sceneId: 5001,
+    nodeType: "js_script",
+    name: "格式化手机号",
+    orderNo: 4,
+    enabled: true,
+    configJson: "{\"script\":\"maskMobile\"}",
+    updatedAt: now()
+  },
+  {
+    id: 51005,
+    sceneId: 5001,
     nodeType: "page_set",
     name: "写入风险评分",
-    orderNo: 4,
+    orderNo: 5,
     enabled: true,
     configJson: "{\"target\":\"risk_score\"}",
     updatedAt: now()
@@ -656,7 +667,25 @@ export const seedRuleConditions: RuleCondition[] = [
     id: 41103,
     ruleId: 4001,
     groupId: 41002,
-    left: { sourceType: "INTERFACE_FIELD", key: "risk_level", preprocessorIds: [] },
+    left: {
+      sourceType: "LIST_LOOKUP_FIELD",
+      key: "risk_level",
+      displayValue: "高风险客户名单.risk_level",
+      valueType: "STRING",
+      preprocessorIds: [],
+      listBinding: {
+        listDataId: 6001,
+        listDataName: "高风险客户名单",
+        matchColumn: "customer_id",
+        lookupSourceType: "PAGE_FIELD",
+        lookupSourceValue: "customer_id",
+        matchers: [
+          { matchColumn: "customer_id", sourceType: "PAGE_FIELD", sourceValue: "customer_id" },
+          { matchColumn: "id_no", sourceType: "PAGE_FIELD", sourceValue: "id_no" }
+        ],
+        resultField: "risk_level"
+      }
+    },
     operator: "EQ",
     right: { sourceType: "CONST", key: "HIGH", constValue: "HIGH", preprocessorIds: [] },
     updatedAt: now()
@@ -671,15 +700,15 @@ export const seedRuleConditions: RuleCondition[] = [
   }
 ];
 
-export const seedPendingSummary: GovernancePendingSummary = {
-  draftCount: 3,
+export const seedPendingSummary: PublishPendingSummary = {
+  draftCount: 5,
   expiringSoonCount: 1,
   validationFailedCount: 1,
   conflictCount: 0,
   riskConfirmPendingCount: 1
 };
 
-export const seedPendingItems: GovernancePendingItem[] = [
+export const seedPendingItems: PublishPendingItem[] = [
   {
     id: 1,
     resourceType: "JOB_SCENE",
@@ -712,6 +741,26 @@ export const seedPendingItems: GovernancePendingItem[] = [
   },
   {
     id: 4,
+    resourceType: "INTERFACE",
+    resourceId: 3002,
+    resourceName: "客户基础信息查询 API",
+    status: "DRAFT",
+    ownerOrgId: "branch-south",
+    pendingType: "DRAFT",
+    updatedAt: now()
+  },
+  {
+    id: 5,
+    resourceType: "LIST_DATA",
+    resourceId: 6002,
+    resourceName: "身份证白名单",
+    status: "DRAFT",
+    ownerOrgId: "branch-south",
+    pendingType: "DRAFT",
+    updatedAt: now()
+  },
+  {
+    id: 6,
     resourceType: "PREPROCESSOR",
     resourceId: 3503,
     resourceName: "手机号脱敏脚本",
@@ -721,7 +770,7 @@ export const seedPendingItems: GovernancePendingItem[] = [
     updatedAt: now()
   },
   {
-    id: 5,
+    id: 7,
     resourceType: "MENU_SDK_POLICY",
     resourceId: 8201,
     resourceName: "贷款申请菜单 SDK 灰度策略",
@@ -731,7 +780,7 @@ export const seedPendingItems: GovernancePendingItem[] = [
     updatedAt: now()
   },
   {
-    id: 6,
+    id: 8,
     resourceType: "PAGE_ACTIVATION_POLICY",
     resourceId: 8303,
     resourceName: "开户办理主页面启用策略",
@@ -742,14 +791,71 @@ export const seedPendingItems: GovernancePendingItem[] = [
   }
 ];
 
-export const seedAuditLogs: GovernanceAuditLog[] = [
+export const seedListDatas: ListDataDefinition[] = [
+  {
+    id: 6001,
+    name: "高风险客户名单",
+    description: "用于贷款申请高风险命中判断。",
+    ownerOrgId: "branch-east",
+    scope: "贷款专区 / 东部分行",
+    effectiveStartAt: "2026-03-01",
+    effectiveEndAt: "2026-12-31",
+    status: "ACTIVE",
+    currentVersion: 3,
+    rowCount: 1280,
+    importColumns: ["customer_id", "id_no", "mobile", "risk_level", "risk_score", "risk_tag", "expire_at"],
+    outputFields: ["risk_level", "risk_score", "risk_tag", "expire_at"],
+    importFileName: "high-risk-customers-v3.xlsx",
+    indexBuildStatus: "READY",
+    activeAlias: "cc_list_data_6001_active",
+    updatedAt: now()
+  },
+  {
+    id: 6002,
+    name: "身份证白名单",
+    description: "用于开户场景白名单核验。",
+    ownerOrgId: "branch-south",
+    scope: "对公专区 / 南部分行",
+    effectiveStartAt: "2026-03-10",
+    effectiveEndAt: "2026-09-30",
+    status: "DRAFT",
+    currentVersion: 1,
+    rowCount: 320,
+    importColumns: ["id_no", "customer_id", "whitelist_flag", "effective_date", "remark"],
+    outputFields: ["whitelist_flag", "effective_date", "remark"],
+    importFileName: "id-whitelist.xlsx",
+    indexBuildStatus: "PENDING",
+    activeAlias: "cc_list_data_6002_active",
+    updatedAt: now()
+  },
+  {
+    id: 6003,
+    name: "存量授信观察名单",
+    description: "用于授信客户存量观察和风险跟踪。",
+    ownerOrgId: "head-office",
+    scope: "贷款专区 / 全机构",
+    effectiveStartAt: "2026-03-05",
+    effectiveEndAt: "2026-08-31",
+    status: "ACTIVE",
+    currentVersion: 2,
+    rowCount: 860,
+    importColumns: ["customer_id", "mobile", "control_level", "risk_reason", "owner_team"],
+    outputFields: ["control_level", "risk_reason", "owner_team"],
+    importFileName: "credit-watch-list-v2.xlsx",
+    indexBuildStatus: "READY",
+    activeAlias: "cc_list_data_6003_active",
+    updatedAt: now()
+  }
+];
+
+export const seedAuditLogs: PublishAuditLog[] = [
   {
     id: 9001,
     action: "PUBLISH",
     resourceType: "RULE",
     resourceId: 4001,
     resourceName: "贷款高风险强提示",
-    operator: "李主管",
+    operator: "person-li-manager",
     createdAt: now()
   },
   {
@@ -758,7 +864,7 @@ export const seedAuditLogs: GovernanceAuditLog[] = [
     resourceType: "JOB_SCENE",
     resourceId: 5001,
     resourceName: "贷款申请自动查数预填",
-    operator: "王经理",
+    operator: "person-wang-manager",
     createdAt: now()
   },
   {
@@ -767,7 +873,7 @@ export const seedAuditLogs: GovernanceAuditLog[] = [
     resourceType: "ROLE",
     resourceId: 7002,
     resourceName: "业务管理角色-华东",
-    operator: "业务超管",
+    operator: "person-business-super-admin",
     createdAt: now()
   },
   {
@@ -776,7 +882,7 @@ export const seedAuditLogs: GovernanceAuditLog[] = [
     resourceType: "MENU_SDK_POLICY",
     resourceId: 8201,
     resourceName: "贷款申请菜单 SDK 灰度策略",
-    operator: "业务经理-华东",
+    operator: "person-business-manager-east",
     createdAt: now()
   }
 ];
@@ -788,7 +894,7 @@ export const seedTriggerLogs: TriggerLogItem[] = [
     pageResourceName: "贷款申请主页面",
     triggerResult: "HIT",
     reason: "风险评分 >= 80",
-    operator: "张三",
+    operator: "person-zhang-san",
     createdAt: now()
   },
   {
@@ -797,7 +903,7 @@ export const seedTriggerLogs: TriggerLogItem[] = [
     pageResourceName: "开户办理主页面",
     triggerResult: "MISS",
     reason: "开户用途字段为空，不满足提醒条件",
-    operator: "李四",
+    operator: "person-li-si",
     createdAt: now()
   },
   {
@@ -806,7 +912,7 @@ export const seedTriggerLogs: TriggerLogItem[] = [
     pageResourceName: "开户办理主页面",
     triggerResult: "FAILED",
     reason: "接口超时：customer/profile/query",
-    operator: "王五",
+    operator: "person-wang-wu",
     createdAt: now()
   }
 ];
@@ -989,9 +1095,9 @@ export const seedRoles: RoleItem[] = [
 ];
 
 export const seedRoleMembers: Record<number, string[]> = {
-  7001: ["赵一", "钱二", "孙三"],
-  7002: ["周总", "吴主管"],
-  7003: ["平台支持A"]
+  7001: ["person-zhao-yi", "person-qian-er", "person-sun-san"],
+  7002: ["person-zhou-zong", "person-wu-zhuguan"],
+  7003: ["person-platform-support-a"]
 };
 
 export const seedDashboardOverview: DashboardOverview = {

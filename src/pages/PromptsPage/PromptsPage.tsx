@@ -18,17 +18,20 @@ export function PromptsPage() {
     if (!hasPresetPage) {
       return null;
     }
-    return `已从页面管理带入页面 ID：${pageResourceId}。`;
-  }, [hasPresetPage, pageResourceId]);
+    return {
+      message: "已从页面管理带入页面",
+      description: "新建规则时会默认选中当前页面；保存后可前往“发布与灰度”查看待发布内容。"
+    };
+  }, [hasPresetPage]);
 
   return (
     <div>
       <Typography.Title level={4}>智能提示</Typography.Title>
       <Typography.Paragraph type="secondary">
-        规则列表是主入口；模板复用仅作快捷来源。新建流程按「选页面 → 改内容 → 预览 → 保存」推进，复杂逻辑放到高级条件。
+        规则列表是主入口；模板复用仅作快捷来源。新建流程按「选页面 → 改内容 → 预览 → 保存」推进，保存后继续到“发布与灰度”完成上线。
       </Typography.Paragraph>
 
-      {tips ? <Alert type="info" showIcon message={tips} style={{ marginBottom: 12 }} /> : null}
+      {tips ? <Alert type="info" showIcon message={tips.message} description={tips.description} style={{ marginBottom: 12 }} /> : null}
 
       <Card>
         <Tabs

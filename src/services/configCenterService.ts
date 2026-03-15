@@ -5,6 +5,7 @@ import {
   seedExecutionLogs,
   seedInterfaces,
   seedJobScenes,
+  seedListDatas,
   seedMenuSdkPolicies,
   seedPageElements,
   seedPageFieldBindings,
@@ -23,17 +24,21 @@ import {
   seedSdkReleaseLanes,
   seedTriggerLogs
 } from "../mock/seeds";
+import { getOrgLabel } from "../orgOptions";
 import type {
+  ApiInputParam,
+  ApiOutputParam,
   BusinessFieldDefinition,
   DashboardOverview,
   ExecutionLogItem,
   FailureReasonMetric,
-  GovernanceAuditLog,
-  GovernancePendingItem,
-  GovernancePendingSummary,
+  PublishAuditLog,
+  PublishPendingItem,
+  PublishPendingSummary,
   InterfaceDefinition,
   JobSceneDefinition,
   JobScenePreviewField,
+  ListDataDefinition,
   MenuSdkPolicy,
   LifecycleState,
   PageElement,
@@ -44,14 +49,23 @@ import type {
   PageSite,
   PageActivationPolicy,
   PreprocessorDefinition,
+  PublishPendingResult,
+  PublishValidationReport,
   RoleItem,
   RuleDefinition,
+  SaveDraftResult,
   SdkArtifactVersion,
   SdkReleaseLane,
   TriggerLogItem,
   ValidationItem,
   ValidationReport
 } from "../types";
+import {
+  validateInterfaceDraftPayload,
+  validateListDataDraftPayload,
+  validateJobSceneDraftPayload,
+  validateRuleDraftPayload
+} from "../validation/formRules";
 
 type RuleCreatePayload = Omit<RuleDefinition, "id" | "currentVersion" | "updatedAt"> & {
   currentVersion?: number;
@@ -79,6 +93,7 @@ const store = {
   sdkReleaseLanes: structuredClone(seedSdkReleaseLanes),
   menuSdkPolicies: structuredClone(seedMenuSdkPolicies),
   pageActivationPolicies: structuredClone(seedPageActivationPolicies),
+  listDatas: structuredClone(seedListDatas),
   interfaces: structuredClone(seedInterfaces),
   preprocessors: structuredClone(seedPreprocessors),
   rules: structuredClone(seedRules),
@@ -108,6 +123,51 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
+function normalizeStringList(values: string[] | undefined) {
+  return Array.from(
+    new Set(
+      (values ?? [])
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function inferListPreviewFromFileName(fileName: string) {
+  const normalized = fileName.trim().toLowerCase();
+  const matched = store.listDatas.find((item) => item.importFileName.trim().toLowerCase() === normalized);
+  if (matched) {
+    return {
+      importColumns: clone(matched.importColumns),
+      rowCount: matched.rowCount
+    };
+  }
+
+  if (normalized.includes("risk") || normalized.includes("高风险")) {
+    return {
+      importColumns: ["customer_id", "id_no", "mobile", "risk_level", "risk_score", "risk_tag", "expire_at"],
+      rowCount: 1280
+    };
+  }
+  if (normalized.includes("white") || normalized.includes("白名单")) {
+    return {
+      importColumns: ["id_no", "customer_id", "whitelist_flag", "effective_date", "remark"],
+      rowCount: 320
+    };
+  }
+  if (normalized.includes("credit") || normalized.includes("授信") || normalized.includes("watch")) {
+    return {
+      importColumns: ["customer_id", "mobile", "control_level", "risk_reason", "owner_team"],
+      rowCount: 860
+    };
+  }
+
+  return {
+    importColumns: ["customer_id", "id_no", "mobile", "biz_code", "remark"],
+    rowCount: 100
+  };
+}
+
 function nextId(items: Array<{ id: number }>) {
   if (items.length === 0) {
     return 1;
@@ -116,7 +176,7 @@ function nextId(items: Array<{ id: number }>) {
 }
 
 function appendAuditLog(
-  action: GovernanceAuditLog["action"],
+  action: PublishAuditLog["action"],
   resourceType: string,
   resourceName: string,
   operator: string,
@@ -136,8 +196,8 @@ function appendAuditLog(
   ];
 }
 
-function recalcPendingSummary(): GovernancePendingSummary {
-  const next: GovernancePendingSummary = {
+function recalcPendingSummary(): PublishPendingSummary {
+  const next: PublishPendingSummary = {
     draftCount: store.pendingItems.filter((it) => it.pendingType === "DRAFT").length,
     expiringSoonCount: store.pendingItems.filter((it) => it.pendingType === "EXPIRING_SOON").length,
     validationFailedCount: store.pendingItems.filter((it) => it.pendingType === "VALIDATION_FAILED").length,
@@ -148,7 +208,7 @@ function recalcPendingSummary(): GovernancePendingSummary {
   return next;
 }
 
-function getResourceRecord(pending: GovernancePendingItem) {
+function getResourceRecord(pending: PublishPendingItem) {
   switch (pending.resourceType) {
     case "RULE":
       return store.rules.find((item) => item.id === pending.resourceId) ?? null;
@@ -158,6 +218,8 @@ function getResourceRecord(pending: GovernancePendingItem) {
       return store.pageResources.find((item) => item.id === pending.resourceId) ?? null;
     case "INTERFACE":
       return store.interfaces.find((item) => item.id === pending.resourceId) ?? null;
+    case "LIST_DATA":
+      return store.listDatas.find((item) => item.id === pending.resourceId) ?? null;
     case "PREPROCESSOR":
       return store.preprocessors.find((item) => item.id === pending.resourceId) ?? null;
     case "MENU_SDK_POLICY":
@@ -169,7 +231,7 @@ function getResourceRecord(pending: GovernancePendingItem) {
   }
 }
 
-function createValidationReport(pending: GovernancePendingItem): ValidationReport {
+function createValidationReport(pending: PublishPendingItem): ValidationReport {
   const resource = getResourceRecord(pending);
   if (!resource) {
     return {
@@ -177,9 +239,9 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
       items: [
         {
           key: "resource_exists",
-          label: "Resource exists",
+          label: "对象存在",
           passed: false,
-          detail: "Resource does not exist or has been deleted"
+          detail: "对象不存在或已被删除，请先刷新待发布列表。"
         }
       ]
     };
@@ -190,24 +252,24 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
   const ownerOrgId = "ownerOrgId" in resource ? String(resource.ownerOrgId ?? "") : pending.ownerOrgId;
   items.push({
     key: "owner",
-    label: "Owner org",
+    label: "归属机构",
     passed: ownerOrgId.trim().length > 0,
-    detail: ownerOrgId.trim().length > 0 ? ownerOrgId : "Owner org is missing"
+    detail: ownerOrgId.trim().length > 0 ? getOrgLabel(ownerOrgId) : "尚未配置归属机构"
   });
 
   const notExpired = resource.status !== "EXPIRED";
   items.push({
     key: "state",
-    label: "State valid",
+    label: "对象状态",
     passed: notExpired,
-    detail: notExpired ? `Current state: ${resource.status}` : "Resource is expired and cannot be published"
+    detail: notExpired ? "当前对象状态可继续发布" : "对象已过期，不能继续发布"
   });
 
   items.push({
     key: "time_range",
-    label: "Effective time range",
+    label: "生效时间",
     passed: true,
-    detail: "Mock environment always passes (real environment should validate on backend)"
+    detail: "当前原型默认通过，真实环境应以后端最终门禁为准"
   });
 
   if (pending.resourceType === "RULE") {
@@ -215,9 +277,9 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
     const hasSceneIfNeed = !rule.hasConfirmButton || Boolean(rule.sceneId);
     items.push({
       key: "rule_scene_binding",
-      label: "Confirm button scene binding",
+      label: "确认动作关联场景",
       passed: hasSceneIfNeed,
-      detail: hasSceneIfNeed ? "Pass" : "Confirm button is enabled but no job scene is bound"
+      detail: hasSceneIfNeed ? "已完成确认动作配置" : "开启确认按钮后还未绑定作业场景"
     });
 
     const conflict = store.rules.some(
@@ -231,9 +293,9 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
     );
     items.push({
       key: "rule_conflict",
-      label: "Same-page priority conflict",
+      label: "同页优先级冲突",
       passed: !conflict,
-      detail: conflict ? "Conflict found: same page already has an ACTIVE rule with same priority" : "No conflict"
+      detail: conflict ? "同一页面已存在相同优先级的生效规则" : "未发现同页优先级冲突"
     });
   }
 
@@ -242,9 +304,9 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
     const hasManualDuration = scene.manualDurationSec > 0;
     items.push({
       key: "manual_duration",
-      label: "Manual duration",
+      label: "人工基准时长",
       passed: hasManualDuration,
-      detail: hasManualDuration ? `${scene.manualDurationSec}s` : "Manual duration is missing"
+      detail: hasManualDuration ? `${scene.manualDurationSec} 秒` : "尚未配置人工基准时长"
     });
 
     const needsRiskConfirm =
@@ -252,9 +314,9 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
     const riskPass = !needsRiskConfirm || scene.riskConfirmed;
     items.push({
       key: "risk_confirm",
-      label: "Auto-execution risk confirmation",
+      label: "自动执行风险确认",
       passed: riskPass,
-      detail: riskPass ? "Pass" : "Auto-execution scene has not completed risk confirmation"
+      detail: riskPass ? "已满足自动执行风险要求" : "自动执行场景尚未完成风险确认"
     });
   }
 
@@ -263,17 +325,36 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
     const timeoutPass = api.timeoutMs > 0 && api.timeoutMs <= 5000;
     items.push({
       key: "timeout",
-      label: "Timeout",
+      label: "超时配置",
       passed: timeoutPass,
-      detail: timeoutPass ? `${api.timeoutMs} ms` : "Timeout is out of allowed range (1-5000ms)"
+      detail: timeoutPass ? `${api.timeoutMs} ms` : "超时需保持在 1 到 5000 ms 之间"
     });
 
     const retryPass = api.retryTimes >= 0 && api.retryTimes <= 3;
     items.push({
       key: "retry",
-      label: "Retry count",
+      label: "重试次数",
       passed: retryPass,
-      detail: retryPass ? `${api.retryTimes}` : "Retry count is out of allowed range (0-3)"
+      detail: retryPass ? `${api.retryTimes} 次` : "重试次数需保持在 0 到 3 次之间"
+    });
+  }
+
+  if (pending.resourceType === "LIST_DATA") {
+    const listData = resource as ListDataDefinition;
+    const indexPass = listData.indexBuildStatus === "READY";
+    items.push({
+      key: "index_ready",
+      label: "名单索引状态",
+      passed: indexPass,
+      detail: indexPass ? "名单索引已构建完成" : "名单索引尚未就绪，暂不可发布"
+    });
+
+    const outputPass = listData.outputFields.length > 0;
+    items.push({
+      key: "output_fields",
+      label: "输出字段",
+      passed: outputPass,
+      detail: outputPass ? `已配置 ${listData.outputFields.length} 个输出字段` : "尚未配置输出字段"
     });
   }
 
@@ -282,9 +363,9 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
     const controlledPass = processor.processorType === "BUILT_IN" || processor.status !== "ACTIVE";
     items.push({
       key: "processor_control",
-      label: "Script control",
+      label: "脚本发布控制",
       passed: controlledPass,
-      detail: controlledPass ? "Pass" : "Script preprocessors must go through controlled release and audit"
+      detail: controlledPass ? "当前发布控制满足要求" : "脚本型规则需先完成受控发布与审计确认"
     });
   }
 
@@ -293,25 +374,25 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
     const stableLanePass = store.sdkReleaseLanes.some((lane) => lane.id === policy.stableLaneId);
     items.push({
       key: "stable_lane",
-      label: "Stable lane binding",
+      label: "正式版本通道",
       passed: stableLanePass,
-      detail: stableLanePass ? "Pass" : "Stable lane is missing"
+      detail: stableLanePass ? "已绑定正式版本通道" : "尚未绑定正式版本通道"
     });
 
     const grayLanePass = policy.grayOrgIds.length === 0 || Boolean(policy.grayLaneId);
     items.push({
       key: "gray_lane",
-      label: "Gray lane binding",
+      label: "试点版本通道",
       passed: grayLanePass,
-      detail: grayLanePass ? "Pass" : "Gray organizations are configured but gray lane is missing"
+      detail: grayLanePass ? "试点发布配置完整" : "已选择试点机构，但还未配置试点版本通道"
     });
 
     const timePass = policy.effectiveStart <= policy.effectiveEnd;
     items.push({
       key: "effective_time",
-      label: "Effective time window",
+      label: "生效时间窗",
       passed: timePass,
-      detail: timePass ? `${policy.effectiveStart} ~ ${policy.effectiveEnd}` : "Effective time range is invalid"
+      detail: timePass ? `${policy.effectiveStart} ~ ${policy.effectiveEnd}` : "生效时间范围不合法"
     });
   }
 
@@ -320,25 +401,25 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
     const pagePass = store.pageResources.some((page) => page.id === policy.pageResourceId);
     items.push({
       key: "page_binding",
-      label: "Page binding",
+      label: "页面绑定",
       passed: pagePass,
-      detail: pagePass ? "Pass" : "Page resource is missing"
+      detail: pagePass ? "已绑定页面" : "页面资源不存在"
     });
 
     const promptPass = !policy.enabled || policy.promptRuleSetName.trim().length > 0;
     items.push({
       key: "prompt_ruleset",
-      label: "Prompt ruleset",
+      label: "提示规则配置",
       passed: promptPass,
-      detail: promptPass ? policy.promptRuleSetName || "Disabled page" : "Enabled page must bind prompt ruleset"
+      detail: promptPass ? policy.promptRuleSetName || "页面未启用提示能力" : "页面启用后必须绑定提示规则"
     });
 
     const preloadPass = !policy.hasJobScenes || policy.jobPreloadPolicy !== "none";
     items.push({
       key: "job_preload_policy",
-      label: "Job preload policy",
+      label: "作业预热策略",
       passed: preloadPass,
-      detail: preloadPass ? policy.jobPreloadPolicy : "Pages with job scenes should not use none in current baseline"
+      detail: preloadPass ? policy.jobPreloadPolicy : "已开通作业能力的页面需要补充作业预热策略"
     });
   }
 
@@ -346,13 +427,41 @@ function createValidationReport(pending: GovernancePendingItem): ValidationRepor
   return { pass, items };
 }
 
+function buildPublishRiskItems(pending: PublishPendingItem, report: ValidationReport) {
+  const riskItems = new Set<string>();
+
+  if (pending.pendingType === "RISK_CONFIRM") {
+    riskItems.add("当前对象仍待完成风险确认，本次不会正式生效。");
+  }
+  if (report.items.some((item) => item.key === "risk_confirm" && !item.passed)) {
+    riskItems.add("自动执行场景尚未完成风险确认，请先补齐责任确认。");
+  }
+  if (report.items.some((item) => item.key === "rule_conflict" && !item.passed)) {
+    riskItems.add("当前规则与同页已生效规则存在优先级冲突，请先确认覆盖策略。");
+  }
+
+  return Array.from(riskItems);
+}
+
+function toPublishValidationReport(pending: PublishPendingItem, report: ValidationReport): PublishValidationReport {
+  const blockingCount = report.items.filter((item) => !item.passed).length;
+  const warningCount = 0;
+  return {
+    ...report,
+    blockingCount,
+    warningCount,
+    impactSummary: `${pending.resourceName} 预计影响机构：${getOrgLabel(pending.ownerOrgId)}`,
+    riskItems: buildPublishRiskItems(pending, report)
+  };
+}
+
 function touchPendingForResource(
-  resourceType: GovernancePendingItem["resourceType"],
+  resourceType: PublishPendingItem["resourceType"],
   resourceId: number,
   status: LifecycleState,
   ownerOrgId: string,
   resourceName: string,
-  pendingType: GovernancePendingItem["pendingType"] = "DRAFT"
+  pendingType: PublishPendingItem["pendingType"] = "DRAFT"
 ) {
   const existing = store.pendingItems.find(
     (item) => item.resourceType === resourceType && item.resourceId === resourceId
@@ -477,6 +586,90 @@ export const configCenterService = {
       next.ownerOrgId,
       `页面启用策略-${next.pageResourceId}`
     );
+    return clone(next);
+  },
+
+  async listListDatas(): Promise<ListDataDefinition[]> {
+    await sleep(140);
+    return clone(store.listDatas);
+  },
+
+  async previewListDataImport(fileName: string): Promise<{ importColumns: string[]; rowCount: number }> {
+    await sleep(120);
+    return inferListPreviewFromFileName(fileName);
+  },
+
+  async upsertListData(payload: Omit<ListDataDefinition, "updatedAt"> & { updatedAt?: string }): Promise<ListDataDefinition> {
+    await sleep(170);
+    const exists = store.listDatas.find((item) => item.id === payload.id);
+    const importColumns = normalizeStringList(payload.importColumns ?? exists?.importColumns ?? []);
+    const outputFields = normalizeStringList(payload.outputFields ?? exists?.outputFields ?? []);
+    const next: ListDataDefinition = {
+      ...payload,
+      importColumns,
+      outputFields,
+      indexBuildStatus: payload.indexBuildStatus ?? exists?.indexBuildStatus ?? "PENDING",
+      activeAlias: payload.activeAlias ?? exists?.activeAlias ?? `cc_list_data_${payload.id}_active`,
+      updatedAt: payload.updatedAt ?? nowIso()
+    };
+    store.listDatas = exists
+      ? store.listDatas.map((item) => (item.id === next.id ? next : item))
+      : [next, ...store.listDatas];
+    return clone(next);
+  },
+
+  async saveListDataDraft(
+    payload: Omit<ListDataDefinition, "updatedAt"> & { updatedAt?: string }
+  ): Promise<SaveDraftResult<ListDataDefinition>> {
+    await sleep(120);
+    const report = validateListDataDraftPayload(payload, store.listDatas);
+    if (!report.canSaveDraft) {
+      return { success: false, report };
+    }
+    const data = await configCenterService.upsertListData(payload);
+    return { success: true, data, report };
+  },
+
+  async updateListDataStatus(id: number, status: LifecycleState): Promise<void> {
+    await sleep(120);
+    store.listDatas = updateStatus(store.listDatas, id, status);
+  },
+
+  async buildListDataIndex(id: number): Promise<ListDataDefinition> {
+    const current = store.listDatas.find((item) => item.id === id);
+    if (!current) {
+      throw new Error("名单不存在");
+    }
+    store.listDatas = store.listDatas.map((item) =>
+      item.id === id ? { ...item, indexBuildStatus: "BUILDING", updatedAt: nowIso() } : item
+    );
+    await sleep(320);
+    const next = store.listDatas.find((item) => item.id === id);
+    if (!next) {
+      throw new Error("名单不存在");
+    }
+    const ready: ListDataDefinition = {
+      ...next,
+      indexBuildStatus: "READY",
+      activeAlias: next.activeAlias || `cc_list_data_${id}_active`,
+      updatedAt: nowIso()
+    };
+    store.listDatas = store.listDatas.map((item) => (item.id === id ? ready : item));
+    return clone(ready);
+  },
+
+  async updateRuleListLookupConditions(ruleId: number, conditions: RuleDefinition["listLookupConditions"]): Promise<RuleDefinition> {
+    await sleep(140);
+    const current = store.rules.find((item) => item.id === ruleId);
+    if (!current) {
+      throw new Error("规则不存在");
+    }
+    const next: RuleDefinition = {
+      ...current,
+      listLookupConditions: clone(conditions ?? []),
+      updatedAt: nowIso()
+    };
+    store.rules = store.rules.map((item) => (item.id === ruleId ? next : item));
     return clone(next);
   },
 
@@ -636,6 +829,19 @@ export const configCenterService = {
     return clone(next);
   },
 
+  async saveInterfaceDraft(
+    payload: Omit<InterfaceDefinition, "updatedAt"> & { updatedAt?: string },
+    options: { inputConfig: Record<string, ApiInputParam[]>; outputConfig: ApiOutputParam[] }
+  ): Promise<SaveDraftResult<InterfaceDefinition>> {
+    await sleep(120);
+    const report = validateInterfaceDraftPayload(payload, options.inputConfig, options.outputConfig, store.interfaces);
+    if (!report.canSaveDraft) {
+      return { success: false, report };
+    }
+    const data = await configCenterService.upsertInterface(payload);
+    return { success: true, data, report };
+  },
+
   async updateInterfaceStatus(id: number, status: LifecycleState): Promise<void> {
     await sleep(120);
     store.interfaces = updateStatus(store.interfaces, id, status);
@@ -712,6 +918,7 @@ export const configCenterService = {
     }
     const created: RuleDefinition = {
       ...payload,
+      listLookupConditions: clone(payload.listLookupConditions ?? []),
       id: nextId(store.rules),
       currentVersion: payload.currentVersion ?? 1,
       updatedAt: nowIso()
@@ -735,6 +942,7 @@ export const configCenterService = {
     const exists = store.rules.find((item) => item.id === payload.id);
     const next: RuleDefinition = {
       ...payload,
+      listLookupConditions: clone(payload.listLookupConditions ?? exists?.listLookupConditions ?? []),
       updatedAt: payload.updatedAt ?? nowIso()
     };
 
@@ -761,6 +969,15 @@ export const configCenterService = {
 
     return clone(next);
   },
+  async saveRuleDraft(payload: RuleUpsertPayload): Promise<SaveDraftResult<RuleDefinition>> {
+    await sleep(120);
+    const report = validateRuleDraftPayload(payload, store.rules);
+    if (!report.canSaveDraft) {
+      return { success: false, report };
+    }
+    const data = await configCenterService.upsertRule(payload);
+    return { success: true, data, report };
+  },
   async updateRuleStatus(id: number, status: LifecycleState): Promise<void> {
     await sleep(120);
     store.rules = updateStatus(store.rules, id, status);
@@ -777,7 +994,9 @@ export const configCenterService = {
       ruleId,
       previewOnly: true,
       matched: Boolean(rule),
-      detail: rule ? `Rule ${rule.name} parsed successfully; hit chain is executable.` : "Rule does not exist; preview unavailable."
+      detail: rule
+        ? `Rule ${rule.name} parsed successfully；普通条件 ${rule.id ? "已加载" : "未加载"}，可在高级条件中配置 API 字段、名单字段等来源。`
+        : "Rule does not exist; preview unavailable."
     };
   },
 
@@ -818,6 +1037,18 @@ export const configCenterService = {
     return clone(next);
   },
 
+  async saveJobSceneDraft(
+    payload: Omit<JobSceneDefinition, "updatedAt"> & { updatedAt?: string }
+  ): Promise<SaveDraftResult<JobSceneDefinition>> {
+    await sleep(120);
+    const report = validateJobSceneDraftPayload(payload, store.scenes);
+    if (!report.canSaveDraft) {
+      return { success: false, report };
+    }
+    const data = await configCenterService.upsertJobScene(payload);
+    return { success: true, data, report };
+  },
+
   async updateJobSceneStatus(id: number, status: LifecycleState): Promise<void> {
     await sleep(120);
     store.scenes = updateStatus(store.scenes, id, status);
@@ -835,7 +1066,7 @@ export const configCenterService = {
 
     const row = store.scenes.find((item) => item.id === id);
     if (row) {
-      appendAuditLog("RISK_CONFIRM", "JOB_SCENE", row.name, "Business Manager", row.id);
+      appendAuditLog("RISK_CONFIRM", "JOB_SCENE", row.name, "person-business-manager", row.id);
       store.pendingItems = store.pendingItems.filter(
         (item) => !(item.resourceType === "JOB_SCENE" && item.resourceId === id && item.pendingType === "RISK_CONFIRM")
       );
@@ -908,17 +1139,17 @@ export const configCenterService = {
     };
   },
 
-  async getPendingSummary(): Promise<GovernancePendingSummary> {
+  async getPendingSummary(): Promise<PublishPendingSummary> {
     await sleep(100);
     return clone(recalcPendingSummary());
   },
 
-  async listPendingItems(): Promise<GovernancePendingItem[]> {
+  async listPendingItems(): Promise<PublishPendingItem[]> {
     await sleep(140);
     return clone([...store.pendingItems].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)));
   },
 
-  async validatePendingItem(pendingId: number, operator = "Business Manager"): Promise<ValidationReport> {
+  async validatePendingItem(pendingId: number, operator = "person-business-manager"): Promise<ValidationReport> {
     await sleep(120);
     const pending = store.pendingItems.find((item) => item.id === pendingId);
     if (!pending) {
@@ -935,7 +1166,16 @@ export const configCenterService = {
     return report;
   },
 
-  async publishPendingItem(pendingId: number, operator = "Business Manager"): Promise<void> {
+  async getPendingValidationReport(pendingId: number): Promise<PublishValidationReport> {
+    await sleep(80);
+    const pending = store.pendingItems.find((item) => item.id === pendingId);
+    if (!pending) {
+      throw new Error("Pending item not found");
+    }
+    return clone(toPublishValidationReport(pending, createValidationReport(pending)));
+  },
+
+  async publishPendingItem(pendingId: number, operator = "person-business-manager"): Promise<PublishPendingResult> {
     await sleep(180);
     const pending = store.pendingItems.find((item) => item.id === pendingId);
     if (!pending) {
@@ -948,7 +1188,10 @@ export const configCenterService = {
         item.id === pendingId ? { ...item, pendingType: "VALIDATION_FAILED", updatedAt: nowIso() } : item
       );
       recalcPendingSummary();
-      throw new Error("Pre-publish validation failed. Please fix blocking items first.");
+      return {
+        success: false,
+        report: toPublishValidationReport(pending, report)
+      };
     }
 
     const activate = <T extends { id: number; status: LifecycleState; updatedAt: string }>(items: T[]) =>
@@ -964,6 +1207,8 @@ export const configCenterService = {
       store.pageResources = activate(store.pageResources);
     } else if (pending.resourceType === "INTERFACE") {
       store.interfaces = activate(store.interfaces);
+    } else if (pending.resourceType === "LIST_DATA") {
+      store.listDatas = activate(store.listDatas);
     } else if (pending.resourceType === "PREPROCESSOR") {
       store.preprocessors = activate(store.preprocessors);
     } else if (pending.resourceType === "MENU_SDK_POLICY") {
@@ -975,9 +1220,13 @@ export const configCenterService = {
     store.pendingItems = store.pendingItems.filter((item) => item.id !== pendingId);
     recalcPendingSummary();
     appendAuditLog("PUBLISH", pending.resourceType, pending.resourceName, operator, pending.resourceId);
+    return {
+      success: true,
+      report: toPublishValidationReport(pending, report)
+    };
   },
 
-  async deferPendingItem(pendingId: number, operator = "Business Manager"): Promise<void> {
+  async deferPendingItem(pendingId: number, operator = "person-business-manager"): Promise<void> {
     await sleep(120);
     const pending = store.pendingItems.find((item) => item.id === pendingId);
     if (!pending) {
@@ -990,7 +1239,7 @@ export const configCenterService = {
     appendAuditLog("DEFER", pending.resourceType, pending.resourceName, operator, pending.resourceId);
   },
 
-  async resolvePendingItem(pendingId: number, operator = "Business Manager"): Promise<void> {
+  async resolvePendingItem(pendingId: number, operator = "person-business-manager"): Promise<void> {
     await sleep(120);
     const pending = store.pendingItems.find((item) => item.id === pendingId);
     if (!pending) {
@@ -1001,12 +1250,12 @@ export const configCenterService = {
     appendAuditLog("RESOLVE", pending.resourceType, pending.resourceName, operator, pending.resourceId);
   },
 
-  async rollbackResource(resourceType: string, resourceId: number, operator = "Business Manager"): Promise<void> {
+  async rollbackResource(resourceType: string, resourceId: number, operator = "person-business-manager"): Promise<void> {
     await sleep(160);
 
     const rollback = <T extends { id: number; status: LifecycleState; updatedAt: string }>(
       items: T[],
-      type: GovernancePendingItem["resourceType"],
+      type: PublishPendingItem["resourceType"],
       ownerOrgId: string,
       getName: (item: T) => string
     ) => {
@@ -1095,7 +1344,7 @@ export const configCenterService = {
     }
   },
 
-  async listAuditLogs(): Promise<GovernanceAuditLog[]> {
+  async listAuditLogs(): Promise<PublishAuditLog[]> {
     await sleep(140);
     return clone(store.auditLogs);
   },
@@ -1149,7 +1398,7 @@ export const configCenterService = {
       updatedAt: payload.updatedAt ?? nowIso()
     };
     store.roles = exists ? store.roles.map((item) => (item.id === next.id ? next : item)) : [next, ...store.roles];
-    appendAuditLog("ROLE_UPDATE", "ROLE", next.name, "Business Admin", next.id);
+    appendAuditLog("ROLE_UPDATE", "ROLE", next.name, "person-business-admin", next.id);
     return clone(next);
   },
 
@@ -1168,7 +1417,7 @@ export const configCenterService = {
     };
     store.roles = [cloned, ...store.roles];
     store.roleMembers[cloned.id] = [];
-    appendAuditLog("ROLE_UPDATE", "ROLE", cloned.name, "Business Admin", cloned.id);
+    appendAuditLog("ROLE_UPDATE", "ROLE", cloned.name, "person-business-admin", cloned.id);
     return clone(cloned);
   },
 
@@ -1201,7 +1450,7 @@ export const configCenterService = {
 
     const role = store.roles.find((item) => item.id === roleId);
     if (role) {
-      appendAuditLog("ROLE_UPDATE", "ROLE", role.name, "Business Admin", role.id);
+      appendAuditLog("ROLE_UPDATE", "ROLE", role.name, "person-business-admin", role.id);
     }
   }
 };

@@ -9,9 +9,12 @@ export type ExecutionMode =
   | "FLOATING_BUTTON";
 
 export type RuleLogicType = "AND" | "OR";
-export type RuleOperandSourceType = "PAGE_FIELD" | "INTERFACE_FIELD" | "CONST" | "CONTEXT";
+export type RuleOperandSourceType = "PAGE_FIELD" | "INTERFACE_FIELD" | "LIST_LOOKUP_FIELD" | "CONST" | "CONTEXT";
+export type RuleLookupSourceType = Exclude<RuleOperandSourceType, "LIST_LOOKUP_FIELD">;
 export type RuleOperator = "EQ" | "NE" | "GT" | "GE" | "LT" | "LE" | "CONTAINS" | "NOT_CONTAINS" | "IN" | "EXISTS";
 export type RuleOperandValueType = "STRING" | "NUMBER" | "BOOLEAN" | "OBJECT" | "ARRAY";
+export type ListDataBuildStatus = "PENDING" | "BUILDING" | "READY" | "FAILED";
+export type ListLookupJudgement = "MATCHED" | "NOT_MATCHED";
 
 export interface PageSite {
   id: number;
@@ -131,6 +134,35 @@ export interface InterfaceDefinition {
   updatedAt: string;
 }
 
+export interface ListDataDefinition {
+  id: number;
+  name: string;
+  description: string;
+  ownerOrgId: string;
+  scope: string;
+  effectiveStartAt: string;
+  effectiveEndAt: string;
+  status: LifecycleState;
+  currentVersion: number;
+  rowCount: number;
+  importColumns: string[];
+  outputFields: string[];
+  importFileName: string;
+  indexBuildStatus: ListDataBuildStatus;
+  activeAlias: string;
+  updatedAt: string;
+}
+
+export interface RuleListLookupCondition {
+  id: string;
+  sourceType: RuleOperandSourceType;
+  sourceValue: string;
+  listDataId?: number;
+  listDataName?: string;
+  matchColumn: string;
+  judgement: ListLookupJudgement;
+}
+
 export interface PreprocessorDefinition {
   id: number;
   name: string;
@@ -162,6 +194,7 @@ export interface RuleDefinition {
   status: LifecycleState;
   currentVersion: number;
   ownerOrgId: string;
+  listLookupConditions?: RuleListLookupCondition[];
   updatedAt: string;
 }
 
@@ -177,6 +210,19 @@ export interface RuleOperand {
     interfaceName?: string;
     outputPath?: string;
     inputConfig?: string;
+  };
+  listBinding?: {
+    listDataId?: number;
+    listDataName?: string;
+    matchColumn?: string;
+    lookupSourceType?: RuleLookupSourceType;
+    lookupSourceValue?: string;
+    matchers?: Array<{
+      matchColumn: string;
+      sourceType: RuleLookupSourceType;
+      sourceValue: string;
+    }>;
+    resultField?: string;
   };
   preprocessorConfigs?: Array<{
     preprocessorId: number;
@@ -224,7 +270,7 @@ export interface RulePreviewResult {
   traces: RulePreviewTrace[];
 }
 
-export type JobNodeType = "page_get" | "api_call" | "js_script" | "page_set";
+export type JobNodeType = "page_get" | "api_call" | "list_lookup" | "js_script" | "page_set";
 
 export interface JobSceneDefinition {
   id: number;
@@ -339,7 +385,7 @@ export interface PageActivationPolicy {
   updatedAt: string;
 }
 
-export interface GovernancePendingSummary {
+export interface PublishPendingSummary {
   draftCount: number;
   expiringSoonCount: number;
   validationFailedCount: number;
@@ -347,13 +393,14 @@ export interface GovernancePendingSummary {
   riskConfirmPendingCount: number;
 }
 
-export interface GovernancePendingItem {
+export interface PublishPendingItem {
   id: number;
   resourceType:
     | "PAGE_RESOURCE"
     | "RULE"
     | "JOB_SCENE"
     | "INTERFACE"
+    | "LIST_DATA"
     | "PREPROCESSOR"
     | "MENU_SDK_POLICY"
     | "PAGE_ACTIVATION_POLICY";
@@ -365,7 +412,7 @@ export interface GovernancePendingItem {
   updatedAt: string;
 }
 
-export interface GovernanceAuditLog {
+export interface PublishAuditLog {
   id: number;
   action: "PUBLISH" | "DISABLE" | "ROLLBACK" | "RISK_CONFIRM" | "ROLE_UPDATE" | "DEFER" | "VALIDATE" | "RESOLVE";
   resourceType: string;
@@ -385,6 +432,72 @@ export interface ValidationItem {
 export interface ValidationReport {
   pass: boolean;
   items: ValidationItem[];
+}
+
+export type ValidationLevel = "blocking" | "warning";
+
+export interface FieldValidationIssue {
+  kind: "field";
+  key: string;
+  level: ValidationLevel;
+  section: string;
+  field: string;
+  label: string;
+  message: string;
+  action?: string;
+}
+
+export interface SectionValidationIssue {
+  kind: "section";
+  key: string;
+  level: ValidationLevel;
+  section: string;
+  title: string;
+  message: string;
+  action?: string;
+}
+
+export interface ObjectValidationIssue {
+  kind: "object";
+  key: string;
+  level: ValidationLevel;
+  section: string;
+  objectType: string;
+  title: string;
+  message: string;
+  objectName?: string;
+  action?: string;
+}
+
+export type ValidationIssue = FieldValidationIssue | SectionValidationIssue | ObjectValidationIssue;
+
+export interface SaveValidationReport {
+  ok: boolean;
+  canSaveDraft: boolean;
+  summary: string;
+  fieldIssues: FieldValidationIssue[];
+  sectionIssues: SectionValidationIssue[];
+  objectIssues: ObjectValidationIssue[];
+  blockingCount: number;
+  warningCount: number;
+}
+
+export interface PublishValidationReport extends ValidationReport {
+  blockingCount: number;
+  warningCount: number;
+  impactSummary?: string;
+  riskItems?: string[];
+}
+
+export interface SaveDraftResult<T> {
+  success: boolean;
+  data?: T;
+  report: SaveValidationReport;
+}
+
+export interface PublishPendingResult {
+  success: boolean;
+  report: PublishValidationReport;
 }
 
 export interface TriggerLogItem {

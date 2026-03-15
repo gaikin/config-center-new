@@ -114,8 +114,50 @@ function resolveOperand(operand: RuleOperand | undefined, input: RulePreviewInpu
       fallback[operand.key] ??
       fallback[byBindingPath] ??
       "";
+  } else if (operand.sourceType === "LIST_LOOKUP_FIELD") {
+    const binding = operand.listBinding;
+    const resultField = binding?.resultField?.trim() || operand.key;
+    const matchers =
+      binding?.matchers && binding.matchers.length > 0
+        ? binding.matchers
+        : binding?.matchColumn
+          ? [
+              {
+                matchColumn: binding.matchColumn,
+                sourceType: binding.lookupSourceType ?? "PAGE_FIELD",
+                sourceValue: binding.lookupSourceValue ?? ""
+              }
+            ]
+          : [];
+    const matched = matchers.length > 0 && matchers.every((item) => resolveLookupMatcherValue(item.sourceType, item.sourceValue, input).trim());
+    const fallbackByField: Record<string, string> = {
+      risk_level: "HIGH",
+      risk_score: "92",
+      risk_tag: "WATCH",
+      control_level: "A",
+      customer_level: "S",
+      expire_at: "2026-12-31"
+    };
+    raw = matched ? input.interfaceFields[resultField] ?? fallbackByField[resultField] ?? `${binding?.listDataName ?? "名单"}:${resultField}` : "";
   }
   return preprocessValue(raw, preprocessorIds);
+}
+
+function resolveLookupMatcherValue(
+  sourceType: NonNullable<NonNullable<RuleOperand["listBinding"]>["lookupSourceType"]>,
+  sourceValue: string,
+  input: RulePreviewInput
+) {
+  if (sourceType === "CONST") {
+    return sourceValue;
+  }
+  if (sourceType === "PAGE_FIELD") {
+    return input.pageFields[sourceValue] ?? "";
+  }
+  if (sourceType === "CONTEXT") {
+    return input.context[sourceValue] ?? "";
+  }
+  return input.interfaceFields[sourceValue] ?? input.interfaceFields[deriveInterfaceFieldKey(sourceValue)] ?? "";
 }
 
 function compareValues(operator: RuleOperator, left: string, right: string): boolean {

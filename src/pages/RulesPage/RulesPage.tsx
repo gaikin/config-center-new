@@ -1,10 +1,15 @@
-import { Alert, Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Steps, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, Button, Card, Collapse, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Steps, Table, Tag, Tooltip, Typography } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { OrgSelect } from "../../components/DirectoryFields";
+import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
+import { ValidationReportPanel } from "../../components/ValidationReportPanel";
 import { lifecycleLabelMap, lifecycleOptions, promptModeLabelMap } from "../../enumLabels";
+import { getOrgLabel } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
 import { RulesPageMode, useRulesPageModel } from "./useRulesPageModel";
-import { InterfaceInputParamDraft, LOGIC_OPERATOR_WIDTH, deriveMachineKeyFromOutputPath, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, operatorOptions, sourceOptions, statusColor, valueTypeOptions } from "./rulesPageShared";
+import { buildDefaultListLookupMatcher, InterfaceInputParamDraft, ListLookupMatcherDraft, LOGIC_OPERATOR_WIDTH, deriveMachineKeyFromOutputPath, normalizeLookupSourceType, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, listLookupSourceOptions, operatorOptions, sourceOptions, statusColor, valueTypeOptions } from "./rulesPageShared";
 import { OperandPill, InterfaceInputValueEditor } from "./rulesOperandRenderers";
 import type { RuleDefinition, RuleLogicType, RuleOperandValueType } from "../../types";
 
@@ -16,6 +21,82 @@ type RulesPageProps = {
   initialSceneId?: number;
   autoOpenCreate?: boolean;
 };
+
+function CompactHint({
+  tone = "warning",
+  title,
+  description,
+  extra
+}: {
+  tone?: "warning" | "success" | "info";
+  title: string;
+  description?: string;
+  extra?: React.ReactNode;
+}) {
+  const palette =
+    tone === "success"
+      ? {
+          border: "#B7E0C0",
+          background: "#F6FFED",
+          text: "#237804"
+        }
+      : tone === "info"
+        ? {
+            border: "#91CAFF",
+            background: "#EFF8FF",
+            text: "#175CD3"
+          }
+        : {
+            border: "#FEC84B",
+            background: "#FFFAEB",
+            text: "#B54708"
+          };
+
+  return (
+    <div
+      style={{
+        border: `1px solid ${palette.border}`,
+        background: palette.background,
+        borderRadius: 8,
+        padding: "8px 10px"
+      }}
+    >
+      <Space size={[8, 4]} wrap style={{ width: "100%", justifyContent: "space-between" }}>
+        <Space size={[8, 4]} wrap>
+          <Tag color={tone === "success" ? "success" : tone === "info" ? "processing" : "warning"} style={{ marginInlineEnd: 0 }}>
+            {tone === "success" ? "已配置" : tone === "info" ? "说明" : "提醒"}
+          </Tag>
+          <Typography.Text style={{ color: palette.text }}>{title}</Typography.Text>
+          {description ? <Typography.Text type="secondary">{description}</Typography.Text> : null}
+        </Space>
+        {extra}
+      </Space>
+    </div>
+  );
+}
+
+function PanelField({
+  label,
+  children
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <Typography.Text type="secondary">{label}</Typography.Text>
+      <div style={{ marginTop: 6 }}>{children}</div>
+    </div>
+  );
+}
+
+function PanelGrid({
+  children
+}: {
+  children: React.ReactNode;
+}) {
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>{children}</div>;
+}
 
 export function RulesPage({
   mode = "PAGE_RULE",
@@ -35,6 +116,7 @@ export function RulesPage({
     scenes,
     preprocessors,
     interfaces,
+    listDatas,
     open,
     editing,
     ruleForm,
@@ -68,13 +150,21 @@ export function RulesPage({
     selectedInterfaceInputConfig,
     updateInterfaceInputValue,
     updateCondition,
-    updateSelectedOperand
+    updateSelectedOperand,
+    saveValidationReport,
+    logicValidationIssues,
+    selectedOperandIssues,
+    hasSelectedOperandDirtyConfig,
+    wizardStepIssues,
+    publishNotice,
+    dismissPublishNotice
   } = useRulesPageModel(mode, { initialPageResourceId, initialTemplateRuleId, initialSceneId, autoOpenCreate });
+  const navigate = useNavigate();
   const isTemplateMode = mode === "TEMPLATE";
   const pageTitle = isTemplateMode ? "模板复用" : "智能提示";
   const pageDescription = isTemplateMode
     ? "沉淀高复用规则模板。模板仅引用公共字段，供业务人员在新建页面规则时快速套用。"
-    : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。";
+    : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。保存后可继续去“发布与灰度”完成上线。";
   const createButtonLabel = isTemplateMode ? "新建模板" : "新建规则";
   const modalTitle = editing ? (isTemplateMode ? "编辑规则模板" : "编辑规则") : isTemplateMode ? "新建规则模板" : "新建规则";
   const modalAlert = isTemplateMode
@@ -89,6 +179,51 @@ export function RulesPage({
   const [wizardStep, setWizardStep] = useState(0);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState<{ matched: boolean; detail: string } | null>(null);
+  const selectedListData = useMemo(() => {
+    if (selectedContext?.operand.sourceType !== "LIST_LOOKUP_FIELD") {
+      return null;
+    }
+    return listDatas.find((item) => item.id === selectedContext.operand.listDataId) ?? null;
+  }, [listDatas, selectedContext]);
+  const selectedListOutputOptions = useMemo(
+    () => selectedListData?.outputFields.map((item) => ({ label: item, value: item })) ?? [],
+    [selectedListData]
+  );
+
+  function updateListMatchers(
+    updater:
+      | ListLookupMatcherDraft[]
+      | ((previous: ListLookupMatcherDraft[]) => ListLookupMatcherDraft[])
+  ) {
+    if (!selectedContext || selectedContext.operand.sourceType !== "LIST_LOOKUP_FIELD") {
+      return;
+    }
+    const currentMatchers = selectedContext.operand.listMatchers;
+    const nextMatchers = typeof updater === "function" ? updater(currentMatchers) : updater;
+    updateSelectedOperand({ listMatchers: nextMatchers });
+  }
+
+  function addListMatcher() {
+    updateListMatchers((previous) => [...previous, buildDefaultListLookupMatcher()]);
+  }
+
+  function updateListMatcher(
+    matcherId: string,
+    patch: Partial<ListLookupMatcherDraft>
+  ) {
+    updateListMatchers((previous) =>
+      previous.map((item) => (item.id === matcherId ? { ...item, ...patch } : item))
+    );
+  }
+
+  function removeListMatcher(matcherId: string) {
+    updateListMatchers((previous) => {
+      if (previous.length <= 1) {
+        return [buildDefaultListLookupMatcher()];
+      }
+      return previous.filter((item) => item.id !== matcherId);
+    });
+  }
 
   useEffect(() => {
     if (!open) {
@@ -102,13 +237,17 @@ export function RulesPage({
     if (isTemplateMode) {
       return [];
     }
-    return [{ title: "选页面" }, { title: "改内容" }, { title: "预览" }, { title: "保存" }];
-  }, [isTemplateMode]);
+    return [
+      { title: wizardStepIssues[0] > 0 ? `选页面 (${wizardStepIssues[0]})` : "选页面" },
+      { title: wizardStepIssues[1] > 0 ? `改内容 (${wizardStepIssues[1]})` : "改内容" },
+      { title: wizardStepIssues[2] > 0 ? `预览 (${wizardStepIssues[2]})` : "预览" },
+      { title: wizardStepIssues[3] > 0 ? `保存 (${wizardStepIssues[3]})` : "保存" }
+    ];
+  }, [isTemplateMode, wizardStepIssues]);
 
   async function runWizardPreview() {
     const values = await ruleForm.validateFields([
       "name",
-      "ruleSetCode",
       "priority",
       "promptMode",
       "closeMode",
@@ -147,7 +286,6 @@ export function RulesPage({
     if (wizardStep === 1) {
       await ruleForm.validateFields([
         "name",
-        "ruleSetCode",
         "priority",
         "promptMode",
         "closeMode",
@@ -177,6 +315,16 @@ export function RulesPage({
         </>
       ) : null}
 
+      {publishNotice ? (
+        <PublishContinuationAlert
+          objectLabel={publishNotice.objectLabel}
+          objectName={publishNotice.objectName}
+          warningCount={publishNotice.warningCount}
+          onGoPublish={() => navigate("/publish")}
+          onClose={dismissPublishNotice}
+        />
+      ) : null}
+
       <Card
         extra={
           <Tooltip title={createButtonLabel}>
@@ -191,7 +339,6 @@ export function RulesPage({
           pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 10, 20] }}
           columns={[
             { title: isTemplateMode ? "模板名称" : "规则名称", dataIndex: "name", width: 200 },
-            { title: "规则集编码", dataIndex: "ruleSetCode", width: 180 },
             ...(isTemplateMode
               ? [
                   {
@@ -302,6 +449,22 @@ export function RulesPage({
 
           {!isTemplateMode ? <Steps current={wizardStep} size="small" items={stepItems} style={{ marginBottom: 12 }} /> : null}
 
+          {!isTemplateMode && wizardStep === 0 ? (
+            <ValidationReportPanel
+              report={saveValidationReport}
+              sections={["page"]}
+              title="当前步骤还有待处理问题"
+            />
+          ) : null}
+
+          {!isTemplateMode && wizardStep === 1 ? (
+            <ValidationReportPanel
+              report={saveValidationReport}
+              sections={["basic"]}
+              title="基础配置还有待处理问题"
+            />
+          ) : null}
+
           {isTemplateMode || wizardStep === 0 ? (
             !editing && !isTemplateMode ? (
               <>
@@ -323,7 +486,7 @@ export function RulesPage({
                     placeholder={templates.length > 0 ? "可选：套用已沉淀模板" : "暂无可复用模板"}
                     optionFilterProp="label"
                     options={templates.map((item) => ({
-                      label: `${item.name}（${item.ruleSetCode}）`,
+                      label: item.name,
                       value: item.id
                     }))}
                     onChange={(value) => applyTemplate(value as number | undefined)}
@@ -358,9 +521,6 @@ export function RulesPage({
             <>
               <Form.Item name="name" label={isTemplateMode ? "模板名称" : "规则名称"} rules={[{ required: true, message: `请输入${isTemplateMode ? "模板" : "规则"}名称` }]}>
                 <Input />
-              </Form.Item>
-              <Form.Item name="ruleSetCode" label="规则集编码" rules={[{ required: true, message: "请输入规则集编码" }]}>
-                <Input placeholder="如：loan_high_risk_prompt" />
               </Form.Item>
               <Form.Item name="priority" label="优先级" rules={[{ required: true }]}>
                 <InputNumber min={1} max={999} style={{ width: "100%" }} />
@@ -402,8 +562,8 @@ export function RulesPage({
               <Form.Item name="status" label="状态" rules={[{ required: true }]}>
                 <Select options={lifecycleOptions} />
               </Form.Item>
-              <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true }]}>
-                <Input />
+              <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请选择组织范围" }]}>
+                <OrgSelect />
               </Form.Item>
               {!isTemplateMode ? (
                 <Button onClick={() => (editing ? void openLogic(editing) : undefined)} disabled={!editing}>
@@ -415,6 +575,10 @@ export function RulesPage({
 
           {!isTemplateMode && wizardStep === 2 ? (
             <Space direction="vertical" style={{ width: "100%" }} size={12}>
+              <ValidationReportPanel
+                issues={logicValidationIssues}
+                title="高级条件还有待处理问题"
+              />
               <Alert
                 showIcon
                 type={previewResult?.matched ? "success" : "info"}
@@ -439,21 +603,25 @@ export function RulesPage({
                 const summaryCloseMode = ruleForm.getFieldValue("closeMode") as RuleDefinition["closeMode"] | undefined;
                 const summaryStatus = ruleForm.getFieldValue("status") as RuleDefinition["status"] | undefined;
                 return (
-              <Space direction="vertical" style={{ width: "100%" }}>
-                <Tag color="blue">{ruleForm.getFieldValue("name")}</Tag>
-                <Typography.Text type="secondary">
-                  页面：{
-                    resources.find((item) => item.id === ruleForm.getFieldValue("pageResourceId"))?.name ?? "未绑定页面"
-                  }
-                </Typography.Text>
-                <Typography.Text type="secondary">
-                  提示模式：{summaryPromptMode ? promptModeLabelMap[summaryPromptMode] : "-"} / 关闭方式：
-                  {summaryCloseMode ? closeModeLabel[summaryCloseMode] : "-"}
-                </Typography.Text>
-                <Typography.Text type="secondary">
-                  状态：{summaryStatus ? lifecycleLabelMap[summaryStatus] : "-"}，组织范围：{ruleForm.getFieldValue("ownerOrgId")}
-                </Typography.Text>
-              </Space>
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    <ValidationReportPanel report={saveValidationReport} title="保存前检查结果" />
+                    <Tag color="blue">{ruleForm.getFieldValue("name")}</Tag>
+                    <Typography.Text type="secondary">
+                      页面：{
+                        resources.find((item) => item.id === ruleForm.getFieldValue("pageResourceId"))?.name ?? "未绑定页面"
+                      }
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      提示模式：{summaryPromptMode ? promptModeLabelMap[summaryPromptMode] : "-"} / 关闭方式：
+                      {summaryCloseMode ? closeModeLabel[summaryCloseMode] : "-"}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      状态：{summaryStatus ? lifecycleLabelMap[summaryStatus] : "-"}，组织范围：{getOrgLabel(ruleForm.getFieldValue("ownerOrgId"))}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      保存后会进入待发布列表，建议下一步前往“发布与灰度”完成上线。
+                    </Typography.Text>
+                  </Space>
                 );
               })()}
             </Card>
@@ -482,8 +650,10 @@ export function RulesPage({
           }
         >
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            所有条件共用一套“且/或”关系。多个提示同时命中时，会按优先级依次展示。
+            所有普通条件与名单字段来源会一并保存。多个提示同时命中时，会按优先级依次展示。
           </Typography.Paragraph>
+
+          <ValidationReportPanel issues={logicValidationIssues} title="高级条件还有待处理问题" compact maxPreviewItems={3} />
 
           <Space style={{ marginBottom: 12 }}>
             <Typography.Text strong>整体逻辑</Typography.Text>
@@ -552,33 +722,37 @@ export function RulesPage({
                 <Typography.Text type="secondary">先在左侧点击要编辑的左值或右值。</Typography.Text>
               ) : (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  <ValidationReportPanel issues={selectedOperandIssues} title="当前值还有待处理问题" compact />
+                  {hasSelectedOperandDirtyConfig ? (
+                    <CompactHint title="当前来源下已有配置内容" description="切换来源类型后会自动清理旧配置。" />
+                  ) : null}
                   <Typography.Text type="secondary">
                     当前正在编辑：条件 {selectedContext.index + 1} - {selectedContext.side === "left" ? "左值" : "右值"}
                   </Typography.Text>
 
-                  <div>
-                    <Typography.Text>来源类型</Typography.Text>
-                    <Select
-                      style={{ width: "100%", marginTop: 8 }}
-                      value={selectedContext.operand.sourceType}
-                      options={sourceOptions}
-                      onChange={(value) => changeSelectedSourceType(normalizeSourceType(value))}
-                    />
-                  </div>
-
-                  <div>
-                    <Typography.Text>值类型</Typography.Text>
-                    {selectedContext.operand.sourceType === "INTERFACE_FIELD" ? (
-                      <Input style={{ marginTop: 8 }} value={selectedContext.operand.valueType} readOnly />
-                    ) : (
+                  <PanelGrid>
+                    <PanelField label="来源类型">
                       <Select
-                        style={{ width: "100%", marginTop: 8 }}
-                        value={selectedContext.operand.valueType}
-                        options={valueTypeOptions}
-                        onChange={(value) => updateSelectedOperand({ valueType: value as RuleOperandValueType })}
+                        style={{ width: "100%" }}
+                        value={selectedContext.operand.sourceType}
+                        options={sourceOptions}
+                        onChange={(value) => changeSelectedSourceType(normalizeSourceType(value))}
                       />
-                    )}
-                  </div>
+                    </PanelField>
+
+                    <PanelField label="值类型">
+                      {selectedContext.operand.sourceType === "INTERFACE_FIELD" ? (
+                        <Input value={selectedContext.operand.valueType} readOnly />
+                      ) : (
+                        <Select
+                          style={{ width: "100%" }}
+                          value={selectedContext.operand.valueType}
+                          options={valueTypeOptions}
+                          onChange={(value) => updateSelectedOperand({ valueType: value as RuleOperandValueType })}
+                        />
+                      )}
+                    </PanelField>
+                  </PanelGrid>
 
                   {selectedContext.operand.sourceType === "CONST" ? (
                     <div>
@@ -685,108 +859,310 @@ export function RulesPage({
                         />
                       </div>
 
-                      <div>
-                        <Typography.Text>入参配置（按 API注册定义）</Typography.Text>
-                        {selectedInterfaceInputParams.length === 0 ? (
-                          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-                            当前 API 没有配置入参，可直接继续。
-                          </Typography.Paragraph>
-                        ) : (
-                          <Table<InterfaceInputParamDraft>
-                            size="small"
-                            style={{ marginTop: 8 }}
-                            rowKey={(row) => `${row.tab}:${row.name}`}
-                            pagination={false}
-                            dataSource={selectedInterfaceInputParams}
-                            columns={[
-                              {
-                                title: "参数",
-                                width: 220,
-                                render: (_, row) => (
-                                  <Space size={4}>
-                                    <Typography.Text>{row.name}</Typography.Text>
-                                    {row.required ? <Tag color="error">必填</Tag> : <Tag>可选</Tag>}
-                                  </Space>
-                                )
-                              },
-                              {
-                                title: "来源",
-                                width: 140,
-                                render: (_, row) => <Tag>{row.sourceType}</Tag>
-                              },
-                              {
-                                title: "值类型",
-                                width: 120,
-                                render: (_, row) => <Tag color="blue">{row.valueType}</Tag>
-                              },
-                              {
-                                title: "取值",
-                                render: (_, row) => (
-                                  <InterfaceInputValueEditor
-                                    param={row}
-                                    pageFieldOptions={pageFieldOptions}
-                                    selectedInterfaceInputConfig={selectedInterfaceInputConfig}
-                                    updateInterfaceInputValue={updateInterfaceInputValue}
-                                  />
-                                )
-                              }
-                            ]}
-                          />
-                        )}
-                      </div>
-
-                      <Alert
-                        type={selectedContext.operand.outputPath?.trim() ? "success" : "warning"}
-                        showIcon
-                        message={`${selectedContext.operand.interfaceName || "API名称"}.${selectedContext.operand.outputPath || "(未绑定输出值)"}`}
+                      <Collapse
+                        size="small"
+                        items={[
+                          {
+                            key: "api-inputs",
+                            label: `入参配置（${selectedInterfaceInputParams.length}）`,
+                            children:
+                              selectedInterfaceInputParams.length === 0 ? (
+                                <Typography.Text type="secondary">当前 API 没有配置入参，可直接继续。</Typography.Text>
+                              ) : (
+                                <Table<InterfaceInputParamDraft>
+                                  size="small"
+                                  rowKey={(row) => `${row.tab}:${row.name}`}
+                                  pagination={false}
+                                  dataSource={selectedInterfaceInputParams}
+                                  columns={[
+                                    {
+                                      title: "参数",
+                                      width: 220,
+                                      render: (_, row) => (
+                                        <Space size={4}>
+                                          <Typography.Text>{row.name}</Typography.Text>
+                                          {row.required ? <Tag color="error">必填</Tag> : <Tag>可选</Tag>}
+                                        </Space>
+                                      )
+                                    },
+                                    {
+                                      title: "来源",
+                                      width: 140,
+                                      render: (_, row) => <Tag>{row.sourceType}</Tag>
+                                    },
+                                    {
+                                      title: "值类型",
+                                      width: 120,
+                                      render: (_, row) => <Tag color="blue">{row.valueType}</Tag>
+                                    },
+                                    {
+                                      title: "取值",
+                                      render: (_, row) => (
+                                        <InterfaceInputValueEditor
+                                          param={row}
+                                          pageFieldOptions={pageFieldOptions}
+                                          selectedInterfaceInputConfig={selectedInterfaceInputConfig}
+                                          updateInterfaceInputValue={updateInterfaceInputValue}
+                                        />
+                                      )
+                                    }
+                                  ]}
+                                />
+                              )
+                          }
+                        ]}
+                      />
+                      <CompactHint
+                        tone={selectedContext.operand.outputPath?.trim() ? "success" : "warning"}
+                        title={`${selectedContext.operand.interfaceName || "API名称"}.${selectedContext.operand.outputPath || "(未绑定输出值)"}`}
+                        description={selectedContext.operand.outputPath?.trim() ? "接口输出已绑定" : "请选择一个 API 输出路径"}
                       />
                     </>
                   ) : null}
 
-                  <div>
-                    <Space align="center" style={{ justifyContent: "space-between", width: "100%" }}>
-                      <Typography.Text>预处理器</Typography.Text>
-                      <Tooltip title="添加预处理器">
-                        <Button size="small" icon={<PlusOutlined />} onClick={addPreprocessorBinding} />
-                      </Tooltip>
-                    </Space>
-
-                    {selectedContext.operand.preprocessors.length === 0 ? (
-                      <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-                        暂无预处理器
-                      </Typography.Paragraph>
-                    ) : (
-                      <Space direction="vertical" style={{ width: "100%", marginTop: 8 }}>
-                        {selectedContext.operand.preprocessors.map((binding) => (
-                          <Space key={binding.id} style={{ width: "100%" }} align="start">
-                            <Select
-                              showSearch
-                              allowClear
-                              placeholder="选择预处理器"
-                              style={{ flex: 1 }}
-                              value={binding.preprocessorId}
-                              options={preprocessors.map((item) => ({ label: item.name, value: item.id }))}
-                              onChange={(value) => updatePreprocessorBinding(binding.id, { preprocessorId: value as number | undefined })}
-                            />
-                            <Input
-                              style={{ flex: 1 }}
-                              placeholder="参数（可选）"
-                              value={binding.params}
-                              onChange={(event) => updatePreprocessorBinding(binding.id, { params: event.target.value })}
-                            />
-                            <Tooltip title="删除预处理器">
-                              <Button danger icon={<DeleteOutlined />} onClick={() => removePreprocessorBinding(binding.id)} />
-                            </Tooltip>
+                  {selectedContext.operand.sourceType === "LIST_LOOKUP_FIELD" ? (
+                    listDatas.length === 0 ? (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        message="当前没有可用名单数据"
+                        description={
+                          <Space direction="vertical" size={4}>
+                            <Typography.Text type="secondary">请先到高级配置维护名单资产，再回到规则里使用名单字段来源。</Typography.Text>
+                            <Button size="small" type="primary" onClick={() => navigate("/advanced?tab=list-data")}>
+                              去维护名单
+                            </Button>
                           </Space>
-                        ))}
-                      </Space>
-                    )}
-                  </div>
+                        }
+                      />
+                    ) : (
+                      <>
+                        <div>
+                          <Typography.Text>名单数据</Typography.Text>
+                          <Select
+                            showSearch
+                            allowClear
+                            style={{ width: "100%", marginTop: 8 }}
+                            placeholder="请选择名单数据"
+                            value={selectedContext.operand.listDataId}
+                            optionFilterProp="label"
+                            options={listDatas.map((item) => ({
+                              label: `${item.name} / ${item.importColumns.length} 个导入字段`,
+                              value: item.id
+                            }))}
+                            onChange={(value) => {
+                              const picked = listDatas.find((item) => item.id === value);
+                              const resultField = selectedContext.operand.resultField?.trim() ?? "";
+                              const nextMatchers =
+                                selectedContext.operand.listMatchers.length > 0
+                                  ? selectedContext.operand.listMatchers.map((item, index) => ({
+                                      ...item,
+                                      matchColumn:
+                                        picked?.importColumns.includes(item.matchColumn)
+                                          ? item.matchColumn
+                                          : index === 0
+                                            ? picked?.importColumns[0] ?? ""
+                                            : ""
+                                    }))
+                                  : [
+                                      {
+                                        ...buildDefaultListLookupMatcher(),
+                                        matchColumn: picked?.importColumns[0] ?? ""
+                                      }
+                                    ];
+                              const nextResultField = picked?.outputFields.includes(resultField) ? resultField : "";
+                              updateSelectedOperand({
+                                listDataId: value as number | undefined,
+                                listDataName: picked?.name,
+                                matchColumn: picked?.importColumns[0] ?? "",
+                                listMatchers: nextMatchers,
+                                resultField: nextResultField,
+                                displayValue: `${picked?.name ?? "名单"}.${nextResultField || "(未绑定输出字段)"}`,
+                                machineKey: nextResultField
+                              });
+                            }}
+                          />
+                        </div>
+
+                        <PanelField label="输出字段">
+                          <Select
+                            showSearch
+                            allowClear
+                            placeholder={selectedListOutputOptions.length > 0 ? "请选择输出字段" : "当前名单未配置输出字段"}
+                            value={selectedContext.operand.resultField}
+                            options={selectedListOutputOptions}
+                            onChange={(value) => {
+                              const nextField = (value as string) ?? "";
+                              const listName = selectedContext.operand.listDataName?.trim() || "名单";
+                              updateSelectedOperand({
+                                resultField: nextField,
+                                machineKey: nextField.trim(),
+                                displayValue: `${listName}.${nextField.trim() || "(未绑定输出字段)"}`
+                              });
+                            }}
+                          />
+                        </PanelField>
+                        <CompactHint
+                          tone={selectedContext.operand.resultField?.trim() ? "success" : "warning"}
+                          title={`${selectedContext.operand.listDataName || "名单"}.${selectedContext.operand.resultField || "(未绑定输出字段)"}`}
+                          description={`已完成检索键 ${selectedContext.operand.listMatchers.filter((item) => item.matchColumn.trim() && item.sourceValue.trim()).length} / ${selectedContext.operand.listMatchers.length}`}
+                        />
+                        <Collapse
+                          size="small"
+                          items={[
+                            {
+                              key: "list-matchers",
+                              label: `检索键配置（${selectedContext.operand.listMatchers.length}）`,
+                              extra: (
+                                <Tooltip title="新增检索键">
+                                  <Button
+                                    size="small"
+                                    icon={<PlusOutlined />}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      addListMatcher();
+                                    }}
+                                  />
+                                </Tooltip>
+                              ),
+                              children: (
+                                <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                                  {selectedContext.operand.listMatchers.map((matcher, index) => (
+                                    <div
+                                      key={matcher.id}
+                                      style={{
+                                        border: "1px solid #f0f0f0",
+                                        borderRadius: 8,
+                                        padding: 10
+                                      }}
+                                    >
+                                      <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                                        <Space align="center" style={{ justifyContent: "space-between", width: "100%" }}>
+                                          <Typography.Text strong>检索键 {index + 1}</Typography.Text>
+                                          <Tooltip title="删除检索键">
+                                            <Button
+                                              type="text"
+                                              danger
+                                              size="small"
+                                              icon={<DeleteOutlined />}
+                                              onClick={() => removeListMatcher(matcher.id)}
+                                            />
+                                          </Tooltip>
+                                        </Space>
+                                        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(120px, 140px)", gap: 8 }}>
+                                          <Select
+                                            showSearch
+                                            allowClear
+                                            placeholder="选择匹配列"
+                                            value={matcher.matchColumn || undefined}
+                                            options={(selectedListData?.importColumns ?? []).map((item) => ({ label: item, value: item }))}
+                                            onChange={(value) => updateListMatcher(matcher.id, { matchColumn: (value as string) ?? "" })}
+                                          />
+                                          <Select
+                                            value={matcher.sourceType}
+                                            options={listLookupSourceOptions}
+                                            onChange={(value) =>
+                                              updateListMatcher(matcher.id, {
+                                                sourceType: normalizeLookupSourceType(value as string),
+                                                sourceValue: ""
+                                              })
+                                            }
+                                          />
+                                        </div>
+                                        {matcher.sourceType === "PAGE_FIELD" ? (
+                                          <Select
+                                            showSearch
+                                            allowClear
+                                            placeholder="请选择页面字段"
+                                            value={matcher.sourceValue || undefined}
+                                            optionFilterProp="label"
+                                            options={pageFieldOptions}
+                                            onChange={(value) => updateListMatcher(matcher.id, { sourceValue: (value as string) ?? "" })}
+                                          />
+                                        ) : matcher.sourceType === "CONTEXT" ? (
+                                          <Select
+                                            showSearch
+                                            allowClear
+                                            placeholder="请选择上下文变量"
+                                            value={matcher.sourceValue || undefined}
+                                            options={contextOptions.map((item) => ({ label: item, value: item }))}
+                                            onChange={(value) => updateListMatcher(matcher.id, { sourceValue: (value as string) ?? "" })}
+                                          />
+                                        ) : (
+                                          <Input
+                                            placeholder={matcher.sourceType === "CONST" ? "请输入固定值" : "请输入接口输出标识"}
+                                            value={matcher.sourceValue}
+                                            onChange={(event) => updateListMatcher(matcher.id, { sourceValue: event.target.value })}
+                                          />
+                                        )}
+                                      </Space>
+                                    </div>
+                                  ))}
+                                </Space>
+                              )
+                            }
+                          ]}
+                        />
+                      </>
+                    )
+                  ) : null}
+
+                  <Collapse
+                    size="small"
+                    items={[
+                      {
+                        key: "preprocessors",
+                        label: `预处理器（${selectedContext.operand.preprocessors.length}）`,
+                        extra: (
+                          <Tooltip title="添加预处理器">
+                            <Button
+                              size="small"
+                              icon={<PlusOutlined />}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                addPreprocessorBinding();
+                              }}
+                            />
+                          </Tooltip>
+                        ),
+                        children:
+                          selectedContext.operand.preprocessors.length === 0 ? (
+                            <Typography.Text type="secondary">暂无预处理器</Typography.Text>
+                          ) : (
+                            <Space direction="vertical" style={{ width: "100%" }}>
+                              {selectedContext.operand.preprocessors.map((binding) => (
+                                <Space key={binding.id} style={{ width: "100%" }} align="start">
+                                  <Select
+                                    showSearch
+                                    allowClear
+                                    placeholder="选择预处理器"
+                                    style={{ flex: 1 }}
+                                    value={binding.preprocessorId}
+                                    options={preprocessors.map((item) => ({ label: item.name, value: item.id }))}
+                                    onChange={(value) => updatePreprocessorBinding(binding.id, { preprocessorId: value as number | undefined })}
+                                  />
+                                  <Input
+                                    style={{ flex: 1 }}
+                                    placeholder="参数（可选）"
+                                    value={binding.params}
+                                    onChange={(event) => updatePreprocessorBinding(binding.id, { params: event.target.value })}
+                                  />
+                                  <Tooltip title="删除预处理器">
+                                    <Button danger icon={<DeleteOutlined />} onClick={() => removePreprocessorBinding(binding.id)} />
+                                  </Tooltip>
+                                </Space>
+                              ))}
+                            </Space>
+                          )
+                      }
+                    ]}
+                  />
                 </Space>
               )}
             </Card>
           </div>
         </Card>
+
       </Drawer>
     </div>
   );
