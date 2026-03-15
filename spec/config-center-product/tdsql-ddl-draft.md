@@ -150,7 +150,90 @@ CREATE TABLE page_element (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='页面元素与逻辑名映射';
 ```
 
-### 4.2 接口与预处理器相关表
+### 4.2A 名单数据相关表
+
+```sql
+CREATE TABLE list_data (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  name VARCHAR(128) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  owner_org_id VARCHAR(64) NOT NULL,
+  current_version_id BIGINT NULL,
+  remark VARCHAR(255) NULL,
+  created_at DATETIME(3) NOT NULL,
+  created_by VARCHAR(64) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  updated_by VARCHAR(64) NOT NULL,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_list_data_name_org_del (name, owner_org_id, is_deleted),
+  KEY idx_list_data_status_org (status, owner_org_id, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单数据主表';
+
+CREATE TABLE list_data_version (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  list_data_id BIGINT NOT NULL,
+  version_no INT NOT NULL,
+  state VARCHAR(32) NOT NULL,
+  owner_org_id VARCHAR(64) NOT NULL,
+  owner_user_id VARCHAR(64) NOT NULL,
+  effective_start_at DATETIME(3) NULL,
+  effective_end_at DATETIME(3) NULL,
+  import_file_token VARCHAR(255) NOT NULL,
+  import_file_name VARCHAR(255) NOT NULL,
+  primary_match_column VARCHAR(128) NOT NULL,
+  row_count INT NOT NULL DEFAULT 0,
+  parse_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+  index_build_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+  physical_index_name VARCHAR(255) NULL,
+  active_alias_name VARCHAR(255) NULL,
+  parse_summary JSON NULL,
+  index_started_at DATETIME(3) NULL,
+  index_finished_at DATETIME(3) NULL,
+  current_build_job_id BIGINT NULL,
+  created_at DATETIME(3) NOT NULL,
+  created_by VARCHAR(64) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  updated_by VARCHAR(64) NOT NULL,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_list_data_ver_del (list_data_id, version_no, is_deleted),
+  KEY idx_list_data_ver_state_org (state, owner_org_id, updated_at),
+  KEY idx_list_data_ver_build (index_build_status, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单数据版本表';
+
+CREATE TABLE list_data_index_job (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  list_data_version_id BIGINT NOT NULL,
+  build_mode VARCHAR(32) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  physical_index_name VARCHAR(255) NOT NULL,
+  source_file_token VARCHAR(255) NOT NULL,
+  source_row_count INT NOT NULL DEFAULT 0,
+  indexed_row_count INT NOT NULL DEFAULT 0,
+  failed_row_count INT NOT NULL DEFAULT 0,
+  error_message VARCHAR(1024) NULL,
+  started_at DATETIME(3) NULL,
+  finished_at DATETIME(3) NULL,
+  operator_id VARCHAR(64) NOT NULL,
+  created_at DATETIME(3) NOT NULL,
+  created_by VARCHAR(64) NOT NULL,
+  updated_at DATETIME(3) NOT NULL,
+  updated_by VARCHAR(64) NOT NULL,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  KEY idx_list_index_job_ver (list_data_version_id, created_at),
+  KEY idx_list_index_job_status (status, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单 ES 建索引任务表';
+```
+
+说明：
+
+1. `list_data` 与 `list_data_version` 只保存发布控制元数据，不保存名单明细行。
+2. `physical_index_name` 与 `active_alias_name` 作为技术元数据入库，便于发布、回滚和排障。
+3. 若后续需要更细的发布补偿记录，可在状态变更日志之外补充单独的别名切换流水表。
+
+### 4.2B 接口与预处理器相关表
 
 ```sql
 CREATE TABLE interface_definition (
@@ -493,7 +576,7 @@ CREATE TABLE manual_time_baseline (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='人工作业时长基线';
 ```
 
-## 7. 治理与权限层 DDL
+## 7. 控制与权限层 DDL
 
 ```sql
 CREATE TABLE org_role (
@@ -576,7 +659,7 @@ CREATE TABLE validation_record (
   KEY idx_validation_task (publish_task_id, result)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='发布前校验结果';
 
-CREATE TABLE governance_audit_log (
+CREATE TABLE state_change_audit_log (
   id BIGINT NOT NULL AUTO_INCREMENT,
   resource_type VARCHAR(32) NOT NULL,
   resource_id BIGINT NOT NULL,
@@ -594,7 +677,7 @@ CREATE TABLE governance_audit_log (
   KEY idx_audit_trace (trace_id),
   KEY idx_audit_resource_time (resource_type, resource_id, created_at),
   KEY idx_audit_operator_time (operator_id, created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='治理审计日志';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='状态变更审计日志';
 ```
 
 ## 8. 运行面与日志层 DDL
@@ -745,7 +828,7 @@ CREATE TABLE metric_daily_org_menu (
 
 1. `trigger_log`
 2. `execution_log`
-3. `governance_audit_log`
+3. `state_change_audit_log`
 4. `runtime_execution_instance`
 5. `runtime_node_instance`
 6. `metric_daily_org_menu`
@@ -763,16 +846,18 @@ CREATE TABLE metric_daily_org_menu (
 3. 软删除唯一键采用 `(业务唯一字段, is_deleted)` 模式，兼容对象停用/重建场景。
 4. 日志大表建议按月归档或冷热分层，不建议长期全部保留在主库热表。
 5. 若行内规范不允许 `JSON` 字段，可退化为 `LONGTEXT` + 应用层序列化，但索引能力会变弱。
+6. 名单数据采用“元数据入 TDSQL、检索明细入 Elasticsearch”的分层方案；本文仅覆盖名单对象、版本、发布与引用等元数据表，不覆盖名单明细行存储结构。
 
 ## 11. 下一步建议
 
 1. 先用本文覆盖核心表建模评审，不急于一次性冻结所有日志扩展字段。
-2. 以 `page_resource`、`rule`、`job_scene`、`publish_task`、`runtime_execution_instance` 五条主链为首批建表范围。
+2. 以 `page_resource`、`list_data`、`rule`、`job_scene`、`publish_task`、`runtime_execution_instance` 六条主链为首批建表范围。
 3. 在正式建库前，补齐以下内容：
    `bundle_version` 生成规则
    是否补充稳定外键
    日志保留周期
    `JSON` 字段的行内规范限制
+   名单明细 ES 索引模板与别名切换规则
 4. 若后续确认实际为 `TDSQL-PG`，可保留本文表结构设计，只切换为 PostgreSQL 方言 DDL。
 
 

@@ -1,7 +1,7 @@
 ﻿# 营小助配置中心 API 设计清单（Draft）
 
 > 来源文档：`spec/config-center-product/architecture.md`、`spec/config-center-product/plan.md`、`spec/config-center-product/permission-model.md`  
-> 文档目标：沉淀控制面、运行面、治理面的接口边界，作为后续 OpenAPI 设计与联调评审基线  
+> 文档目标：沉淀控制面、运行面、管理与审计面的接口边界，作为后续 OpenAPI 设计与联调评审基线  
 > 更新日期：2026-03-12
 > 数据库基线：TDSQL（默认按 TDSQL-MySQL 兼容版设计）
 
@@ -9,9 +9,9 @@
 
 本清单覆盖三类 API：
 
-1. 控制面 API：面向 Admin Web，用于页面、规则、作业场景、接口、预处理器、角色和发布治理。
+1. 控制面 API：面向 Admin Web，用于页面、规则、作业场景、接口、预处理器、角色和发布控制。
 2. 运行面 API：面向 JSSDK，用于页面识别、运行时快照、规则判定、作业执行和提示生命周期管理。
-3. 治理面 API：面向管理端与审计端，用于待处理视图、审计日志、触发日志、执行日志和指标查询。
+3. 管理与审计面 API：面向管理端与审计端，用于待处理视图、审计日志、触发日志、执行日志和指标查询。
 
 本清单不覆盖：
 
@@ -25,7 +25,7 @@
 
 1. 控制面：`/api/control/*`
 2. 运行面：`/api/runtime/*`
-3. 治理面：`/api/governance/*`
+3. 管理与审计面：`/api/management/*`
 
 ### 2.2 鉴权与上下文
 
@@ -37,7 +37,7 @@
 4. `X-Org-Id`
 5. `X-Role-Ids`
 
-控制面与治理面接口由网关完成登录态校验；运行面接口由 JSSDK 使用业务页面会话或短期令牌访问。
+控制面与管理与审计面接口由网关完成登录态校验；运行面接口由 JSSDK 使用业务页面会话或短期令牌访问。
 
 ### 2.3 统一响应结构
 
@@ -79,7 +79,7 @@
 6. `updatedAtFrom`
 7. `updatedAtTo`
 
-治理面接口额外支持：
+管理与审计面接口额外支持：
 
 1. `pendingType`
 2. `effectiveDateFrom`
@@ -279,6 +279,84 @@
 3. 页面元素、接口、预处理器引用是否有效。
 4. 仅表示配置有效，不代表真实业务环境验证通过。
 
+### 3.3A 名单数据中心
+
+| 方法 | 路径 | 说明 | 权限要求 |
+| --- | --- | --- | --- |
+| `POST` | `/api/control/list-datas` | 新建名单对象 | 配置 |
+| `GET` | `/api/control/list-datas` | 名单列表 | 查看 |
+| `GET` | `/api/control/list-datas/{listId}` | 名单详情 | 查看 |
+| `POST` | `/api/control/list-datas/{listId}/versions` | 新建名单待发布版本 | 配置 |
+| `PUT` | `/api/control/list-datas/{listId}/versions/{versionId}` | 更新名单版本 | 配置 |
+| `POST` | `/api/control/list-datas/{listId}/versions/{versionId}/parse-preview` | 解析导入文件并预览表头 | 校验 |
+| `POST` | `/api/control/list-datas/{listId}/versions/{versionId}/build-index` | 构建 ES 检索索引 | 校验 |
+| `GET` | `/api/control/list-datas/{listId}/versions/{versionId}/index-status` | 查询 ES 建索引状态 | 查看 |
+| `GET` | `/api/control/list-datas/{listId}/references` | 查询规则 / 作业引用关系 | 查看 |
+
+名单版本关键字段建议至少包括：
+
+1. `name`
+2. `ownerOrgId`
+3. `scope`
+4. `effectiveStartAt`
+5. `effectiveEndAt`
+6. `importFile`
+7. `importColumns`：文件解析出的表头字段，供运行时选择匹配列
+8. `outputFields`：由上传人员从解析表头中勾选，供规则 / 作业下拉选择返回字段
+9. `rowCount`
+10. `indexBuildStatus`
+11. `activeAlias`
+
+说明约束：
+
+1. 名单数据沿用平台统一生命周期：`DRAFT`、`ACTIVE`、`DISABLED`、`EXPIRED`。
+2. 生效中版本不直接修改，任何变更都生成新的待发布版本。
+3. 规则与作业只能引用已发布且未过期的名单版本。
+4. 名单基础信息、版本状态、引用关系等元数据保存在 TDSQL；实际检索数据按版本写入 Elasticsearch。
+5. 发布前必须确认对应版本 ES 索引已构建完成，并可通过别名切换为运行面可读版本。
+
+`build-index` 请求建议至少支持：
+
+1. `buildMode`：`INITIAL_BUILD` / `REBUILD`
+2. `forceRebuild`
+3. `sourceFileToken`
+
+`index-status` 响应建议至少包含：
+
+1. `indexBuildStatus`
+2. `physicalIndexName`
+3. `activeAlias`
+4. `docCount`
+5. `startedAt`
+6. `finishedAt`
+7. `errorMessage`
+
+`build-index` 请求示例：
+
+```json
+{
+  "buildMode": "INITIAL_BUILD",
+  "forceRebuild": false,
+  "sourceFileToken": "oss://config-center/list-data/72001001/v3/import.xlsx"
+}
+```
+
+`index-status` 响应示例：
+
+```json
+{
+  "listId": 72001001,
+  "listVersionId": 72001003,
+  "indexBuildStatus": "READY",
+  "physicalIndexName": "cc_list_data_72001001_72001003",
+  "activeAlias": "cc_list_data_72001001_active",
+  "docCount": 1280,
+  "startedAt": "2026-03-15T09:10:00+08:00",
+  "finishedAt": "2026-03-15T09:12:18+08:00",
+  "errorMessage": ""
+}
+```
+
 ### 3.4 接口定义中心
 
 | 方法 | 路径 | 说明 | 权限要求 |
@@ -313,7 +391,7 @@
 备注：
 
 1. P0 以平台内置预处理器为主。
-2. 自定义脚本类预处理器必须打上 `isScript=true` 标记，走更严格治理路径。
+2. 自定义脚本类预处理器必须打上 `isScript=true` 标记，走更严格受控路径。
 
 ### 3.6 角色管理模块
 
@@ -330,7 +408,7 @@
 | `POST` | `/api/control/roles/{roleId}/actions` | 配置操作类型权限 | 角色授权管理 |
 | `POST` | `/api/control/roles/{roleId}/scopes` | 配置组织范围 | 角色授权管理 |
 
-### 3.7 发布与治理动作
+### 3.7 发布与状态动作
 
 | 方法 | 路径 | 说明 | 权限要求 |
 | --- | --- | --- | --- |
@@ -408,6 +486,7 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/api/runtime/data-proxy/query` | 按运行时快照中的接口定义发起受控数据代理请求 |
+| `POST` | `/api/runtime/list-lookups/query` | 按已发布名单版本发起受控名单检索 |
 | `POST` | `/api/runtime/prompts/{traceId}/close` | 记录提示关闭 |
 | `POST` | `/api/runtime/prompts/{traceId}/confirm` | 记录提示确认，并在执行方式要求时承接后续作业启动 |
 
@@ -415,8 +494,11 @@
 
 1. 规则判定默认在 JSSDK 本地执行，运行面不再提供高频后端判定接口。
 2. 数据代理接口只服务于快照中声明的接口定义，不接受页面侧自由拼装的任意请求。
-3. 响应需返回可用于本地缓存治理的元信息，如 `ttlSeconds`、`cacheScope`、`interfaceVersion`。
-4. 页面字段结果语义由 JSSDK 按 `ABSENT`、`EMPTY`、`VALUE` 三态处理；运行面日志和执行接口需能承接字段缺失导致的 `INVALID` 信息。
+3. 名单检索接口只返回最小命中结果，不向浏览器返回原始名单内容。
+4. 名单检索接口统一查询已发布 ES 索引或别名，不读取 TDSQL 明细表。
+5. 运行面需校验请求中的 `listVersionId` 与当前生效别名实际指向版本一致；不一致时返回 `LIST_VERSION_MISMATCH`。
+6. 响应需返回可用于本地缓存控制的元信息，如 `ttlSeconds`、`cacheScope`、`interfaceVersion`。
+7. 页面字段结果语义由 JSSDK 按 `ABSENT`、`EMPTY`、`VALUE` 三态处理；运行面日志和执行接口需能承接字段缺失导致的 `INVALID` 信息。
 
 数据代理请求示例：
 
@@ -444,6 +526,48 @@
   "data": {
     "creditLevel": "B",
     "grantAmount": "500000"
+  }
+}
+```
+
+名单检索请求示例：
+
+```json
+{
+  "listId": 72001001,
+  "listVersionId": 72001003,
+  "bundleVersion": "b-20260312-001",
+  "pageResourceId": 2001001,
+  "matchers": [
+    {
+      "matchColumn": "customer_no",
+      "lookupValue": "C20260001"
+    },
+    {
+      "matchColumn": "id_no",
+      "lookupValue": "310101199901011234"
+    }
+  ],
+  "outputFields": ["risk_level"]
+}
+```
+
+名单检索响应示例：
+
+```json
+{
+  "requestId": "ll-20260312-0001",
+  "listId": 72001001,
+  "listVersionId": 72001003,
+  "ttlSeconds": 60,
+  "cacheScope": "PAGE_SESSION",
+  "data": {
+    "matched": true,
+    "listName": "高风险客户名单",
+    "outputValues": {
+      "risk_level": "HIGH"
+    },
+    "reasonCode": "MATCHED"
   }
 }
 ```
@@ -521,15 +645,15 @@
 7. `EXECUTION_FAILED`
 8. `EXECUTION_FALLBACK`
 
-## 5. 治理面 API
+## 5. 管理与审计面 API
 
 ### 5.1 待处理视图与工作台
 
 | 方法 | 路径 | 说明 | 权限要求 |
 | --- | --- | --- | --- |
-| `GET` | `/api/governance/pending-items` | 查询待处理对象 | 查看 |
-| `GET` | `/api/governance/pending-summary` | 查询待处理摘要 | 查看 |
-| `GET` | `/api/governance/resource-timeline` | 查询资源治理时间线 | 查看 |
+| `GET` | `/api/management/pending-items` | 查询待处理对象 | 查看 |
+| `GET` | `/api/management/pending-summary` | 查询待处理摘要 | 查看 |
+| `GET` | `/api/management/resource-timeline` | 查询资源状态时间线 | 查看 |
 
 待处理摘要响应重点：
 
@@ -543,25 +667,25 @@
 
 | 方法 | 路径 | 说明 | 权限要求 |
 | --- | --- | --- | --- |
-| `GET` | `/api/governance/audit-logs` | 查询治理日志 | 审计查看 |
-| `GET` | `/api/governance/audit-logs/{logId}` | 查询治理日志详情 | 审计查看 |
+| `GET` | `/api/management/audit-logs` | 查询状态变更日志 | 审计查看 |
+| `GET` | `/api/management/audit-logs/{logId}` | 查询状态变更日志详情 | 审计查看 |
 
 ### 5.3 触发日志与执行日志
 
 | 方法 | 路径 | 说明 | 权限要求 |
 | --- | --- | --- | --- |
-| `GET` | `/api/governance/trigger-logs` | 查询触发日志 | 审计查看 |
-| `GET` | `/api/governance/execution-logs` | 查询执行日志 | 审计查看 |
-| `GET` | `/api/governance/execution-logs/{executionId}` | 查询执行实例详情 | 审计查看 |
+| `GET` | `/api/management/trigger-logs` | 查询触发日志 | 审计查看 |
+| `GET` | `/api/management/execution-logs` | 查询执行日志 | 审计查看 |
+| `GET` | `/api/management/execution-logs/{executionId}` | 查询执行实例详情 | 审计查看 |
 
 ### 5.4 指标看板
 
 | 方法 | 路径 | 说明 | 权限要求 |
 | --- | --- | --- | --- |
-| `GET` | `/api/governance/metrics/overview` | 查询指标总览 | 查看 |
-| `GET` | `/api/governance/metrics/menus` | 查询菜单维度指标 | 查看 |
-| `GET` | `/api/governance/metrics/failure-reasons` | 查询失败原因分布 | 查看 |
-| `GET` | `/api/governance/metrics/expiring` | 查询已失效与即将到期对象 | 查看 |
+| `GET` | `/api/management/metrics/overview` | 查询指标总览 | 查看 |
+| `GET` | `/api/management/metrics/menus` | 查询菜单维度指标 | 查看 |
+| `GET` | `/api/management/metrics/failure-reasons` | 查询失败原因分布 | 查看 |
+| `GET` | `/api/management/metrics/expiring` | 查询已失效与即将到期对象 | 查看 |
 
 核心指标字段建议：
 
@@ -574,8 +698,8 @@
 ## 6. API 与权限矩阵对齐建议
 
 1. 业务配置角色默认拥有查看、配置、校验类接口权限。
-2. 业务管理角色默认拥有查看、校验、发布、停用、延期、回滚、风险确认和治理查询权限，但不默认拥有配置类接口权限。
-3. 业务审计角色默认只访问治理日志、触发日志、执行日志和只读指标接口。
+2. 业务管理角色默认拥有查看、校验、发布、停用、延期、回滚、风险确认和待处理/审计查询权限，但不默认拥有配置类接口权限。
+3. 业务审计角色默认只访问状态变更日志、触发日志、执行日志和只读指标接口。
 4. 平台支持角色默认拥有查看、校验和审计查看接口权限，用于排障和支持。
 5. 业务超管角色拥有本组织范围内的完整业务管理与角色授权管理接口权限。
 
