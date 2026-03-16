@@ -83,7 +83,7 @@ function splitIpDraft(raw: string) {
 }
 
 export function PublishPage() {
-  const { persona } = useMockSession();
+  const { persona, meta, hasAction } = useMockSession();
   const [loading, setLoading] = useState(true);
   const [pendingItems, setPendingItems] = useState<PublishPendingItem[]>([]);
   const [logs, setLogs] = useState<PublishAuditLog[]>([]);
@@ -114,9 +114,13 @@ export function PublishPage() {
     report: PublishValidationReport | null;
   }>({ open: false, item: null, report: null });
   const [msgApi, holder] = message.useMessage();
-  const activeTab: PublishTab = persona === "MENU_ADMIN" ? "MENU_CAPABILITY" : "CONFIG_RELEASE";
-  const roleView = persona;
   const personaMeta = mockUserPersonaMetaMap[persona];
+  const canPublishConfig = hasAction("PUBLISH");
+  const canDeferPending = hasAction("DEFER");
+  const canConfirmRisk = hasAction("RISK_CONFIRM");
+  const canManageMenuCapability = hasAction("MENU_ENABLE_MANAGE") && meta.roleType === "PERMISSION_ADMIN";
+  const activeTab: PublishTab = canManageMenuCapability && !canPublishConfig ? "MENU_CAPABILITY" : "CONFIG_RELEASE";
+  const roleTone = canManageMenuCapability ? "purple" : canPublishConfig ? "blue" : "green";
 
   async function loadData() {
     setLoading(true);
@@ -319,7 +323,7 @@ export function PublishPage() {
   }
 
   function requestAdminSupport(item: PublishPendingItem) {
-    msgApi.success(`已通知管理员处理：${item.resourceName}（原型提示）`);
+    msgApi.success(`已通知配置人员处理：${item.resourceName}（原型提示）`);
   }
 
   return (
@@ -334,34 +338,32 @@ export function PublishPage() {
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <Space wrap>
             <Typography.Text type="secondary">模拟登录身份</Typography.Text>
-            <Tag color={roleView === "MENU_ADMIN" ? "purple" : roleView === "PUBLISH_MANAGER" ? "blue" : "green"}>
-              {personaMeta.label}
-            </Tag>
+            <Tag color={roleTone}>{personaMeta.label}</Tag>
             <Typography.Text type="secondary">
               当前模块：{activeTab === "CONFIG_RELEASE" ? "配置发布" : "菜单能力"}
             </Typography.Text>
           </Space>
           {activeTab === "CONFIG_RELEASE" ? (
-            roleView === "CONFIG_USER" ? (
+            canPublishConfig ? (
               <Alert
                 showIcon
-                type="info"
-                message="当前是业务配置人员视角"
-                description="你可以查看待发布对象、检查阻断原因并提交管理员处理，但不能直接发布。正式发布由发布管理员完成。"
+                type="success"
+                message="当前是配置人员发布视角"
+                description="你可以对 API、名单、智能提示、作业四类对象执行检查与正式发布；附加操作按当前权限开放。"
               />
             ) : (
               <Alert
                 showIcon
-                type="success"
-                message="当前是发布管理员视角"
-                description="可对 API、名单、智能提示、作业四类对象执行最终检查与正式发布。菜单能力开通不在本页签处理。"
+                type="info"
+                message="当前是只读发布视角"
+                description="你可以查看待发布对象和检查结果；正式发布由具备发布权限的配置人员处理。"
               />
             )
-          ) : roleView === "MENU_ADMIN" ? (
+          ) : canManageMenuCapability ? (
             <Alert
               showIcon
               type="success"
-              message="当前是菜单开通管理员视角"
+              message="当前是菜单能力管理视角"
               description="你可以只管理菜单是否启用智能提示 / 智能作业、菜单槽位、机构范围和 IP 试点；这不等同于内容发布。"
             />
           ) : (
@@ -369,7 +371,7 @@ export function PublishPage() {
               showIcon
               type="info"
               message="当前是只读菜单能力视角"
-              description="普通业务配置人员和发布管理员默认只读查看菜单能力状态，不具备直接修改权限。"
+              description="普通配置人员和非总行权限管理人员默认只读查看菜单能力状态，不具备直接修改权限。"
             />
           )}
         </Space>
@@ -404,7 +406,7 @@ export function PublishPage() {
         style={{ marginTop: 12 }}
         title="配置发布主流程"
         extra={
-          roleView === "PUBLISH_MANAGER" ? (
+          canPublishConfig ? (
             <Button type="primary" onClick={openReleaseFlow}>
               发起配置发布
             </Button>
@@ -459,32 +461,32 @@ export function PublishPage() {
             { title: "更新时间", dataIndex: "updatedAt", width: 180 },
             {
               title: "操作",
-              width: roleView === "PUBLISH_MANAGER" ? 330 : 220,
+              width: canPublishConfig ? 330 : 220,
               render: (_, row) => (
                 <Space wrap>
-                  {roleView === "PUBLISH_MANAGER" ? (
+                  {canPublishConfig ? (
                     <Button size="small" type="primary" loading={publishingId === row.id} onClick={() => void publish(row)}>
                       发布
                     </Button>
                   ) : (
                     <Button size="small" onClick={() => requestAdminSupport(row)}>
-                      提交管理员处理
+                      通知配置人员处理
                     </Button>
                   )}
                   <Button size="small" loading={reportingId === row.id} onClick={() => void openValidationReport(row)}>
                     查看检查结果
                   </Button>
-                  {row.pendingType === "EXPIRING_SOON" && roleView === "PUBLISH_MANAGER" ? (
+                  {row.pendingType === "EXPIRING_SOON" && canDeferPending ? (
                     <Button size="small" onClick={() => void defer(row)}>
                       延期
                     </Button>
                   ) : null}
-                  {row.pendingType === "RISK_CONFIRM" && row.resourceType === "JOB_SCENE" && roleView === "PUBLISH_MANAGER" ? (
+                  {row.pendingType === "RISK_CONFIRM" && row.resourceType === "JOB_SCENE" && canConfirmRisk ? (
                     <Button size="small" onClick={() => void confirmRisk(row)}>
                       风险确认
                     </Button>
                   ) : null}
-                  {roleView === "PUBLISH_MANAGER" ? (
+                  {canPublishConfig ? (
                     <Button size="small" onClick={() => void resolve(row)}>
                       标记完成
                     </Button>
@@ -496,10 +498,10 @@ export function PublishPage() {
         />
       </Card>
 
-      {roleView === "PUBLISH_MANAGER" && otherRelatedItems.length > 0 ? (
+      {canPublishConfig && otherRelatedItems.length > 0 ? (
         <Card title="关联配置项" style={{ marginTop: 12 }}>
           <Typography.Paragraph type="secondary">
-            这里只展示仍需发布管理员感知的关联配置项，如数据转换规则。菜单能力与页面开通走单独处理路径，不在本页展示。
+            这里只展示仍需发布配置人员感知的关联配置项，如数据转换规则。菜单能力与页面开通走单独处理路径，不在本页展示。
           </Typography.Paragraph>
           <Table<PublishPendingItem>
             rowKey="id"
@@ -681,7 +683,7 @@ export function PublishPage() {
               title: "处理方式",
               width: 220,
               render: () =>
-                roleView === "MENU_ADMIN" ? (
+                canManageMenuCapability ? (
               <Typography.Text>由菜单能力管理员进入特殊权限流程处理</Typography.Text>
                 ) : (
                   <Typography.Text type="secondary">当前视角只读查看</Typography.Text>
@@ -723,7 +725,7 @@ export function PublishPage() {
         open={validationModal.open}
         onCancel={() => setValidationModal({ open: false, item: null, report: null })}
         footer={
-          validationModal.report?.pass && validationModal.item && roleView === "PUBLISH_MANAGER" ? (
+          validationModal.report?.pass && validationModal.item && canPublishConfig ? (
             <Button
               type="primary"
               onClick={() => {

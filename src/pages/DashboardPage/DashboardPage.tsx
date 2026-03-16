@@ -243,7 +243,7 @@ export function DashboardPage() {
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/prompts?action=create")}>新建提示规则</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/prompts")}>复制已有规则</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/interfaces")}>注册 API</Button>
-              <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/publish")}>进入发布与灰度</Button>
+              <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/stats")}>查看运行统计</Button>
             </DashboardSpace>
           </Card>
         </Col>

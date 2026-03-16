@@ -12,6 +12,7 @@ import type {
   ValidationIssue,
   ValidationLevel
 } from "../types";
+import { extractPromptTemplateKeys, parsePromptContentConfig } from "../promptContent";
 
 let validationCounter = 0;
 
@@ -162,12 +163,26 @@ export function getIssuesFromReport(report: SaveValidationReport | null | undefi
 export function validateRuleDraftPayload(
   payload: Pick<
     RuleDefinition,
-    "id" | "name" | "ruleScope" | "pageResourceId" | "priority" | "promptMode" | "closeMode" | "closeTimeoutSec" | "hasConfirmButton" | "sceneId" | "ownerOrgId"
-  >,
+    | "id"
+    | "name"
+    | "ruleScope"
+    | "pageResourceId"
+    | "priority"
+    | "promptMode"
+    | "closeMode"
+    | "closeTimeoutSec"
+    | "hasConfirmButton"
+    | "sceneId"
+    | "ownerOrgId"
+    | "promptContentConfigJson"
+  > & {
+    availablePromptVariableKeys?: string[];
+  },
   existingRules: RuleDefinition[]
 ) {
   const fieldIssues: FieldValidationIssue[] = [];
   const objectIssues: ObjectValidationIssue[] = [];
+  const promptContent = parsePromptContentConfig(payload.promptContentConfigJson);
 
   if (payload.ruleScope === "PAGE_RESOURCE" && !payload.pageResourceId) {
     fieldIssues.push(createFieldIssue({ section: "page", field: "pageResourceId", label: "页面资源", message: "请选择页面资源" }));
@@ -182,14 +197,32 @@ export function validateRuleDraftPayload(
   if (isBlank(payload.ownerOrgId)) {
     fieldIssues.push(createFieldIssue({ section: "basic", field: "ownerOrgId", label: "组织范围", message: "请选择组织范围" }));
   }
+  if ((promptContent.titleSuffix ?? "").trim().length > 20) {
+    fieldIssues.push(createFieldIssue({ section: "content", field: "titleSuffix", label: "标题后缀", message: "标题后缀最多 20 个字符" }));
+  }
+  if (isBlank(promptContent.bodyTemplate)) {
+    fieldIssues.push(createFieldIssue({ section: "content", field: "bodyTemplate", label: "提示正文", message: "请输入提示正文" }));
+  } else if (promptContent.bodyTemplate.length > 300) {
+    fieldIssues.push(createFieldIssue({ section: "content", field: "bodyTemplate", label: "提示正文", message: "提示正文最多 300 个字符" }));
+  }
+  if (payload.availablePromptVariableKeys && payload.availablePromptVariableKeys.length > 0) {
+    const invalidKeys = extractPromptTemplateKeys(promptContent.bodyTemplate).filter((key) => !payload.availablePromptVariableKeys?.includes(key));
+    if (invalidKeys.length > 0) {
+      fieldIssues.push(
+        createFieldIssue({
+          section: "content",
+          field: "bodyTemplate",
+          label: "提示正文",
+          message: `存在未注册变量：${invalidKeys.join("、")}`
+        })
+      );
+    }
+  }
   if (payload.closeMode === "TIMER_THEN_MANUAL") {
     const timeoutError = validatePositiveInteger(payload.closeTimeoutSec, 1);
     if (timeoutError) {
       fieldIssues.push(createFieldIssue({ section: "basic", field: "closeTimeoutSec", label: "关闭超时", message: timeoutError }));
     }
-  }
-  if (payload.hasConfirmButton && !payload.sceneId) {
-    fieldIssues.push(createFieldIssue({ section: "basic", field: "sceneId", label: "关联作业场景", message: "开启确认按钮时请选择作业场景" }));
   }
 
   const duplicated = existingRules.some((item) => item.name === payload.name && item.id !== payload.id);
@@ -206,15 +239,15 @@ export function validateRuleDraftPayload(
     );
   }
 
-  if (payload.promptMode === "SILENT" && !payload.hasConfirmButton) {
+  if (payload.promptMode === "SILENT") {
     objectIssues.push(
       createObjectIssue({
         section: "confirm",
         objectType: "RULE",
-        title: "提醒体验较弱",
-        message: "当前配置为静默提示且未开启确认按钮，用户可能感知不到规则触发。",
+        title: "预览与实际展示可能不同",
+        message: "当前内容预览固定展示为浮窗形态；若运行时选择静默提示，最终展示效果会弱于预览。",
         level: "warning",
-        action: "建议至少保留可感知的提示或确认动作。"
+        action: "如需和预览保持一致，建议使用浮窗提示。"
       })
     );
   }

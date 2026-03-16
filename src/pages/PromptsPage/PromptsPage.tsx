@@ -20,7 +20,7 @@ export function PromptsPage() {
     }
     return {
       message: "已从页面管理带入页面",
-      description: "新建规则时会默认选中当前页面；保存后可前往“发布与灰度”查看待发布内容。"
+      description: "新建规则时会默认选中当前页面；保存后可在规则页直接发布。"
     };
   }, [hasPresetPage]);
 
@@ -28,7 +28,7 @@ export function PromptsPage() {
     <div>
       <Typography.Title level={4}>智能提示</Typography.Title>
       <Typography.Paragraph type="secondary">
-        规则列表是主入口；模板复用仅作快捷来源。新建流程按「选页面 → 改内容 → 预览 → 保存」推进，保存后可前往“发布与灰度”完成发布。
+        规则列表是主入口；模板复用仅作快捷来源。新建流程按「选页面 → 改内容 → 预览 → 保存」推进，保存后可在规则页直接发布。
       </Typography.Paragraph>
 
       {tips ? <Alert type="info" showIcon message={tips.message} description={tips.description} style={{ marginBottom: 12 }} /> : null}
@@ -62,3 +62,4 @@ export function PromptsPage() {
     </div>
   );
 }
+

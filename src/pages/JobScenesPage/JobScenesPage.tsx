@@ -14,19 +14,31 @@ import {
   Table,
   Tag,
   Tooltip,
-  Typography
+  Typography,
+  message
 } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { Background, Controls, MiniMap, ReactFlow, ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { EffectiveConfirmModal } from "../../components/EffectiveConfirmModal";
 import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
 import { ValidationReportPanel } from "../../components/ValidationReportPanel";
+import { EffectiveScopeMode, getEffectiveActionMeta, getEffectivePermissionBlockedMessage, getPublishValidationByResource } from "../../effectiveFlow";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
+import { orgOptions } from "../../orgOptions";
+import { useMockSession } from "../../session/mockSession";
 import { useJobScenesPageModel } from "./useJobScenesPageModel";
 import { executionLabel, nodeTypeLabel, StatusFilter } from "./jobScenesPageShared";
-import type { JobSceneDefinition, JobScenePreviewField } from "../../types";
+import type { JobSceneDefinition, JobScenePreviewField, LifecycleState, PublishValidationReport } from "../../types";
+
+type EffectiveTarget = {
+  id: number;
+  name: string;
+  status: LifecycleState;
+  source: "row" | "notice";
+};
 
 export function JobScenesPage() {
   const navigate = useNavigate();
@@ -88,8 +100,33 @@ export function JobScenesPage() {
     nodeValidationIssues,
     previewValidationIssues,
     publishNotice,
-    dismissPublishNotice
+    dismissPublishNotice,
+    publishSceneNow,
+    restoreSceneNow
   } = useJobScenesPageModel();
+  const { hasAction } = useMockSession();
+  const [msgApi, msgHolder] = message.useMessage();
+  const [effectiveTarget, setEffectiveTarget] = useState<EffectiveTarget | null>(null);
+  const [effectiveLoading, setEffectiveLoading] = useState(false);
+  const [effectiveSubmitting, setEffectiveSubmitting] = useState(false);
+  const [effectiveValidationReport, setEffectiveValidationReport] = useState<PublishValidationReport | null>(null);
+  const [effectiveBlockedMessage, setEffectiveBlockedMessage] = useState<string | null>(null);
+  const [effectiveScopeMode, setEffectiveScopeMode] = useState<EffectiveScopeMode>("ALL_ORGS");
+  const [effectiveScopeOrgIds, setEffectiveScopeOrgIds] = useState<string[]>([]);
+  const effectiveMeta = effectiveTarget ? getEffectiveActionMeta(effectiveTarget.status) : null;
+  const effectiveScopeOptions = useMemo(
+    () => orgOptions.map((item) => ({ label: item.label, value: String(item.value) })),
+    []
+  );
+  const effectivePermissionBlockedMessage = effectiveMeta
+    ? getEffectivePermissionBlockedMessage(effectiveMeta.type, hasAction)
+    : null;
+  const modalBlockedMessage = effectiveBlockedMessage ?? effectivePermissionBlockedMessage;
+  const canEffectiveConfirm =
+    Boolean(effectiveMeta) &&
+    (effectiveMeta?.type !== "PUBLISH" || Boolean(effectiveValidationReport?.pass)) &&
+    (effectiveMeta?.type !== "PUBLISH" || effectiveScopeMode !== "CUSTOM_ORGS" || effectiveScopeOrgIds.length > 0) &&
+    !modalBlockedMessage;
   const [searchParams] = useSearchParams();
   const pageResourceFilter = Number(searchParams.get("pageResourceId") ?? "");
   const executionModeParam = searchParams.get("executionMode");
@@ -145,19 +182,111 @@ export function JobScenesPage() {
       mode: "PREVIEW_THEN_EXECUTE" as const
     }
   ];
+
+  async function openEffectiveAction(target: EffectiveTarget) {
+    const action = getEffectiveActionMeta(target.status);
+    const permissionBlocked = getEffectivePermissionBlockedMessage(action.type, hasAction);
+    if (permissionBlocked) {
+      msgApi.warning(permissionBlocked);
+      return;
+    }
+
+    setEffectiveTarget(target);
+    setEffectiveLoading(false);
+    setEffectiveValidationReport(null);
+    setEffectiveBlockedMessage(null);
+    setEffectiveScopeMode("ALL_ORGS");
+    setEffectiveScopeOrgIds([]);
+
+    if (action.type !== "PUBLISH") {
+      return;
+    }
+    setEffectiveLoading(true);
+    try {
+      const validation = await getPublishValidationByResource("JOB_SCENE", target.id);
+      if (!validation) {
+        setEffectiveBlockedMessage("当前对象没有待发布版本，请先保存草稿。");
+        return;
+      }
+      setEffectiveValidationReport(validation.report);
+    } catch (error) {
+      setEffectiveBlockedMessage(error instanceof Error ? error.message : "加载生效检查结果失败");
+    } finally {
+      setEffectiveLoading(false);
+    }
+  }
+
+  async function confirmEffectiveAction() {
+    if (!effectiveTarget || !effectiveMeta) {
+      return;
+    }
+    setEffectiveSubmitting(true);
+    try {
+      if (effectiveMeta.type === "PUBLISH") {
+        const success = await publishSceneNow(
+          effectiveTarget.id,
+          effectiveTarget.name,
+          effectiveScopeMode === "CUSTOM_ORGS" ? effectiveScopeOrgIds : []
+        );
+        if (!success) {
+          const validation = await getPublishValidationByResource("JOB_SCENE", effectiveTarget.id);
+          setEffectiveValidationReport(validation?.report ?? null);
+          return;
+        }
+      } else {
+        const row = visibleRows.find((item) => item.id === effectiveTarget.id) ?? filteredRows.find((item) => item.id === effectiveTarget.id);
+        if (!row) {
+          msgApi.warning("对象状态已变化，请刷新后重试。");
+          return;
+        }
+        if (effectiveMeta.type === "RESTORE") {
+          const restored = await restoreSceneNow(
+            row,
+            effectiveScopeMode === "CUSTOM_ORGS" ? effectiveScopeOrgIds : []
+          );
+          if (!restored) {
+            return;
+          }
+        } else {
+          await switchStatus(row);
+        }
+      }
+
+      if (effectiveTarget.source === "notice") {
+        dismissPublishNotice();
+      }
+      setEffectiveTarget(null);
+      setEffectiveValidationReport(null);
+      setEffectiveBlockedMessage(null);
+    } finally {
+      setEffectiveSubmitting(false);
+    }
+  }
+
   return (
     <div>
       {holder}
+      {msgHolder}
       <Typography.Title level={4}>智能作业</Typography.Title>
       <Typography.Paragraph type="secondary">
-        从页面上下文进入场景配置，优先表达业务场景与触发方式，再进入高级编排与节点细节。保存后可前往“发布与灰度”完成发布。
+        从页面上下文进入场景配置，优先表达业务场景与触发方式，再进入高级编排与节点细节。保存后可直接发布当前对象。
       </Typography.Paragraph>
       {publishNotice ? (
         <PublishContinuationAlert
           objectLabel="作业场景"
           objectName={publishNotice.objectName}
           warningCount={publishNotice.warningCount}
-          onGoPublish={() => navigate("/publish")}
+          actionLabel={getEffectiveActionMeta("DRAFT").label}
+          actionDisabled={Boolean(getEffectivePermissionBlockedMessage("PUBLISH", hasAction))}
+          actionDisabledReason={getEffectivePermissionBlockedMessage("PUBLISH", hasAction) ?? undefined}
+          onGoPublish={() =>
+            void openEffectiveAction({
+              id: publishNotice.resourceId,
+              name: publishNotice.objectName,
+              status: "DRAFT",
+              source: "notice"
+            })
+          }
           onClose={dismissPublishNotice}
         />
       ) : null}
@@ -167,7 +296,7 @@ export function JobScenesPage() {
           type="info"
           style={{ marginBottom: 12 }}
           message={`已切换到页面：${presetPageName ?? "当前页面"}`}
-          description="你可以直接新建该页面的作业配置，系统会自动带入页面；保存后可前往“发布与灰度”完成发布。"
+          description="你可以直接新建该页面的作业配置，系统会自动带入页面；保存后可直接发布当前对象。"
         />
       ) : null}
 
@@ -262,7 +391,10 @@ export function JobScenesPage() {
             {
               title: "操作",
               width: 520,
-              render: (_, row) => (
+              render: (_, row) => {
+                const actionMeta = getEffectiveActionMeta(row.status);
+                const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasAction);
+                return (
                 <Space wrap>
                   <Button size="small" onClick={() => openEdit(row)}>编辑</Button>
                   <Button size="small" onClick={() => void openBuilder(row)}>作业编排</Button>
@@ -271,14 +403,25 @@ export function JobScenesPage() {
                     <Button size="small">悬浮触发</Button>
                   </Popconfirm>
                   {!row.riskConfirmed ? <Button size="small" onClick={() => void confirmRisk(row)}>确认风险</Button> : null}
-                  <Popconfirm
-                    title={row.status === "ACTIVE" ? "确认停用该场景？" : "确认启用该场景？"}
-                    onConfirm={() => void switchStatus(row)}
+                  <Button
+                    size="small"
+                    type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
+                    disabled={Boolean(actionBlocked)}
+                    title={actionBlocked ?? undefined}
+                    onClick={() =>
+                      void openEffectiveAction({
+                        id: row.id,
+                        name: row.name,
+                        status: row.status,
+                        source: "row"
+                      })
+                    }
                   >
-                    <Button size="small">{row.status === "ACTIVE" ? "停用" : "启用"}</Button>
-                  </Popconfirm>
+                    {actionMeta.label}
+                  </Button>
                 </Space>
-              )
+                );
+              }
             }
           ]}
         />
@@ -287,7 +430,7 @@ export function JobScenesPage() {
       <Modal title={editing ? "编辑场景" : "新建场景"} open={open} onCancel={closeSceneModal} onOk={() => void submitScene()} width={680}>
         <Form form={form} layout="vertical">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            场景编号和版本由系统自动维护，你只需要关注页面、执行方式和风险控制。保存后可前往“发布与灰度”发布生效。
+            场景编号和版本由系统自动维护，你只需要关注页面、执行方式和风险控制。保存后可直接发布当前对象。
           </Typography.Paragraph>
           <ValidationReportPanel report={sceneSaveValidationReport} title="保存前检查结果" />
           <Alert
@@ -374,7 +517,7 @@ export function JobScenesPage() {
               showIcon
               message={
                 builderScene?.riskConfirmed
-                  ? "风险确认已完成：保存后可直接进入“发布与灰度”，系统会自动完成最终检查。"
+                  ? "风险确认已完成：保存后可直接发布当前对象，系统会自动完成最终检查。"
                   : "风险确认未完成：自动化场景发布前需先完成责任确认，否则发布时会被阻断。"
               }
             />
@@ -641,9 +784,30 @@ export function JobScenesPage() {
           />
         </Space>
       </Modal>
+
+      {effectiveTarget && effectiveMeta ? (
+        <EffectiveConfirmModal
+          open
+          objectName={effectiveTarget.name}
+          action={effectiveMeta}
+          loading={effectiveLoading}
+          confirming={effectiveSubmitting}
+          canConfirm={canEffectiveConfirm}
+          blockedMessage={modalBlockedMessage}
+          validationReport={effectiveValidationReport}
+          scopeMode={effectiveScopeMode}
+          scopeOrgIds={effectiveScopeOrgIds}
+          scopeOptions={effectiveScopeOptions}
+          onScopeModeChange={setEffectiveScopeMode}
+          onScopeOrgIdsChange={setEffectiveScopeOrgIds}
+          onCancel={() => setEffectiveTarget(null)}
+          onConfirm={() => void confirmEffectiveAction()}
+        />
+      ) : null}
     </div>
   );
 }
+
 
 
 

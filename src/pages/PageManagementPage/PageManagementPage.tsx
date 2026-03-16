@@ -4,12 +4,15 @@ import {
   Card,
   Checkbox,
   Descriptions,
+  Drawer,
   Form,
   Input,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Statistic,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -18,14 +21,18 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { OrgSelect, OrgText } from "../../components/DirectoryFields";
-import { lifecycleLabelMap } from "../../enumLabels";
+import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { toOrgOption } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
+import { createId } from "../../utils";
 import type {
+  BusinessFieldDefinition,
   CapabilityOpenStatus,
   JobSceneDefinition,
   MenuCapabilityPolicy,
   PageActivationPolicy,
+  PageElement,
+  PageFieldBinding,
   PageMenu,
   PageRegion,
   PageResource,
@@ -34,6 +41,17 @@ import type {
 
 type WorkFilter = "ALL" | "READY" | "NEED_REQUEST" | "PENDING";
 type RequestCapabilityType = "PROMPT" | "JOB";
+type FieldFormValues = Pick<BusinessFieldDefinition, "name" | "description" | "required" | "ownerOrgId" | "status">;
+type BindingFormValues = Pick<PageFieldBinding, "businessFieldCode" | "pageElementId" | "required">;
+type QuickBindFormValues = {
+  usePublicField?: boolean;
+  fieldName?: string;
+  businessFieldCode?: string;
+  elementLogicName?: string;
+  elementSelector?: string;
+  elementSelectorType?: PageElement["selectorType"];
+  required?: boolean;
+};
 
 type EnhancedPageRow = PageResource & {
   regionName: string;
@@ -83,6 +101,21 @@ export function PageManagementPage() {
   const [menuCapabilities, setMenuCapabilities] = useState<MenuCapabilityPolicy[]>([]);
   const [rules, setRules] = useState<RuleDefinition[]>([]);
   const [scenes, setScenes] = useState<JobSceneDefinition[]>([]);
+  const [pageFieldBindingCounts, setPageFieldBindingCounts] = useState<Record<number, number>>({});
+  const [fieldDrawerPage, setFieldDrawerPage] = useState<EnhancedPageRow | null>(null);
+  const [fieldDrawerOpen, setFieldDrawerOpen] = useState(false);
+  const [fieldDrawerLoading, setFieldDrawerLoading] = useState(false);
+  const [fieldDrawerFields, setFieldDrawerFields] = useState<BusinessFieldDefinition[]>([]);
+  const [fieldDrawerBindings, setFieldDrawerBindings] = useState<PageFieldBinding[]>([]);
+  const [fieldDrawerElements, setFieldDrawerElements] = useState<PageElement[]>([]);
+  const [quickBindOpen, setQuickBindOpen] = useState(false);
+  const [fieldOpen, setFieldOpen] = useState(false);
+  const [bindingOpen, setBindingOpen] = useState(false);
+  const [editingField, setEditingField] = useState<BusinessFieldDefinition | null>(null);
+  const [editingBinding, setEditingBinding] = useState<PageFieldBinding | null>(null);
+  const [quickBindForm] = Form.useForm<QuickBindFormValues>();
+  const [fieldForm] = Form.useForm<FieldFormValues>();
+  const [bindingForm] = Form.useForm<BindingFormValues>();
 
   const [regionFilter, setRegionFilter] = useState<string>("ALL");
   const [keyword, setKeyword] = useState("");
@@ -109,6 +142,12 @@ export function PageManagementPage() {
           configCenterService.listRules(),
           configCenterService.listJobScenes()
         ]);
+        const bindingRows = await Promise.all(
+          resourceRows.map(async (resource) => ({
+            pageResourceId: resource.id,
+            count: (await configCenterService.listPageFieldBindings(resource.id)).length
+          }))
+        );
         if (!active) {
           return;
         }
@@ -119,6 +158,7 @@ export function PageManagementPage() {
         setMenuCapabilities(capabilityRows);
         setRules(ruleRows);
         setScenes(sceneRows);
+        setPageFieldBindingCounts(Object.fromEntries(bindingRows.map((item) => [item.pageResourceId, item.count])));
       } finally {
         if (active) {
           setLoading(false);
@@ -280,7 +320,36 @@ export function PageManagementPage() {
     () => rules.filter((item) => item.pageResourceId === selectedPage?.id),
     [rules, selectedPage?.id]
   );
+  const selectedPageFieldBindingCount = selectedPage ? pageFieldBindingCounts[selectedPage.id] ?? 0 : 0;
   const selectedPageActionState = selectedPage ? getPageActionState(selectedPage) : null;
+  const pageSpecificFields = useMemo(
+    () =>
+      fieldDrawerFields.filter(
+        (item) => item.scope === "PAGE_RESOURCE" && item.pageResourceId === fieldDrawerPage?.id
+      ),
+    [fieldDrawerFields, fieldDrawerPage?.id]
+  );
+  const reusableGlobalFields = useMemo(
+    () => fieldDrawerFields.filter((item) => item.scope === "GLOBAL"),
+    [fieldDrawerFields]
+  );
+  const quickBindUsePublicField = Form.useWatch("usePublicField", quickBindForm) ?? false;
+  const quickBindElementLogicName = Form.useWatch("elementLogicName", quickBindForm) ?? "";
+  const businessFieldMap = useMemo(
+    () => Object.fromEntries(fieldDrawerFields.map((item) => [item.code, item])),
+    [fieldDrawerFields]
+  );
+  const elementLabelMap = useMemo(
+    () => Object.fromEntries(fieldDrawerElements.map((item) => [item.id, item.logicName])),
+    [fieldDrawerElements]
+  );
+
+  useEffect(() => {
+    if (!quickBindOpen || quickBindUsePublicField) {
+      return;
+    }
+    quickBindForm.setFieldValue("fieldName", quickBindElementLogicName.trim());
+  }, [quickBindElementLogicName, quickBindForm, quickBindOpen, quickBindUsePublicField]);
 
   const orgOptions = useMemo(() => {
     return Array.from(new Set(resources.map((item) => item.ownerOrgId))).map((item) => toOrgOption(item));
@@ -358,6 +427,167 @@ export function PageManagementPage() {
     );
   }
 
+  async function loadFieldDrawerModel(pageId: number) {
+    setFieldDrawerLoading(true);
+    try {
+      const [fieldRows, bindingRows, elementRows] = await Promise.all([
+        configCenterService.listBusinessFields(pageId),
+        configCenterService.listPageFieldBindings(pageId),
+        configCenterService.listPageElements(pageId)
+      ]);
+      setFieldDrawerFields(fieldRows);
+      setFieldDrawerBindings(bindingRows);
+      setFieldDrawerElements(elementRows);
+      setPageFieldBindingCounts((previous) => ({
+        ...previous,
+        [pageId]: bindingRows.length
+      }));
+    } finally {
+      setFieldDrawerLoading(false);
+    }
+  }
+
+  async function openFieldMaintenance(page: EnhancedPageRow) {
+    setFieldDrawerPage(page);
+    setFieldDrawerOpen(true);
+    setEditingField(null);
+    setEditingBinding(null);
+    await loadFieldDrawerModel(page.id);
+  }
+
+  function openQuickBind() {
+    if (!fieldDrawerPage) {
+      return;
+    }
+    quickBindForm.setFieldsValue({
+      usePublicField: false,
+      fieldName: "",
+      businessFieldCode: undefined,
+      elementLogicName: "",
+      elementSelector: "",
+      elementSelectorType: "XPATH",
+      required: false
+    });
+    setQuickBindOpen(true);
+  }
+
+  async function submitQuickBind() {
+    if (!fieldDrawerPage) {
+      return;
+    }
+    const values = await quickBindForm.validateFields();
+    const createdElement = await configCenterService.upsertPageElement({
+      id: Date.now(),
+      pageResourceId: fieldDrawerPage.id,
+      logicName: values.elementLogicName ?? "",
+      selector: values.elementSelector ?? "",
+      selectorType: values.elementSelectorType ?? "XPATH",
+      required: values.required ?? false
+    });
+
+    let businessFieldCode = values.businessFieldCode;
+    if (!values.usePublicField) {
+      const createdField = await configCenterService.upsertBusinessField({
+        id: Date.now() + 1,
+        code: createId("field"),
+        name: values.fieldName ?? values.elementLogicName ?? "",
+        scope: "PAGE_RESOURCE",
+        pageResourceId: fieldDrawerPage.id,
+        valueType: "STRING",
+        required: values.required ?? false,
+        description: "",
+        ownerOrgId: fieldDrawerPage.ownerOrgId,
+        status: "DRAFT",
+        currentVersion: 1,
+        aliases: []
+      });
+      businessFieldCode = createdField.code;
+    }
+
+    await configCenterService.upsertPageFieldBinding({
+      id: Date.now() + 2,
+      pageResourceId: fieldDrawerPage.id,
+      businessFieldCode: businessFieldCode ?? "",
+      pageElementId: createdElement.id,
+      required: values.required ?? false
+    });
+    msgApi.success(values.usePublicField ? "元素已绑定到公共字段" : "元素已生成页面字段并完成绑定");
+    setQuickBindOpen(false);
+    await loadFieldDrawerModel(fieldDrawerPage.id);
+  }
+
+  function openEditField(row: BusinessFieldDefinition) {
+    setEditingField(row);
+    fieldForm.setFieldsValue({
+      name: row.name,
+      description: row.description,
+      required: row.required,
+      ownerOrgId: row.ownerOrgId,
+      status: row.status
+    });
+    setFieldOpen(true);
+  }
+
+  async function submitField() {
+    if (!fieldDrawerPage) {
+      return;
+    }
+    const values = await fieldForm.validateFields();
+    await configCenterService.upsertBusinessField({
+      id: editingField?.id ?? Date.now(),
+      code: editingField?.code ?? createId("field"),
+      name: values.name,
+      scope: "PAGE_RESOURCE",
+      pageResourceId: fieldDrawerPage.id,
+      valueType: editingField?.valueType ?? "STRING",
+      required: values.required,
+      description: values.description,
+      ownerOrgId: values.ownerOrgId,
+      status: values.status,
+      currentVersion: editingField?.currentVersion ?? 1,
+      aliases: editingField?.aliases ?? []
+    });
+    msgApi.success(editingField ? "页面字段已更新" : "页面字段已创建");
+    setFieldOpen(false);
+    await loadFieldDrawerModel(fieldDrawerPage.id);
+  }
+
+  function openEditBinding(row: PageFieldBinding) {
+    setEditingBinding(row);
+    bindingForm.setFieldsValue({
+      businessFieldCode: row.businessFieldCode,
+      pageElementId: row.pageElementId,
+      required: row.required
+    });
+    setBindingOpen(true);
+  }
+
+  async function submitBinding() {
+    if (!fieldDrawerPage) {
+      return;
+    }
+    const values = await bindingForm.validateFields();
+    await configCenterService.upsertPageFieldBinding({
+      id: editingBinding?.id ?? Date.now(),
+      pageResourceId: fieldDrawerPage.id,
+      businessFieldCode: values.businessFieldCode,
+      pageElementId: values.pageElementId,
+      required: values.required
+    });
+    msgApi.success(editingBinding ? "字段绑定已更新" : "字段绑定已创建");
+    setBindingOpen(false);
+    await loadFieldDrawerModel(fieldDrawerPage.id);
+  }
+
+  async function removeBinding(row: PageFieldBinding) {
+    if (!fieldDrawerPage) {
+      return;
+    }
+    await configCenterService.deletePageFieldBinding(row.id);
+    msgApi.success("字段绑定已删除");
+    await loadFieldDrawerModel(fieldDrawerPage.id);
+  }
+
   function getMenuTargetPage(menuId: number) {
     const pages = menuPagesMap[menuId] ?? [];
     if (pages.length === 0) {
@@ -392,6 +622,10 @@ export function PageManagementPage() {
     setSelectedMenuId(menuId);
     setSelectedPageId(targetPage.id);
     createJob(targetPage);
+  }
+
+  function openPublicFieldGovernance() {
+    navigate("/advanced?tab=public-fields");
   }
 
   function getPageActionState(page: EnhancedPageRow) {
@@ -640,12 +874,21 @@ export function PageManagementPage() {
                 </Card>
               ) : null}
 
-              <Card size="small" title="页面信息">
+              <Card
+                size="small"
+                title="页面信息"
+                extra={
+                  <Button size="small" onClick={() => void openFieldMaintenance(selectedPage)}>
+                    元素映射
+                  </Button>
+                }
+              >
                 <Descriptions size="small" column={2}>
                   <Descriptions.Item label="页面名称">{selectedPage.name}</Descriptions.Item>
                   <Descriptions.Item label="所属专区">{selectedPage.regionName}</Descriptions.Item>
                   <Descriptions.Item label="所属菜单">{selectedPage.menuName}</Descriptions.Item>
                   <Descriptions.Item label="页面状态">{lifecycleLabelMap[selectedPage.status]}</Descriptions.Item>
+                  <Descriptions.Item label="已绑定字段数">{selectedPageFieldBindingCount}</Descriptions.Item>
                   <Descriptions.Item label="最近更新">{selectedPage.updatedAt}</Descriptions.Item>
                 </Descriptions>
               </Card>
@@ -678,6 +921,248 @@ export function PageManagementPage() {
           )}
         </Card>
       ) : null}
+
+      <Drawer
+        title={fieldDrawerPage ? `元素映射：${fieldDrawerPage.name}` : "元素映射"}
+        placement="right"
+        width={720}
+        open={fieldDrawerOpen}
+        onClose={() => {
+          setFieldDrawerOpen(false);
+          setQuickBindOpen(false);
+          setFieldOpen(false);
+          setBindingOpen(false);
+        }}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Alert
+            showIcon
+            type="info"
+            message="先录元素，再完成字段映射"
+            description="默认自动生成页面字段；如果勾选公共字段，再从已有公共字段里选择。"
+          />
+
+          <Card
+            size="small"
+            title="当前页面字段"
+            extra={
+              <Space>
+                <Button onClick={openPublicFieldGovernance}>公共字段治理</Button>
+                <Button type="primary" onClick={openQuickBind} disabled={!fieldDrawerPage}>
+                  元素映射
+                </Button>
+              </Space>
+            }
+          >
+            <Table<BusinessFieldDefinition>
+              rowKey="id"
+              loading={fieldDrawerLoading}
+              dataSource={pageSpecificFields}
+              pagination={false}
+              locale={{ emptyText: "当前页面还没有页面特有字段，可按需补充。" }}
+              columns={[
+                { title: "字段名称", dataIndex: "name", width: 180 },
+                { title: "说明", dataIndex: "description" },
+                {
+                  title: "状态",
+                  width: 100,
+                  render: (_, row) => <Tag>{lifecycleLabelMap[row.status]}</Tag>
+                },
+                {
+                  title: "操作",
+                  width: 100,
+                  render: (_, row) => (
+                    <Button size="small" onClick={() => openEditField(row)}>
+                      编辑
+                    </Button>
+                  )
+                }
+              ]}
+            />
+          </Card>
+
+          <Card
+            size="small"
+            title="字段绑定"
+          >
+            <Table<PageFieldBinding>
+              rowKey="id"
+              loading={fieldDrawerLoading}
+              dataSource={fieldDrawerBindings}
+              pagination={false}
+              locale={{ emptyText: "当前页面还没有字段绑定。" }}
+              columns={[
+                {
+                  title: "字段",
+                  width: 220,
+                  render: (_, row) => {
+                    const field = businessFieldMap[row.businessFieldCode];
+                    if (!field) {
+                      return <Typography.Text type="secondary">字段已不存在</Typography.Text>;
+                    }
+                    return (
+                      <Space size={6}>
+                        <Typography.Text>{field.name}</Typography.Text>
+                        <Tag color={field.scope === "GLOBAL" ? "blue" : "geekblue"}>
+                          {field.scope === "GLOBAL" ? "公共字段" : "页面字段"}
+                        </Tag>
+                      </Space>
+                    );
+                  }
+                },
+                {
+                  title: "元素",
+                  width: 180,
+                  render: (_, row) => elementLabelMap[row.pageElementId] ?? <Typography.Text type="secondary">元素已删除</Typography.Text>
+                },
+                {
+                  title: "必填",
+                  width: 80,
+                  render: (_, row) => (row.required ? <Tag color="red">是</Tag> : <Tag>否</Tag>)
+                },
+                {
+                  title: "操作",
+                  width: 140,
+                  render: (_, row) => (
+                    <Space>
+                      <Button size="small" onClick={() => openEditBinding(row)}>
+                        编辑
+                      </Button>
+                      <Popconfirm title="确认删除该字段绑定？" onConfirm={() => void removeBinding(row)}>
+                        <Button size="small" danger>
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    </Space>
+                  )
+                }
+              ]}
+            />
+          </Card>
+
+          <Card size="small" title="可引用公共字段">
+            <Space size={[8, 8]} wrap>
+              {reusableGlobalFields.length > 0 ? (
+                reusableGlobalFields.map((field) => <Tag key={field.id}>{field.name}</Tag>)
+              ) : (
+                <Typography.Text type="secondary">当前还没有可复用公共字段。</Typography.Text>
+              )}
+            </Space>
+          </Card>
+        </Space>
+      </Drawer>
+
+      <Modal
+        title="元素映射"
+        open={quickBindOpen}
+        onCancel={() => setQuickBindOpen(false)}
+        onOk={() => void submitQuickBind()}
+      >
+        <Form form={quickBindForm} layout="vertical">
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            输入元素信息后，系统默认自动生成页面字段并完成绑定。
+          </Typography.Paragraph>
+          <Form.Item name="elementLogicName" label="元素名" rules={[{ required: true, message: "请输入元素名" }]}>
+            <Input placeholder="例如：客户号输入框" />
+          </Form.Item>
+          <Form.Item label="自动生成字段名">
+            <Input value={quickBindElementLogicName.trim()} disabled placeholder="输入元素名后自动生成" />
+          </Form.Item>
+          <Form.Item name="elementSelectorType" label="选择器类型" rules={[{ required: true, message: "请选择选择器类型" }]}>
+            <Select
+              options={[
+                { label: "XPATH", value: "XPATH" },
+                { label: "CSS", value: "CSS" }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="elementSelector" label="元素选择器" rules={[{ required: true, message: "请输入元素选择器" }]}>
+            <Input placeholder="例如：//*[@id='customerNo']" />
+          </Form.Item>
+          <Form.Item name="usePublicField" label="使用公共字段" valuePropName="checked">
+            <Switch checkedChildren="是" unCheckedChildren="否" />
+          </Form.Item>
+          {quickBindUsePublicField ? (
+            <Form.Item name="businessFieldCode" label="公共字段" rules={[{ required: true, message: "请选择公共字段" }]}>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                options={reusableGlobalFields.map((field) => ({
+                  label: field.name,
+                  value: field.code
+                }))}
+              />
+            </Form.Item>
+          ) : null}
+          <Form.Item name="required" label="是否必填" valuePropName="checked">
+            <Switch checkedChildren="是" unCheckedChildren="否" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="编辑页面字段"
+        open={fieldOpen}
+        onCancel={() => setFieldOpen(false)}
+        onOk={() => void submitField()}
+      >
+        <Form form={fieldForm} layout="vertical">
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            这里只维护当前页面特有字段。跨页面复用的公共字段请到高级配置统一治理。
+          </Typography.Paragraph>
+          <Form.Item name="name" label="字段名称" rules={[{ required: true, message: "请输入字段名称" }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="description" label="说明">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="ownerOrgId" label="归属组织" rules={[{ required: true, message: "请选择归属组织" }]}>
+            <OrgSelect />
+          </Form.Item>
+          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+            <Select options={lifecycleOptions} />
+          </Form.Item>
+          <Form.Item name="required" label="是否必填" valuePropName="checked">
+            <Switch checkedChildren="是" unCheckedChildren="否" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="编辑字段绑定"
+        open={bindingOpen}
+        onCancel={() => setBindingOpen(false)}
+        onOk={() => void submitBinding()}
+      >
+        <Form form={bindingForm} layout="vertical">
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            绑定时既可以选择当前页面字段，也可以直接引用公共字段。
+          </Typography.Paragraph>
+          <Form.Item name="businessFieldCode" label="字段" rules={[{ required: true, message: "请选择字段" }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={fieldDrawerFields.map((field) => ({
+                label: `${field.name}（${field.scope === "GLOBAL" ? "公共字段" : "页面字段"}）`,
+                value: field.code
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="pageElementId" label="元素" rules={[{ required: true, message: "请选择元素" }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={fieldDrawerElements.map((element) => ({
+                label: element.logicName,
+                value: element.id
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="required" label="是否必填" valuePropName="checked">
+            <Switch checkedChildren="是" unCheckedChildren="否" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title={requestMenu ? `申请菜单开通：${requestMenu.menuName}` : "申请菜单开通"}

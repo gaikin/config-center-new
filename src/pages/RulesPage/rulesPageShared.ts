@@ -18,12 +18,21 @@ export type RuleForm = {
   pageResourceId?: number;
   priority: number;
   promptMode: PromptMode;
+  titleSuffix?: string;
+  bodyTemplate: string;
   closeMode: PromptCloseMode;
   closeTimeoutSec?: number;
   hasConfirmButton: boolean;
   sceneId?: number;
   status: LifecycleState;
   ownerOrgId: string;
+};
+
+export type PromptVariableOption = {
+  key: string;
+  label: string;
+  exampleValue: string;
+  sourceType: "PAGE_FIELD" | "CONTEXT" | "INTERFACE_FIELD";
 };
 
 export type OperandSide = "left" | "right";

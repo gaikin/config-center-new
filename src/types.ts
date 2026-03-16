@@ -175,6 +175,12 @@ export interface PreprocessorDefinition {
   updatedAt: string;
 }
 
+export interface PromptContentConfig {
+  version: 1;
+  titleSuffix?: string;
+  bodyTemplate: string;
+}
+
 export interface RuleDefinition {
   id: number;
   name: string;
@@ -187,10 +193,13 @@ export interface RuleDefinition {
   priority: number;
   promptMode: PromptMode;
   closeMode: PromptCloseMode;
+  promptContentConfigJson: string;
   closeTimeoutSec?: number;
   hasConfirmButton: boolean;
   sceneId?: number;
   sceneName?: string;
+  effectiveStartAt?: string;
+  effectiveEndAt?: string;
   status: LifecycleState;
   currentVersion: number;
   ownerOrgId: string;
@@ -440,6 +449,14 @@ export interface PublishAuditLog {
   resourceId?: number;
   resourceName: string;
   operator: string;
+  effectiveScopeType?: "ALL_ORGS" | "CUSTOM_ORGS";
+  effectiveOrgIds?: string[];
+  effectiveScopeSummary?: string;
+  effectiveStartAt?: string;
+  effectiveEndAt?: string;
+  approvalTicketId?: string;
+  approvalSource?: string;
+  approvalStatus?: string;
   createdAt: string;
 }
 
@@ -564,23 +581,27 @@ export type ActionType =
   | "ROLLBACK"
   | "AUDIT_VIEW"
   | "RISK_CONFIRM"
-  | "ROLE_MANAGE";
+  | "ROLE_MANAGE"
+  | "MENU_ENABLE_MANAGE";
 
 export interface RoleItem {
   id: number;
   name: string;
-  roleType:
-    | "BUSINESS_OPERATOR"
-    | "BUSINESS_CONFIG"
-    | "BUSINESS_MANAGER"
-    | "BUSINESS_AUDITOR"
-    | "BUSINESS_SUPER_ADMIN"
-    | "PLATFORM_SUPPORT";
+  roleType: "CONFIG_OPERATOR" | "PERMISSION_ADMIN" | "TECH_SUPPORT";
   status: "ACTIVE" | "DISABLED";
   orgScopeId: string;
   actions: ActionType[];
   memberCount: number;
   updatedAt: string;
+}
+
+export interface RolePermissionOperator {
+  operatorId: string;
+  roleType: RoleItem["roleType"];
+  orgScopeId: string;
+  approvalTicketId?: string;
+  approvalSource?: string;
+  approvalStatus?: string;
 }
 
 export interface DashboardOverview {

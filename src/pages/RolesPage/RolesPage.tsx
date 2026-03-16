@@ -1,4 +1,4 @@
-import {  Button,
+import { Alert, Button,
   Card,
   Form,
   Input,
@@ -17,16 +17,14 @@ import { useEffect, useMemo, useState } from "react";
 import { OrgSelect, OrgText, PersonMultiSelect } from "../../components/DirectoryFields";
 import { getPersonLabel, normalizePersonValue, toPersonOption } from "../../directory";
 import { lifecycleLabelMap } from "../../enumLabels";
+import { getRoleTypeDefaultActions, HEAD_OFFICE_ORG_ID, HIGH_PRIVILEGE_ACTIONS, normalizeRoleActions } from "../../permissionPolicy";
 import { configCenterService } from "../../services/configCenterService";
 import type { ActionType, RoleItem } from "../../types";
 
 const roleTypeLabel: Record<RoleItem["roleType"], string> = {
-  BUSINESS_OPERATOR: "业务操作",
-  BUSINESS_CONFIG: "业务配置",
-  BUSINESS_MANAGER: "业务管理",
-  BUSINESS_AUDITOR: "业务审计",
-  BUSINESS_SUPER_ADMIN: "业务超管",
-  PLATFORM_SUPPORT: "平台支持"
+  CONFIG_OPERATOR: "配置人员",
+  PERMISSION_ADMIN: "权限管理人员",
+  TECH_SUPPORT: "技术支持人员"
 };
 
 const statusColor: Record<RoleItem["status"], string> = {
@@ -47,7 +45,8 @@ const allActions: ActionType[] = [
   "ROLLBACK",
   "AUDIT_VIEW",
   "RISK_CONFIRM",
-  "ROLE_MANAGE"
+  "ROLE_MANAGE",
+  "MENU_ENABLE_MANAGE"
 ];
 
 const actionLabelMap: Record<ActionType, string> = {
@@ -60,7 +59,8 @@ const actionLabelMap: Record<ActionType, string> = {
   ROLLBACK: "回滚",
   AUDIT_VIEW: "审计查看",
   RISK_CONFIRM: "风险确认",
-  ROLE_MANAGE: "角色维护"
+  ROLE_MANAGE: "角色维护",
+  MENU_ENABLE_MANAGE: "菜单启用"
 };
 
 const actionDescriptions: Record<ActionType, string> = {
@@ -73,16 +73,8 @@ const actionDescriptions: Record<ActionType, string> = {
   ROLLBACK: "回滚到待发布状态",
   AUDIT_VIEW: "查看审计与日志",
   RISK_CONFIRM: "确认自动化风险责任",
-  ROLE_MANAGE: "维护角色与成员"
-};
-
-const roleTypeDefaultActions: Record<RoleItem["roleType"], ActionType[]> = {
-  BUSINESS_OPERATOR: ["VIEW"],
-  BUSINESS_CONFIG: ["VIEW", "CONFIG", "VALIDATE"],
-  BUSINESS_MANAGER: ["VIEW", "VALIDATE", "PUBLISH", "DISABLE", "DEFER", "ROLLBACK", "RISK_CONFIRM"],
-  BUSINESS_AUDITOR: ["VIEW", "AUDIT_VIEW"],
-  BUSINESS_SUPER_ADMIN: allActions,
-  PLATFORM_SUPPORT: ["VIEW", "VALIDATE", "AUDIT_VIEW"]
+  ROLE_MANAGE: "维护角色与成员和操作权限",
+  MENU_ENABLE_MANAGE: "高权限操作：菜单启用（仅总行分配）"
 };
 
 export function RolesPage({ embedded = false }: { embedded?: boolean }) {
@@ -93,6 +85,15 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   const [editing, setEditing] = useState<RoleItem | null>(null);
   const [form] = Form.useForm<RoleForm>();
   const selectedRoleType = Form.useWatch("roleType", form);
+  const selectedOrgScopeId = Form.useWatch("orgScopeId", form);
+  const selectedActions = Form.useWatch("actions", form) as ActionType[] | undefined;
+  const defaultActions = useMemo(
+    () =>
+      selectedRoleType && selectedOrgScopeId
+        ? getRoleTypeDefaultActions(selectedRoleType, selectedOrgScopeId)
+        : [],
+    [selectedOrgScopeId, selectedRoleType]
+  );
 
   const [memberOpen, setMemberOpen] = useState(false);
   const [memberRole, setMemberRole] = useState<RoleItem | null>(null);
@@ -128,6 +129,29 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
     void loadData();
   }, []);
 
+  useEffect(() => {
+    if (!open || !selectedOrgScopeId || !selectedRoleType || !selectedActions) {
+      return;
+    }
+    const normalized = normalizeRoleActions(selectedRoleType, selectedOrgScopeId, selectedActions);
+    if (normalized.join("|") !== selectedActions.join("|")) {
+      form.setFieldValue("actions", normalized);
+      if (selectedOrgScopeId !== HEAD_OFFICE_ORG_ID && selectedActions.some((action) => HIGH_PRIVILEGE_ACTIONS.includes(action))) {
+        msgApi.warning("非总行范围角色不可配置高权限操作。");
+      }
+    }
+  }, [form, msgApi, open, selectedActions, selectedOrgScopeId, selectedRoleType]);
+
+  useEffect(() => {
+    if (!open || selectedRoleType !== "TECH_SUPPORT") {
+      return;
+    }
+    if (selectedOrgScopeId && selectedOrgScopeId !== HEAD_OFFICE_ORG_ID) {
+      form.setFieldValue("orgScopeId", HEAD_OFFICE_ORG_ID);
+      msgApi.warning("技术支持人员仅允许配置为总行范围。");
+    }
+  }, [form, msgApi, open, selectedOrgScopeId, selectedRoleType]);
+
   const filteredRows = useMemo(() => {
     if (statusFilter === "ALL") {
       return rows;
@@ -137,12 +161,13 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
 
   function openCreate() {
     setEditing(null);
+    const defaultOrgScope = "branch-east";
     form.setFieldsValue({
       name: "",
-      roleType: "BUSINESS_CONFIG",
+      roleType: "CONFIG_OPERATOR",
       status: "ACTIVE",
-      orgScopeId: "branch-east",
-      actions: roleTypeDefaultActions.BUSINESS_CONFIG
+      orgScopeId: defaultOrgScope,
+      actions: getRoleTypeDefaultActions("CONFIG_OPERATOR", defaultOrgScope)
     });
     setOpen(true);
   }
@@ -160,14 +185,22 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   }
 
   async function submit() {
-    const values = await form.validateFields();
-    await configCenterService.upsertRole({
-      ...values,
-      id: editing?.id ?? Date.now()
-    });
-    msgApi.success(editing ? "角色已更新" : "角色已创建");
-    setOpen(false);
-    await loadData();
+    try {
+      const values = await form.validateFields();
+      await configCenterService.upsertRole(
+        {
+          ...values,
+          actions: normalizeRoleActions(values.roleType, values.orgScopeId, values.actions),
+          id: editing?.id ?? Date.now()
+        }
+      );
+      msgApi.success(editing ? "角色已更新" : "角色已创建");
+      setOpen(false);
+      await loadData();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "角色保存失败";
+      msgApi.error(errorMessage);
+    }
   }
 
   function closeRoleModal() {
@@ -186,10 +219,10 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   }
 
   function applyRolePreset() {
-    if (!selectedRoleType) {
+    if (!selectedRoleType || !selectedOrgScopeId) {
       return;
     }
-    form.setFieldValue("actions", roleTypeDefaultActions[selectedRoleType]);
+    form.setFieldValue("actions", getRoleTypeDefaultActions(selectedRoleType, selectedOrgScopeId));
     msgApi.success("已按角色类型填充推荐权限");
   }
 
@@ -229,7 +262,7 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
         <>
           <Typography.Title level={4}>权限管理</Typography.Title>
           <Typography.Paragraph type="secondary">
-            这是高级维护区，用来管理角色、组织范围和成员授权，避免在业务主路径里暴露复杂权限细节。
+            业务角色分为配置人员和权限管理人员；菜单启用等高权限操作仅允许总行权限管理人员分配。
           </Typography.Paragraph>
         </>
       ) : null}
@@ -318,6 +351,22 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
             角色编号由系统自动生成；成员数量会按已绑定人员自动统计。
           </Typography.Paragraph>
+          <Alert
+            showIcon
+            type="info"
+            style={{ marginBottom: 12 }}
+            message="高权限分配规则"
+            description="菜单启用属于高权限操作，仅总行权限管理人员可分配给总行范围角色。后续新增高权限操作将沿用同一规则。"
+          />
+          {selectedRoleType && selectedOrgScopeId ? (
+            <Alert
+              showIcon
+              type="success"
+              style={{ marginBottom: 12 }}
+              message="默认权限"
+              description={`当前角色默认包含：${defaultActions.map((action) => actionLabelMap[action]).join("、")}。默认权限会自动带入，不建议移除。`}
+            />
+          ) : null}
           <Form.Item name="name" label="角色名称" rules={[{ required: true, message: "请输入角色名称" }]}>
             <Input maxLength={128} />
           </Form.Item>
@@ -331,16 +380,25 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
           </Form.Item>
 
           <Button size="small" onClick={applyRolePreset} style={{ marginBottom: 12 }}>
-            按角色类型填充推荐权限
+            按角色类型重置默认权限
           </Button>
 
           <Form.Item name="orgScopeId" label="组织范围" rules={[{ required: true, message: "请选择组织范围" }]}>
             <OrgSelect />
           </Form.Item>
-          <Form.Item name="actions" label="操作类型" rules={[{ required: true, message: "请选择操作类型" }]}>
+          <Form.Item
+            name="actions"
+            label="操作类型"
+            extra="默认权限会自动带入；可在此补充停用、延期、回滚、风险确认、审计查看等附加权限。"
+            rules={[{ required: true, message: "请选择操作类型" }]}
+          >
             <Select
               mode="multiple"
-              options={allActions.map((action) => ({ value: action, label: `${actionLabelMap[action]} - ${actionDescriptions[action]}` }))}
+              options={allActions.map((action) => ({
+                value: action,
+                label: `${actionLabelMap[action]} - ${actionDescriptions[action]}`,
+                disabled: selectedOrgScopeId !== HEAD_OFFICE_ORG_ID && HIGH_PRIVILEGE_ACTIONS.includes(action)
+              }))}
               placeholder="可多选"
             />
           </Form.Item>
@@ -349,7 +407,9 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
           </Typography.Paragraph>
           <Space size={[8, 8]} wrap style={{ marginBottom: 12 }}>
             {allActions.map((action) => (
-              <Tag key={action}>{`${actionLabelMap[action]}：${actionDescriptions[action]}`}</Tag>
+              <Tag key={action} color={HIGH_PRIVILEGE_ACTIONS.includes(action) ? "magenta" : undefined}>
+                {`${actionLabelMap[action]}：${actionDescriptions[action]}`}
+              </Tag>
             ))}
           </Space>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>

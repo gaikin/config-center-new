@@ -1,17 +1,22 @@
-import { Alert, Button, Card, Collapse, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Steps, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, Button, Card, Collapse, Drawer, Form, Input, InputNumber, Modal, Select, Space, Steps, Table, Tag, Tooltip, Typography, message } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { OrgSelect } from "../../components/DirectoryFields";
+import { EffectiveConfirmModal } from "../../components/EffectiveConfirmModal";
 import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
 import { ValidationReportPanel } from "../../components/ValidationReportPanel";
-import { lifecycleLabelMap, lifecycleOptions, promptModeLabelMap } from "../../enumLabels";
-import { getOrgLabel } from "../../orgOptions";
+import { EffectiveScopeMode, getEffectiveActionMeta, getEffectivePermissionBlockedMessage, getPublishValidationByResource } from "../../effectiveFlow";
+import { lifecycleLabelMap, promptModeLabelMap } from "../../enumLabels";
+import { getOrgLabel, orgOptions } from "../../orgOptions";
+import { DEFAULT_PROMPT_TITLE, renderPromptTemplate } from "../../promptContent";
 import { configCenterService } from "../../services/configCenterService";
+import { useMockSession } from "../../session/mockSession";
+import { PromptTemplateEditor, type PromptTemplateEditorHandle } from "./PromptTemplateEditor";
 import { RulesPageMode, useRulesPageModel } from "./useRulesPageModel";
 import { buildDefaultListLookupMatcher, InterfaceInputParamDraft, ListLookupMatcherDraft, LOGIC_OPERATOR_WIDTH, deriveMachineKeyFromOutputPath, normalizeLookupSourceType, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, listLookupSourceOptions, operatorOptions, sourceOptions, statusColor, valueTypeOptions } from "./rulesPageShared";
 import { OperandPill, InterfaceInputValueEditor } from "./rulesOperandRenderers";
-import type { RuleDefinition, RuleLogicType, RuleOperandValueType } from "../../types";
+import type { LifecycleState, PublishValidationReport, RuleDefinition, RuleLogicType, RuleOperandValueType } from "../../types";
 
 type RulesPageProps = {
   mode?: RulesPageMode;
@@ -20,6 +25,13 @@ type RulesPageProps = {
   initialTemplateRuleId?: number;
   initialSceneId?: number;
   autoOpenCreate?: boolean;
+};
+
+type EffectiveTarget = {
+  id: number;
+  name: string;
+  status: LifecycleState;
+  source: "row" | "notice";
 };
 
 function CompactHint({
@@ -125,6 +137,7 @@ export function RulesPage({
     globalLogicType,
     setGlobalLogicType,
     pageFieldOptions,
+    promptVariableOptions,
     conditionsDraft,
     selectedOperand,
     setSelectedOperand,
@@ -157,14 +170,18 @@ export function RulesPage({
     hasSelectedOperandDirtyConfig,
     wizardStepIssues,
     publishNotice,
-    dismissPublishNotice
+    dismissPublishNotice,
+    publishRuleNow,
+    restoreRuleNow
   } = useRulesPageModel(mode, { initialPageResourceId, initialTemplateRuleId, initialSceneId, autoOpenCreate });
   const navigate = useNavigate();
+  const { hasAction } = useMockSession();
+  const [msgApi, msgHolder] = message.useMessage();
   const isTemplateMode = mode === "TEMPLATE";
   const pageTitle = isTemplateMode ? "模板复用" : "智能提示";
   const pageDescription = isTemplateMode
     ? "沉淀高复用规则模板。模板仅引用公共字段，供业务人员在新建页面规则时快速套用。"
-    : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。保存后可前往“发布与灰度”完成发布。";
+    : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。保存后可直接发布当前对象。";
   const createButtonLabel = isTemplateMode ? "新建模板" : "新建规则";
   const modalTitle = editing ? (isTemplateMode ? "编辑规则模板" : "编辑规则") : isTemplateMode ? "新建规则模板" : "新建规则";
   const modalAlert = isTemplateMode
@@ -177,8 +194,37 @@ export function RulesPage({
         description: "模板是快捷来源，不是业务人员的主操作对象；选择模板后会自动带入条件逻辑、提示方式和关闭策略。"
       };
   const [wizardStep, setWizardStep] = useState(0);
+  const [selectedPromptVariable, setSelectedPromptVariable] = useState<string>();
+  const promptEditorRef = useRef<PromptTemplateEditorHandle | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState<{ matched: boolean; detail: string } | null>(null);
+  const [effectiveTarget, setEffectiveTarget] = useState<EffectiveTarget | null>(null);
+  const [effectiveLoading, setEffectiveLoading] = useState(false);
+  const [effectiveSubmitting, setEffectiveSubmitting] = useState(false);
+  const [effectiveValidationReport, setEffectiveValidationReport] = useState<PublishValidationReport | null>(null);
+  const [effectiveBlockedMessage, setEffectiveBlockedMessage] = useState<string | null>(null);
+  const [effectiveScopeMode, setEffectiveScopeMode] = useState<EffectiveScopeMode>("ALL_ORGS");
+  const [effectiveScopeOrgIds, setEffectiveScopeOrgIds] = useState<string[]>([]);
+  const [effectiveStartAt, setEffectiveStartAt] = useState("");
+  const [effectiveEndAt, setEffectiveEndAt] = useState("");
+  const watchedPromptMode = Form.useWatch("promptMode", ruleForm);
+  const watchedTitleSuffix = Form.useWatch("titleSuffix", ruleForm);
+  const watchedBodyTemplate = Form.useWatch("bodyTemplate", ruleForm);
+  const effectiveMeta = effectiveTarget ? getEffectiveActionMeta(effectiveTarget.status) : null;
+  const effectiveScopeOptions = useMemo(
+    () => orgOptions.map((item) => ({ label: item.label, value: String(item.value) })),
+    []
+  );
+  const effectivePermissionBlockedMessage = effectiveMeta
+    ? getEffectivePermissionBlockedMessage(effectiveMeta.type, hasAction)
+    : null;
+  const modalBlockedMessage = effectiveBlockedMessage ?? effectivePermissionBlockedMessage;
+  const canEffectiveConfirm =
+    Boolean(effectiveMeta) &&
+    (effectiveMeta?.type === "DISABLE" || Boolean(effectiveStartAt.trim() && effectiveEndAt.trim() && effectiveStartAt.trim() <= effectiveEndAt.trim())) &&
+    (effectiveMeta?.type === "DISABLE" || effectiveScopeMode !== "CUSTOM_ORGS" || effectiveScopeOrgIds.length > 0) &&
+    (effectiveMeta?.type !== "PUBLISH" || Boolean(effectiveValidationReport?.pass)) &&
+    !modalBlockedMessage;
   const selectedListData = useMemo(() => {
     if (selectedContext?.operand.sourceType !== "LIST_LOOKUP_FIELD") {
       return null;
@@ -189,6 +235,16 @@ export function RulesPage({
     () => selectedListData?.outputFields.map((item) => ({ label: item, value: item })) ?? [],
     [selectedListData]
   );
+  const promptPreviewValues = useMemo(
+    () =>
+      promptVariableOptions.reduce<Record<string, string>>((acc, item) => {
+        acc[item.key] = item.exampleValue;
+        return acc;
+      }, {}),
+    [promptVariableOptions]
+  );
+  const promptPreviewTitle = watchedTitleSuffix?.trim() ? `${DEFAULT_PROMPT_TITLE} · ${watchedTitleSuffix.trim()}` : DEFAULT_PROMPT_TITLE;
+  const promptPreviewBody = renderPromptTemplate(watchedBodyTemplate ?? "", promptPreviewValues);
 
   function updateListMatchers(
     updater:
@@ -225,6 +281,15 @@ export function RulesPage({
     });
   }
 
+  function insertPromptVariable(variableKey: string) {
+    promptEditorRef.current?.insertVariable(variableKey);
+  }
+
+  function handlePromptVariableDragStart(event: React.DragEvent<HTMLElement>, variableKey: string) {
+    event.dataTransfer.setData("text/plain", `{{${variableKey}}}`);
+    event.dataTransfer.effectAllowed = "copy";
+  }
+
   useEffect(() => {
     if (!open) {
       return;
@@ -239,9 +304,10 @@ export function RulesPage({
     }
     return [
       { title: wizardStepIssues[0] > 0 ? `选页面 (${wizardStepIssues[0]})` : "选页面" },
-      { title: wizardStepIssues[1] > 0 ? `改内容 (${wizardStepIssues[1]})` : "改内容" },
-      { title: wizardStepIssues[2] > 0 ? `预览 (${wizardStepIssues[2]})` : "预览" },
-      { title: wizardStepIssues[3] > 0 ? `保存 (${wizardStepIssues[3]})` : "保存" }
+      { title: wizardStepIssues[1] > 0 ? `基础配置 (${wizardStepIssues[1]})` : "基础配置" },
+      { title: wizardStepIssues[2] > 0 ? `提示内容 (${wizardStepIssues[2]})` : "提示内容" },
+      { title: wizardStepIssues[3] > 0 ? `预览 (${wizardStepIssues[3]})` : "预览" },
+      { title: wizardStepIssues[4] > 0 ? `保存 (${wizardStepIssues[4]})` : "保存" }
     ];
   }, [isTemplateMode, wizardStepIssues]);
 
@@ -250,12 +316,12 @@ export function RulesPage({
       "name",
       "priority",
       "promptMode",
+      "titleSuffix",
+      "bodyTemplate",
       "closeMode",
-      "hasConfirmButton",
-      "status",
       "ownerOrgId",
       ...(ruleForm.getFieldValue("closeMode") === "TIMER_THEN_MANUAL" ? ["closeTimeoutSec"] : []),
-      ...(ruleForm.getFieldValue("hasConfirmButton") ? ["sceneId"] : [])
+      "sceneId"
     ]);
 
     setPreviewLoading(true);
@@ -289,25 +355,123 @@ export function RulesPage({
         "priority",
         "promptMode",
         "closeMode",
-        "hasConfirmButton",
-        "status",
         "ownerOrgId",
         ...(ruleForm.getFieldValue("closeMode") === "TIMER_THEN_MANUAL" ? ["closeTimeoutSec"] : []),
-        ...(ruleForm.getFieldValue("hasConfirmButton") ? ["sceneId"] : [])
+        "sceneId"
       ]);
       setWizardStep(2);
       return;
     }
     if (wizardStep === 2) {
-      await runWizardPreview();
+      await ruleForm.validateFields(["titleSuffix", "bodyTemplate"]);
       setWizardStep(3);
+      return;
+    }
+    if (wizardStep === 3) {
+      await runWizardPreview();
+      setWizardStep(4);
       return;
     }
     await submitRule();
   }
+
+  async function openEffectiveAction(target: EffectiveTarget) {
+    const action = getEffectiveActionMeta(target.status);
+    const permissionBlocked = getEffectivePermissionBlockedMessage(action.type, hasAction);
+    if (permissionBlocked) {
+      msgApi.warning(permissionBlocked);
+      return;
+    }
+    const targetRule = rows.find((item) => item.id === target.id);
+
+    setEffectiveTarget(target);
+    setEffectiveLoading(false);
+    setEffectiveBlockedMessage(null);
+    setEffectiveValidationReport(null);
+    setEffectiveScopeMode("ALL_ORGS");
+    setEffectiveScopeOrgIds([]);
+    setEffectiveStartAt(targetRule?.effectiveStartAt ?? "");
+    setEffectiveEndAt(targetRule?.effectiveEndAt ?? "");
+
+    if (action.type !== "PUBLISH") {
+      return;
+    }
+
+    setEffectiveLoading(true);
+    try {
+      const validation = await getPublishValidationByResource("RULE", target.id);
+      if (!validation) {
+        setEffectiveBlockedMessage("当前对象没有待发布版本，请先保存草稿。");
+        return;
+      }
+      setEffectiveValidationReport(validation.report);
+    } catch (error) {
+      setEffectiveBlockedMessage(error instanceof Error ? error.message : "加载生效检查结果失败");
+    } finally {
+      setEffectiveLoading(false);
+    }
+  }
+
+  async function confirmEffectiveAction() {
+    if (!effectiveTarget || !effectiveMeta) {
+      return;
+    }
+    setEffectiveSubmitting(true);
+    try {
+      if (effectiveMeta.type === "PUBLISH") {
+        const success = await publishRuleNow(
+          effectiveTarget.id,
+          effectiveTarget.name,
+          {
+            effectiveOrgIds: effectiveScopeMode === "CUSTOM_ORGS" ? effectiveScopeOrgIds : [],
+            effectiveStartAt,
+            effectiveEndAt
+          }
+        );
+        if (!success) {
+          const validation = await getPublishValidationByResource("RULE", effectiveTarget.id);
+          setEffectiveValidationReport(validation?.report ?? null);
+          return;
+        }
+      } else {
+        const row = rows.find((item) => item.id === effectiveTarget.id);
+        if (!row) {
+          msgApi.warning("对象状态已变化，请刷新后重试。");
+          return;
+        }
+        if (effectiveMeta.type === "RESTORE") {
+          const restored = await restoreRuleNow(
+            row,
+            {
+              effectiveOrgIds: effectiveScopeMode === "CUSTOM_ORGS" ? effectiveScopeOrgIds : [],
+              effectiveStartAt,
+              effectiveEndAt
+            }
+          );
+          if (!restored) {
+            return;
+          }
+        } else {
+          await switchStatus(row);
+        }
+      }
+
+      if (effectiveTarget.source === "notice") {
+        dismissPublishNotice();
+      }
+      setEffectiveTarget(null);
+      setEffectiveValidationReport(null);
+      setEffectiveBlockedMessage(null);
+      setEffectiveStartAt("");
+      setEffectiveEndAt("");
+    } finally {
+      setEffectiveSubmitting(false);
+    }
+  }
   return (
     <div>
       {holder}
+      {msgHolder}
       {!embedded ? (
         <>
           <Typography.Title level={4}>{pageTitle}</Typography.Title>
@@ -320,7 +484,17 @@ export function RulesPage({
           objectLabel={publishNotice.objectLabel}
           objectName={publishNotice.objectName}
           warningCount={publishNotice.warningCount}
-          onGoPublish={() => navigate("/publish")}
+          actionLabel={getEffectiveActionMeta("DRAFT").label}
+          actionDisabled={Boolean(getEffectivePermissionBlockedMessage("PUBLISH", hasAction))}
+          actionDisabledReason={getEffectivePermissionBlockedMessage("PUBLISH", hasAction) ?? undefined}
+          onGoPublish={() =>
+            void openEffectiveAction({
+              id: publishNotice.resourceId,
+              name: publishNotice.objectName,
+              status: "DRAFT",
+              source: "notice"
+            })
+          }
           onClose={dismissPublishNotice}
         />
       ) : null}
@@ -384,7 +558,10 @@ export function RulesPage({
             {
               title: "操作",
               width: 360,
-              render: (_, row) => (
+              render: (_, row) => {
+                const actionMeta = getEffectiveActionMeta(row.status);
+                const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasAction);
+                return (
                 <Space>
                   <Button size="small" onClick={() => openEdit(row)}>
                     {isTemplateMode ? "编辑模板" : "编辑基础"}
@@ -392,14 +569,25 @@ export function RulesPage({
                   <Button size="small" onClick={() => void openLogic(row)}>
                     {isTemplateMode ? "编辑模板条件" : "高级条件"}
                   </Button>
-                  <Popconfirm
-                    title={row.status === "ACTIVE" ? `确认停用该${isTemplateMode ? "模板" : "规则"}？` : `确认启用该${isTemplateMode ? "模板" : "规则"}？`}
-                    onConfirm={() => void switchStatus(row)}
+                  <Button
+                    size="small"
+                    type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
+                    disabled={Boolean(actionBlocked)}
+                    title={actionBlocked ?? undefined}
+                    onClick={() =>
+                      void openEffectiveAction({
+                        id: row.id,
+                        name: row.name,
+                        status: row.status,
+                        source: "row"
+                      })
+                    }
                   >
-                    <Button size="small">{row.status === "ACTIVE" ? "停用" : "启用"}</Button>
-                  </Popconfirm>
+                    {actionMeta.label}
+                  </Button>
                 </Space>
-              )
+                );
+              }
             }
           ]}
         />
@@ -462,6 +650,14 @@ export function RulesPage({
               report={saveValidationReport}
               sections={["basic"]}
               title="基础配置还有待处理问题"
+            />
+          ) : null}
+
+          {!isTemplateMode && wizardStep === 2 ? (
+            <ValidationReportPanel
+              report={saveValidationReport}
+              sections={["content"]}
+              title="提示内容还有待处理问题"
             />
           ) : null}
 
@@ -547,20 +743,11 @@ export function RulesPage({
                   ) : null
                 }
               </Form.Item>
-              <Form.Item name="hasConfirmButton" label="确认按钮">
-                <Select options={[{ label: "开启", value: true }, { label: "关闭", value: false }]} />
+              <Form.Item name="sceneId" label="关联作业场景（可选）" extra="点击“确定”时可选联动作业场景；未配置时仅关闭提示。">
+                <Select allowClear options={scenes.map((scene) => ({ label: scene.name, value: scene.id }))} />
               </Form.Item>
-              <Form.Item noStyle shouldUpdate>
-                {() =>
-                  ruleForm.getFieldValue("hasConfirmButton") ? (
-                    <Form.Item name="sceneId" label="关联作业场景">
-                      <Select allowClear options={scenes.map((scene) => ({ label: scene.name, value: scene.id }))} />
-                    </Form.Item>
-                  ) : null
-                }
-              </Form.Item>
-              <Form.Item name="status" label="状态" rules={[{ required: true }]}>
-                <Select options={lifecycleOptions} />
+              <Form.Item label="状态">
+                <Tag color="default">草稿（发布后生效）</Tag>
               </Form.Item>
               <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请选择组织范围" }]}>
                 <OrgSelect />
@@ -574,7 +761,120 @@ export function RulesPage({
           ) : null}
 
           {!isTemplateMode && wizardStep === 2 ? (
+            <Card size="small" title="提示内容配置">
+              <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                <Typography.Text type="secondary">
+                  标题前缀固定为“{DEFAULT_PROMPT_TITLE}”，本期不开放配置。
+                </Typography.Text>
+                <Form.Item
+                  name="titleSuffix"
+                  label="标题后缀"
+                  rules={[{ max: 20, message: "标题后缀最多 20 个字符" }]}
+                >
+                  <Input maxLength={20} placeholder="例如：贷款高风险客户" />
+                </Form.Item>
+                <div>
+                  <Typography.Text type="secondary">可用变量（支持拖拽到正文）</Typography.Text>
+                  <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {promptVariableOptions.map((item) => (
+                      <Tag
+                        key={item.key}
+                        color="processing"
+                        draggable
+                        style={{ cursor: "grab", userSelect: "none" }}
+                        onClick={() => insertPromptVariable(item.key)}
+                        onDragStart={(event) => handlePromptVariableDragStart(event, item.key)}
+                      >
+                        {item.label}
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+                <Space.Compact style={{ width: "100%" }}>
+                  <Select
+                    style={{ width: "100%" }}
+                    allowClear
+                    placeholder="选择变量后插入正文"
+                    value={selectedPromptVariable}
+                    options={promptVariableOptions.map((item) => ({ label: `${item.label}（${item.key}）`, value: item.key }))}
+                    onChange={(value) => setSelectedPromptVariable(value)}
+                  />
+                  <Button
+                    onClick={() => {
+                      if (!selectedPromptVariable) {
+                        return;
+                      }
+                      insertPromptVariable(selectedPromptVariable);
+                      setSelectedPromptVariable(undefined);
+                    }}
+                  >
+                    插入变量
+                  </Button>
+                </Space.Compact>
+                <Form.Item
+                  name="bodyTemplate"
+                  label="提示正文"
+                  rules={[
+                    { required: true, message: "请输入提示正文" },
+                    { max: 300, message: "提示正文最多 300 个字符" },
+                    {
+                      validator: (_, value: string | undefined) => {
+                        const text = value ?? "";
+                        const matched = Array.from(text.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g), (item) => item[1]);
+                        const invalidKeys = Array.from(new Set(matched.filter((key) => !promptVariableOptions.some((item) => item.key === key))));
+                        return invalidKeys.length > 0 ? Promise.reject(new Error(`存在未注册变量：${invalidKeys.join("、")}`)) : Promise.resolve();
+                      }
+                    }
+                  ]}
+                  extra={`${(watchedBodyTemplate ?? "").length} / 300`}
+                >
+                  <PromptTemplateEditor
+                    ref={promptEditorRef}
+                    value={watchedBodyTemplate ?? ""}
+                    variableOptions={promptVariableOptions}
+                    placeholder="请输入提示正文，可点击或拖拽变量到此处"
+                    onChange={(nextValue) => ruleForm.setFieldValue("bodyTemplate", nextValue)}
+                  />
+                </Form.Item>
+              </Space>
+            </Card>
+          ) : null}
+
+          {!isTemplateMode && wizardStep === 3 ? (
             <Space direction="vertical" style={{ width: "100%" }} size={12}>
+              <Card size="small" title="浮窗预览（固定预览样式）">
+                <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                  {watchedPromptMode === "SILENT" ? (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="当前仅展示浮窗预览效果"
+                      description="如果运行时选择静默提示，实际展示会弱于下方预览。"
+                    />
+                  ) : null}
+                  <div
+                    style={{
+                      border: "1px solid #B2DDFF",
+                      background: "#F8FBFF",
+                      borderRadius: 12,
+                      padding: 16
+                    }}
+                  >
+                    <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                      <Typography.Text strong>{promptPreviewTitle}</Typography.Text>
+                      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
+                        {promptPreviewBody || "请输入提示正文后查看浮窗预览效果。"}
+                      </Typography.Paragraph>
+                      <Space style={{ justifyContent: "flex-end", width: "100%" }}>
+                        <Button disabled>取消</Button>
+                        <Button type="primary" disabled>
+                          确定
+                        </Button>
+                      </Space>
+                    </Space>
+                  </div>
+                </Space>
+              </Card>
               <ValidationReportPanel
                 issues={logicValidationIssues}
                 title="高级条件还有待处理问题"
@@ -596,12 +896,11 @@ export function RulesPage({
             </Space>
           ) : null}
 
-          {!isTemplateMode && wizardStep === 3 ? (
+          {!isTemplateMode && wizardStep === 4 ? (
             <Card size="small" title="保存确认">
               {(() => {
                 const summaryPromptMode = ruleForm.getFieldValue("promptMode") as RuleDefinition["promptMode"] | undefined;
                 const summaryCloseMode = ruleForm.getFieldValue("closeMode") as RuleDefinition["closeMode"] | undefined;
-                const summaryStatus = ruleForm.getFieldValue("status") as RuleDefinition["status"] | undefined;
                 return (
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <ValidationReportPanel report={saveValidationReport} title="保存前检查结果" />
@@ -615,11 +914,15 @@ export function RulesPage({
                       提示模式：{summaryPromptMode ? promptModeLabelMap[summaryPromptMode] : "-"} / 关闭方式：
                       {summaryCloseMode ? closeModeLabel[summaryCloseMode] : "-"}
                     </Typography.Text>
+                    <Typography.Text type="secondary">标题：{promptPreviewTitle}</Typography.Text>
+                    <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                      正文预览：{promptPreviewBody || "未填写提示正文"}
+                    </Typography.Paragraph>
                     <Typography.Text type="secondary">
-                      状态：{summaryStatus ? lifecycleLabelMap[summaryStatus] : "-"}，组织范围：{getOrgLabel(ruleForm.getFieldValue("ownerOrgId"))}
+                      状态：草稿（发布后生效），组织范围：{getOrgLabel(ruleForm.getFieldValue("ownerOrgId"))}
                     </Typography.Text>
                     <Typography.Text type="secondary">
-                      保存后会进入待发布列表，可前往“发布与灰度”完成发布。
+                      保存后会进入待发布列表，可直接发布当前对象。
                     </Typography.Text>
                   </Space>
                 );
@@ -1164,7 +1467,38 @@ export function RulesPage({
         </Card>
 
       </Drawer>
+
+      {effectiveTarget && effectiveMeta ? (
+        <EffectiveConfirmModal
+          open
+          objectName={effectiveTarget.name}
+          action={effectiveMeta}
+          loading={effectiveLoading}
+          confirming={effectiveSubmitting}
+          canConfirm={canEffectiveConfirm}
+          blockedMessage={modalBlockedMessage}
+          validationReport={effectiveValidationReport}
+          scopeMode={effectiveScopeMode}
+          scopeOrgIds={effectiveScopeOrgIds}
+          scopeOptions={effectiveScopeOptions}
+          effectiveStartAt={effectiveStartAt}
+          effectiveEndAt={effectiveEndAt}
+          onScopeModeChange={setEffectiveScopeMode}
+          onScopeOrgIdsChange={setEffectiveScopeOrgIds}
+          onEffectiveStartAtChange={setEffectiveStartAt}
+          onEffectiveEndAtChange={setEffectiveEndAt}
+          onCancel={() => {
+            setEffectiveTarget(null);
+            setEffectiveValidationReport(null);
+            setEffectiveBlockedMessage(null);
+            setEffectiveStartAt("");
+            setEffectiveEndAt("");
+          }}
+          onConfirm={() => void confirmEffectiveAction()}
+        />
+      ) : null}
     </div>
   );
 }
+
 

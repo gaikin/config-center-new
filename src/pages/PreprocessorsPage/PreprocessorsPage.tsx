@@ -1,4 +1,4 @@
-﻿import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { OrgSelect, OrgText } from "../../components/DirectoryFields";
@@ -83,7 +83,7 @@ export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) 
       id: editing?.id ?? Date.now(),
       usedByCount: editing?.usedByCount ?? 0
     });
-    msgApi.success(editing ? "数据转换规则已更新，可前往“发布与灰度”完成发布" : "数据转换规则已创建，可前往“发布与灰度”查看待发布项");
+    msgApi.success(editing ? "数据转换规则已更新，已进入待发布列表" : "数据转换规则已创建，已进入待发布列表");
     setOpen(false);
     await loadData();
   }
@@ -223,3 +223,4 @@ export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) 
     </div>
   );
 }
+

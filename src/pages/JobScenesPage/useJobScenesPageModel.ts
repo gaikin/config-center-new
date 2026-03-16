@@ -1,6 +1,7 @@
 import { Form, Grid, Modal, message } from "antd";
 import { addEdge, type Connection, MarkerType, useEdgesState, useNodesState } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getOrgLabel } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
 import { workflowService } from "../../services/workflowService";
 import { getRightOverlayDrawerWidth } from "../../utils";
@@ -37,6 +38,13 @@ import {
 } from "./jobScenesPageShared";
 import type { ReactFlowInstance } from "@xyflow/react";
 
+function toSceneDraftPayload(row: JobSceneDefinition): Omit<JobSceneDefinition, "updatedAt"> & { updatedAt?: string } {
+  return {
+    ...row,
+    status: "DRAFT"
+  };
+}
+
 export function useJobScenesPageModel() {
   const screens = Grid.useBreakpoint();
   const drawerWidth = getRightOverlayDrawerWidth(Boolean(screens.lg));
@@ -71,7 +79,7 @@ export function useJobScenesPageModel() {
   const [sceneSaveValidationReport, setSceneSaveValidationReport] = useState<SaveValidationReport | null>(null);
   const [nodeValidationIssues, setNodeValidationIssues] = useState<FieldValidationIssue[]>([]);
   const [previewValidationIssues, setPreviewValidationIssues] = useState<FieldValidationIssue[]>([]);
-  const [publishNotice, setPublishNotice] = useState<{ objectName: string; warningCount: number } | null>(null);
+  const [publishNotice, setPublishNotice] = useState<{ objectName: string; warningCount: number; resourceId: number } | null>(null);
   const autoOpenCreateRef = useRef(false);
 
   const [nodeDetailForm] = Form.useForm<NodeDetailForm>();
@@ -255,8 +263,9 @@ export function useJobScenesPageModel() {
       msgApi.error("页面资源不存在");
       return;
     }
+    const sceneId = editing?.id ?? Date.now() + Math.floor(Math.random() * 1000);
     const result = await configCenterService.saveJobSceneDraft({
-      id: editing?.id ?? Date.now() + Math.floor(Math.random() * 1000),
+      id: sceneId,
       ...values,
       currentVersion: editing?.currentVersion ?? 1,
       pageResourceName: resource.name,
@@ -276,10 +285,50 @@ export function useJobScenesPageModel() {
     );
     setPublishNotice({
       objectName: result.data?.name ?? values.name,
-      warningCount: result.report.warningCount
+      warningCount: result.report.warningCount,
+      resourceId: result.data?.id ?? sceneId
     });
     closeSceneModalDirectly();
     await loadData();
+  }
+
+  async function publishSceneNow(sceneId: number, sceneName: string, effectiveOrgIds: string[] = []): Promise<boolean> {
+    const pendingRows = await configCenterService.listPendingItems();
+    const pending = pendingRows.find((item) => item.resourceType === "JOB_SCENE" && item.resourceId === sceneId);
+    if (!pending) {
+      msgApi.warning("当前作业场景没有可生效版本，请先保存草稿。");
+      return false;
+    }
+    const result = await configCenterService.publishPendingItem(pending.id, "person-business-manager", effectiveOrgIds);
+    if (!result.success) {
+      msgApi.error("生效未通过，请先处理阻断项后再试。");
+      return false;
+    }
+    msgApi.success(`已生效：${sceneName}（${effectiveOrgIds.length > 0 ? effectiveOrgIds.map((orgId) => getOrgLabel(orgId)).join("、") : "全部机构"}）`);
+    await loadData();
+    return true;
+  }
+
+  async function restoreSceneNow(
+    row: JobSceneDefinition,
+    effectiveOrgIds: string[] = []
+  ): Promise<boolean> {
+    const draftResult = await configCenterService.saveJobSceneDraft(toSceneDraftPayload(row));
+    if (!draftResult.success || !draftResult.data) {
+      msgApi.error(draftResult.report.summary);
+      return false;
+    }
+    return publishSceneNow(draftResult.data.id, draftResult.data.name, effectiveOrgIds);
+  }
+
+  async function publishNoticeNow() {
+    if (!publishNotice) {
+      return;
+    }
+    const success = await publishSceneNow(publishNotice.resourceId, publishNotice.objectName);
+    if (success) {
+      setPublishNotice(null);
+    }
   }
 
   async function switchStatus(item: JobSceneDefinition) {
@@ -597,6 +646,9 @@ export function useJobScenesPageModel() {
     nodeValidationIssues: liveNodeValidationIssues.length > 0 ? liveNodeValidationIssues : nodeValidationIssues,
     previewValidationIssues,
     publishNotice,
-    dismissPublishNotice: () => setPublishNotice(null)
+    dismissPublishNotice: () => setPublishNotice(null),
+    publishNoticeNow,
+    publishSceneNow,
+    restoreSceneNow
   };
 }

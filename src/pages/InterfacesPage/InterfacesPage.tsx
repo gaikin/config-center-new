@@ -16,15 +16,19 @@ import {
   Table,
   Tabs,
   Tag,
-  Typography
+  Typography,
+  message
 } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { OrgSelect } from "../../components/DirectoryFields";
+import { EffectiveConfirmModal } from "../../components/EffectiveConfirmModal";
 import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
 import { ValidationReportPanel } from "../../components/ValidationReportPanel";
+import { EffectiveScopeMode, getEffectiveActionMeta, getEffectivePermissionBlockedMessage, getPublishValidationByResource } from "../../effectiveFlow";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
-import { getOrgLabel } from "../../orgOptions";
+import { getOrgLabel, orgOptions } from "../../orgOptions";
+import { useMockSession } from "../../session/mockSession";
 import { useInterfacesPageModel } from "./useInterfacesPageModel";
 import {
   ApiRegisterForm,
@@ -36,12 +40,18 @@ import {
   valueTypeOptions,
   type StatusFilter
 } from "./interfacesPageShared";
-import type { ApiOutputParam, ApiValueType, InterfaceDefinition } from "../../types";
+import type { ApiOutputParam, ApiValueType, InterfaceDefinition, LifecycleState, PublishValidationReport } from "../../types";
 
 const wizardSteps = ["选用途", "基础信息", "参数示例", "在线测试", "保存"];
 
+type EffectiveTarget = {
+  id: number;
+  name: string;
+  status: LifecycleState;
+  source: "row" | "notice";
+};
+
 export function InterfacesPage() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const ownerOrgFilter = searchParams.get("ownerOrgId");
   const quickAction = searchParams.get("action");
@@ -99,8 +109,33 @@ export function InterfacesPage() {
     inputValidationIssues,
     outputValidationIssues,
     publishNotice,
-    dismissPublishNotice
+    dismissPublishNotice,
+    publishInterfaceNow,
+    restoreInterfaceNow
   } = useInterfacesPageModel();
+  const { hasAction } = useMockSession();
+  const [msgApi, msgHolder] = message.useMessage();
+  const [effectiveTarget, setEffectiveTarget] = useState<EffectiveTarget | null>(null);
+  const [effectiveLoading, setEffectiveLoading] = useState(false);
+  const [effectiveSubmitting, setEffectiveSubmitting] = useState(false);
+  const [effectiveValidationReport, setEffectiveValidationReport] = useState<PublishValidationReport | null>(null);
+  const [effectiveBlockedMessage, setEffectiveBlockedMessage] = useState<string | null>(null);
+  const [effectiveScopeMode, setEffectiveScopeMode] = useState<EffectiveScopeMode>("ALL_ORGS");
+  const [effectiveScopeOrgIds, setEffectiveScopeOrgIds] = useState<string[]>([]);
+  const effectiveMeta = effectiveTarget ? getEffectiveActionMeta(effectiveTarget.status) : null;
+  const effectiveScopeOptions = useMemo(
+    () => orgOptions.map((item) => ({ label: item.label, value: String(item.value) })),
+    []
+  );
+  const effectivePermissionBlockedMessage = effectiveMeta
+    ? getEffectivePermissionBlockedMessage(effectiveMeta.type, hasAction)
+    : null;
+  const modalBlockedMessage = effectiveBlockedMessage ?? effectivePermissionBlockedMessage;
+  const canEffectiveConfirm =
+    Boolean(effectiveMeta) &&
+    (effectiveMeta?.type !== "PUBLISH" || Boolean(effectiveValidationReport?.pass)) &&
+    (effectiveMeta?.type !== "PUBLISH" || effectiveScopeMode !== "CUSTOM_ORGS" || effectiveScopeOrgIds.length > 0) &&
+    !modalBlockedMessage;
 
   const visibleRows = useMemo(() => {
     if (!ownerOrgFilter) {
@@ -148,19 +183,110 @@ export function InterfacesPage() {
     });
   }
 
+  async function openEffectiveAction(target: EffectiveTarget) {
+    const action = getEffectiveActionMeta(target.status);
+    const permissionBlocked = getEffectivePermissionBlockedMessage(action.type, hasAction);
+    if (permissionBlocked) {
+      msgApi.warning(permissionBlocked);
+      return;
+    }
+
+    setEffectiveTarget(target);
+    setEffectiveLoading(false);
+    setEffectiveValidationReport(null);
+    setEffectiveBlockedMessage(null);
+    setEffectiveScopeMode("ALL_ORGS");
+    setEffectiveScopeOrgIds([]);
+
+    if (action.type !== "PUBLISH") {
+      return;
+    }
+    setEffectiveLoading(true);
+    try {
+      const validation = await getPublishValidationByResource("INTERFACE", target.id);
+      if (!validation) {
+        setEffectiveBlockedMessage("当前对象没有待发布版本，请先保存草稿。");
+        return;
+      }
+      setEffectiveValidationReport(validation.report);
+    } catch (error) {
+      setEffectiveBlockedMessage(error instanceof Error ? error.message : "加载生效检查结果失败");
+    } finally {
+      setEffectiveLoading(false);
+    }
+  }
+
+  async function confirmEffectiveAction() {
+    if (!effectiveTarget || !effectiveMeta) {
+      return;
+    }
+    setEffectiveSubmitting(true);
+    try {
+      if (effectiveMeta.type === "PUBLISH") {
+        const success = await publishInterfaceNow(
+          effectiveTarget.id,
+          effectiveTarget.name,
+          effectiveScopeMode === "CUSTOM_ORGS" ? effectiveScopeOrgIds : []
+        );
+        if (!success) {
+          const validation = await getPublishValidationByResource("INTERFACE", effectiveTarget.id);
+          setEffectiveValidationReport(validation?.report ?? null);
+          return;
+        }
+      } else {
+        const row = visibleRows.find((item) => item.id === effectiveTarget.id) ?? filteredRows.find((item) => item.id === effectiveTarget.id);
+        if (!row) {
+          msgApi.warning("对象状态已变化，请刷新后重试。");
+          return;
+        }
+        if (effectiveMeta.type === "RESTORE") {
+          const restored = await restoreInterfaceNow(
+            row,
+            effectiveScopeMode === "CUSTOM_ORGS" ? effectiveScopeOrgIds : []
+          );
+          if (!restored) {
+            return;
+          }
+        } else {
+          await switchStatus(row);
+        }
+      }
+
+      if (effectiveTarget.source === "notice") {
+        dismissPublishNotice();
+      }
+      setEffectiveTarget(null);
+      setEffectiveValidationReport(null);
+      setEffectiveBlockedMessage(null);
+    } finally {
+      setEffectiveSubmitting(false);
+    }
+  }
+
   return (
     <div>
       {holder}
+      {msgHolder}
       <Typography.Title level={4}>API注册</Typography.Title>
       <Typography.Paragraph type="secondary">
-        保留 API注册 术语，主流程改为五步向导：选用途 → 填基础信息 → 填参数示例 → 在线测试 → 保存。保存后可前往“发布与灰度”完成发布。
+        保留 API注册 术语，主流程改为五步向导：选用途 → 填基础信息 → 填参数示例 → 在线测试 → 保存。保存后可直接发布当前对象。
       </Typography.Paragraph>
       {publishNotice ? (
         <PublishContinuationAlert
           objectLabel="API"
           objectName={publishNotice.objectName}
           warningCount={publishNotice.warningCount}
-          onGoPublish={() => navigate("/publish")}
+          actionLabel={getEffectiveActionMeta("DRAFT").label}
+          actionDisabled={Boolean(getEffectivePermissionBlockedMessage("PUBLISH", hasAction))}
+          actionDisabledReason={getEffectivePermissionBlockedMessage("PUBLISH", hasAction) ?? undefined}
+          onGoPublish={() =>
+            void openEffectiveAction({
+              id: publishNotice.resourceId,
+              name: publishNotice.objectName,
+              status: "DRAFT",
+              source: "notice"
+            })
+          }
           onClose={dismissPublishNotice}
         />
       ) : null}
@@ -240,7 +366,10 @@ export function InterfacesPage() {
             {
               title: "操作",
               width: 320,
-              render: (_, row) => (
+              render: (_, row) => {
+                const actionMeta = getEffectiveActionMeta(row.status);
+                const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasAction);
+                return (
                 <Space>
                   <Button size="small" onClick={() => openEdit(row)}>
                     编辑
@@ -251,11 +380,25 @@ export function InterfacesPage() {
                   <Button size="small" onClick={() => openDebug(row)}>
                     在线测试
                   </Button>
-                  <Button size="small" onClick={() => void switchStatus(row)}>
-                    {row.status === "ACTIVE" ? "停用" : "启用"}
+                  <Button
+                    size="small"
+                    type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
+                    disabled={Boolean(actionBlocked)}
+                    title={actionBlocked ?? undefined}
+                    onClick={() =>
+                      void openEffectiveAction({
+                        id: row.id,
+                        name: row.name,
+                        status: row.status,
+                        source: "row"
+                      })
+                    }
+                  >
+                    {actionMeta.label}
                   </Button>
                 </Space>
-              )
+                );
+              }
             }
           ]}
         />
@@ -659,6 +802,26 @@ export function InterfacesPage() {
           )}
         </Space>
       </Modal>
+
+      {effectiveTarget && effectiveMeta ? (
+        <EffectiveConfirmModal
+          open
+          objectName={effectiveTarget.name}
+          action={effectiveMeta}
+          loading={effectiveLoading}
+          confirming={effectiveSubmitting}
+          canConfirm={canEffectiveConfirm}
+          blockedMessage={modalBlockedMessage}
+          validationReport={effectiveValidationReport}
+          scopeMode={effectiveScopeMode}
+          scopeOrgIds={effectiveScopeOrgIds}
+          scopeOptions={effectiveScopeOptions}
+          onScopeModeChange={setEffectiveScopeMode}
+          onScopeOrgIdsChange={setEffectiveScopeOrgIds}
+          onCancel={() => setEffectiveTarget(null)}
+          onConfirm={() => void confirmEffectiveAction()}
+        />
+      ) : null}
     </div>
   );
 }
@@ -672,7 +835,7 @@ function DescriptionsSummary({ form, outputCount, report }: { form: any; outputC
         showIcon
         type="info"
         message="确认后保存"
-        description="保存后会在列表中展示引用关系，并进入发布与灰度流程。"
+        description="保存后会在列表中展示引用关系，并可在本页直接发布。"
       />
       <Space wrap>
         <Tag color="blue">{values.name || "未命名接口"}</Tag>
@@ -685,3 +848,4 @@ function DescriptionsSummary({ form, outputCount, report }: { form: any; outputC
     </Space>
   );
 }
+

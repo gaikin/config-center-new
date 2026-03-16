@@ -7,6 +7,14 @@ import { MockSessionProvider, mockUserPersonaMetaMap, mockUserPersonaOptions, ty
 
 const { Header, Sider, Content } = Layout;
 
+const activePersonas: MockUserPersona[] = [
+  "CONFIG_OPERATOR_BRANCH",
+  "PERMISSION_ADMIN_BRANCH",
+  "PERMISSION_ADMIN_HEAD",
+  "CONFIG_OPERATOR_HEAD",
+  "TECH_SUPPORT_HEAD"
+];
+
 type NavItem = {
   key: string;
   label: string;
@@ -14,26 +22,27 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { key: "/", label: "我的工作台", personas: ["CONFIG_USER", "PUBLISH_MANAGER", "MENU_ADMIN"] },
-  { key: "/page-management", label: "页面管理", personas: ["CONFIG_USER"] },
-  { key: "/prompts", label: "智能提示", personas: ["CONFIG_USER"] },
-  { key: "/jobs", label: "智能作业", personas: ["CONFIG_USER"] },
-  { key: "/interfaces", label: "API注册", personas: ["CONFIG_USER"] },
-  { key: "/publish", label: "发布与灰度", personas: ["CONFIG_USER", "PUBLISH_MANAGER", "MENU_ADMIN"] },
-  { key: "/stats", label: "运行统计", personas: ["CONFIG_USER", "PUBLISH_MANAGER"] },
-  { key: "/advanced", label: "高级配置", personas: ["CONFIG_USER"] }
+  { key: "/", label: "我的工作台", personas: activePersonas },
+  { key: "/page-management", label: "页面管理", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
+  { key: "/prompts", label: "智能提示", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
+  { key: "/jobs", label: "智能作业", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
+  { key: "/interfaces", label: "API注册", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
+  { key: "/stats", label: "运行统计", personas: activePersonas },
+  { key: "/advanced", label: "高级配置", personas: activePersonas }
 ];
 
 const compatiblePathToBizPath: Array<{ from: string; to: string }> = [
+  { from: "/publish", to: "/" },
   { from: "/page-resources", to: "/page-management" },
   { from: "/page-activation", to: "/page-management" },
   { from: "/rules", to: "/prompts" },
   { from: "/rule-templates", to: "/prompts" },
   { from: "/job-scenes", to: "/jobs" },
-  { from: "/sdk-version-center", to: "/publish" },
+  { from: "/sdk-version-center", to: "/advanced" },
   { from: "/audit-metrics", to: "/stats" },
   { from: "/preprocessors", to: "/advanced" },
-  { from: "/roles", to: "/advanced" }
+  { from: "/roles", to: "/advanced" },
+  { from: "/login-test", to: "/" }
 ];
 
 const HeaderBar = styled(Header)`
@@ -153,7 +162,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [persona, setPersona] = useState<MockUserPersona>(() => {
     const cached = window.localStorage.getItem("config-center:mock-persona");
-    return cached === "CONFIG_USER" || cached === "PUBLISH_MANAGER" || cached === "MENU_ADMIN" ? cached : "CONFIG_USER";
+    const legacyMap: Record<string, MockUserPersona> = {
+      CONFIG_USER: "CONFIG_OPERATOR_BRANCH",
+      PUBLISH_MANAGER: "CONFIG_OPERATOR_HEAD",
+      MENU_ADMIN: "PERMISSION_ADMIN_HEAD"
+    };
+    if (cached && legacyMap[cached]) {
+      return legacyMap[cached];
+    }
+    if (cached && cached in mockUserPersonaMetaMap) {
+      return cached as MockUserPersona;
+    }
+    return "CONFIG_OPERATOR_BRANCH";
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const selected = getSelectedKey(location.pathname);
@@ -169,6 +189,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const normalized = normalizePath(location.pathname);
+    if (normalized === "/login-test") {
+      return;
+    }
     const canAccess = visibleNavItems.some((item) => {
       if (item.key === "/") {
         return normalized === "/";
@@ -191,6 +214,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </LogoSubtitle>
           </LogoBlock>
           <HeaderActions size={8}>
+            <Button size="small" onClick={() => navigate("/login-test")}>
+              登录测试
+            </Button>
             <Select
               value={persona}
               size="small"

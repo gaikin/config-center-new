@@ -160,7 +160,7 @@ export function SdkVersionCenterPage() {
       menuCode: matchedMenu?.menuCode ?? editing?.menuCode ?? "",
       id: editing?.id ?? Date.now()
     });
-    msgApi.success(editing ? "版本灰度策略已更新，可前往“发布与灰度”完成发布" : "版本灰度策略已创建，可前往“发布与灰度”查看待发布项");
+    msgApi.success(editing ? "版本灰度策略已更新，已进入待发布列表" : "版本灰度策略已创建，已进入待发布列表");
     setOpen(false);
     await loadData();
   }
@@ -173,7 +173,7 @@ export function SdkVersionCenterPage() {
       {holder}
       <Typography.Title level={4}>版本灰度策略（高级）</Typography.Title>
       <Typography.Paragraph type="secondary">
-        这是高级维护区，用来维护菜单层级的版本发布与灰度范围。业务侧通常直接在“发布与灰度”查看结果，不需要先进入这里。
+        这是高级维护区，用来维护菜单层级的版本灰度范围。业务侧通常在各业务页面完成发布，不需要单独进入发布页。
       </Typography.Paragraph>
 
       <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
@@ -389,3 +389,4 @@ export function SdkVersionCenterPage() {
     </div>
   );
 }
+

@@ -27,6 +27,7 @@ import {
   seedTriggerLogs
 } from "../mock/seeds";
 import { getOrgLabel } from "../orgOptions";
+import { notifyRolePermissionsChanged } from "../session/sessionEvents";
 import type {
   ApiInputParam,
   ApiOutputParam,
@@ -56,6 +57,7 @@ import type {
   PublishPendingResult,
   PublishValidationReport,
   RoleItem,
+  RolePermissionOperator,
   RuleDefinition,
   SaveDraftResult,
   SdkArtifactVersion,
@@ -70,12 +72,24 @@ import {
   validateJobSceneDraftPayload,
   validateRuleDraftPayload
 } from "../validation/formRules";
+import {
+  HEAD_OFFICE_ORG_ID,
+  normalizeRoleActions,
+  hasHighPrivilegeAction,
+  isHeadOfficeOnlyRole,
+  isHeadOfficePermissionAdmin
+} from "../permissionPolicy";
 
 type RuleCreatePayload = Omit<RuleDefinition, "id" | "currentVersion" | "updatedAt"> & {
   currentVersion?: number;
 };
 type RuleUpsertPayload = Omit<RuleDefinition, "updatedAt"> & {
   updatedAt?: string;
+};
+type PublishEffectiveOptions = {
+  effectiveOrgIds?: string[];
+  effectiveStartAt?: string;
+  effectiveEndAt?: string;
 };
 
 function sleep(ms: number) {
@@ -139,6 +153,65 @@ function normalizeStringList(values: string[] | undefined) {
   );
 }
 
+function normalizePublishEffectiveOptions(
+  options?: string[] | PublishEffectiveOptions
+): PublishEffectiveOptions {
+  if (Array.isArray(options)) {
+    return {
+      effectiveOrgIds: options
+    };
+  }
+  return options ?? {};
+}
+
+function buildRuleEffectiveTimeValidation(
+  effectiveStartAt: string | undefined,
+  effectiveEndAt: string | undefined
+): ValidationItem {
+  const normalizedStartAt = effectiveStartAt?.trim() ?? "";
+  const normalizedEndAt = effectiveEndAt?.trim() ?? "";
+  if (!normalizedStartAt) {
+    return {
+      key: "time_range",
+      label: "规则生效时间",
+      passed: false,
+      detail: "请补充规则生效开始时间"
+    };
+  }
+  if (!normalizedEndAt) {
+    return {
+      key: "time_range",
+      label: "规则生效时间",
+      passed: false,
+      detail: "请补充规则生效结束时间"
+    };
+  }
+  if (normalizedStartAt > normalizedEndAt) {
+    return {
+      key: "time_range",
+      label: "规则生效时间",
+      passed: false,
+      detail: "规则生效结束时间不能早于开始时间"
+    };
+  }
+  return {
+    key: "time_range",
+    label: "规则生效时间",
+    passed: true,
+    detail: `${normalizedStartAt} ~ ${normalizedEndAt}`
+  };
+}
+
+function mergeValidationItem(report: ValidationReport, item: ValidationItem): ValidationReport {
+  const nextItems = report.items.some((current) => current.key === item.key)
+    ? report.items.map((current) => (current.key === item.key ? item : current))
+    : [...report.items, item];
+  return {
+    pass: nextItems.every((current) => current.passed),
+    items: nextItems
+  };
+}
+
 function inferListPreviewFromFileName(fileName: string) {
   const normalized = fileName.trim().toLowerCase();
   const matched = store.listDatas.find((item) => item.importFileName.trim().toLowerCase() === normalized);
@@ -186,7 +259,18 @@ function appendAuditLog(
   resourceType: string,
   resourceName: string,
   operator: string,
-  resourceId?: number
+  resourceId?: number,
+  auditMeta?: Pick<
+    PublishAuditLog,
+    | "approvalTicketId"
+    | "approvalSource"
+    | "approvalStatus"
+    | "effectiveScopeType"
+    | "effectiveOrgIds"
+    | "effectiveScopeSummary"
+    | "effectiveStartAt"
+    | "effectiveEndAt"
+  >
 ) {
   store.auditLogs = [
     {
@@ -196,10 +280,18 @@ function appendAuditLog(
       resourceId,
       resourceName,
       operator,
+      ...auditMeta,
       createdAt: nowIso()
     },
     ...store.auditLogs
   ];
+}
+
+function formatEffectiveScopeSummary(scopeOrgIds: string[]) {
+  if (scopeOrgIds.length === 0) {
+    return "全部机构";
+  }
+  return scopeOrgIds.map((orgId) => getOrgLabel(orgId)).join("、");
 }
 
 function recalcPendingSummary(): PublishPendingSummary {
@@ -280,6 +372,14 @@ function createValidationReport(pending: PublishPendingItem): ValidationReport {
 
   if (pending.resourceType === "RULE") {
     const rule = resource as RuleDefinition;
+    items[items.length - 1] = rule.effectiveStartAt?.trim() && rule.effectiveEndAt?.trim()
+      ? buildRuleEffectiveTimeValidation(rule.effectiveStartAt, rule.effectiveEndAt)
+      : {
+          key: "time_range",
+          label: "规则生效时间",
+          passed: true,
+          detail: "生效时间可在确认生效时补充"
+        };
     const hasSceneIfNeed = !rule.hasConfirmButton || Boolean(rule.sceneId);
     items.push({
       key: "rule_scene_binding",
@@ -942,7 +1042,7 @@ export const configCenterService = {
     store.interfaces = updateStatus(store.interfaces, id, status);
     const row = store.interfaces.find((item) => item.id === id);
     if (row) {
-      appendAuditLog("DISABLE", "INTERFACE", row.name, "绯荤粺", row.id);
+      appendAuditLog(status === "DISABLED" ? "DISABLE" : "PUBLISH", "INTERFACE", row.name, "system", row.id);
     }
   },
 
@@ -1041,7 +1141,7 @@ export const configCenterService = {
       updatedAt: payload.updatedAt ?? nowIso()
     };
 
-    if (exists && exists.status === "ACTIVE") {
+    if (exists && exists.status !== "DRAFT") {
       const draftVersion: RuleDefinition = {
         ...next,
         id: nextId(store.rules),
@@ -1066,11 +1166,15 @@ export const configCenterService = {
   },
   async saveRuleDraft(payload: RuleUpsertPayload): Promise<SaveDraftResult<RuleDefinition>> {
     await sleep(120);
-    const report = validateRuleDraftPayload(payload, store.rules);
+    const draftPayload: RuleUpsertPayload = {
+      ...payload,
+      status: "DRAFT"
+    };
+    const report = validateRuleDraftPayload(draftPayload, store.rules);
     if (!report.canSaveDraft) {
       return { success: false, report };
     }
-    const data = await configCenterService.upsertRule(payload);
+    const data = await configCenterService.upsertRule(draftPayload);
     return { success: true, data, report };
   },
   async updateRuleStatus(id: number, status: LifecycleState): Promise<void> {
@@ -1078,7 +1182,7 @@ export const configCenterService = {
     store.rules = updateStatus(store.rules, id, status);
     const row = store.rules.find((item) => item.id === id);
     if (row) {
-      appendAuditLog("DISABLE", "RULE", row.name, "绯荤粺", row.id);
+      appendAuditLog(status === "DISABLED" ? "DISABLE" : "PUBLISH", "RULE", row.name, "system", row.id);
     }
   },
 
@@ -1149,7 +1253,7 @@ export const configCenterService = {
     store.scenes = updateStatus(store.scenes, id, status);
     const row = store.scenes.find((item) => item.id === id);
     if (row) {
-      appendAuditLog("DISABLE", "JOB_SCENE", row.name, "绯荤粺", row.id);
+      appendAuditLog(status === "DISABLED" ? "DISABLE" : "PUBLISH", "JOB_SCENE", row.name, "system", row.id);
     }
   },
 
@@ -1270,14 +1374,36 @@ export const configCenterService = {
     return clone(toPublishValidationReport(pending, createValidationReport(pending)));
   },
 
-  async publishPendingItem(pendingId: number, operator = "person-business-manager"): Promise<PublishPendingResult> {
+  async publishPendingItem(
+    pendingId: number,
+    operator = "person-business-manager",
+    options?: string[] | PublishEffectiveOptions
+  ): Promise<PublishPendingResult> {
     await sleep(180);
     const pending = store.pendingItems.find((item) => item.id === pendingId);
     if (!pending) {
       throw new Error("Pending item not found");
     }
 
-    const report = createValidationReport(pending);
+    const effectiveOptions = normalizePublishEffectiveOptions(options);
+    const normalizedEffectiveOrgIds = normalizeStringList(effectiveOptions.effectiveOrgIds);
+    const effectiveScopeSummary = formatEffectiveScopeSummary(normalizedEffectiveOrgIds);
+    let report = createValidationReport(pending);
+    const resource = getResourceRecord(pending);
+    const resolvedRuleEffectiveStartAt =
+      pending.resourceType === "RULE" && resource && "effectiveStartAt" in resource
+        ? (effectiveOptions.effectiveStartAt?.trim() || resource.effectiveStartAt?.trim() || "")
+        : effectiveOptions.effectiveStartAt?.trim() || "";
+    const resolvedRuleEffectiveEndAt =
+      pending.resourceType === "RULE" && resource && "effectiveEndAt" in resource
+        ? (effectiveOptions.effectiveEndAt?.trim() || resource.effectiveEndAt?.trim() || "")
+        : effectiveOptions.effectiveEndAt?.trim() || "";
+    if (pending.resourceType === "RULE") {
+      report = mergeValidationItem(
+        report,
+        buildRuleEffectiveTimeValidation(resolvedRuleEffectiveStartAt, resolvedRuleEffectiveEndAt)
+      );
+    }
     if (!report.pass) {
       store.pendingItems = store.pendingItems.map((item) =>
         item.id === pendingId ? { ...item, pendingType: "VALIDATION_FAILED", updatedAt: nowIso() } : item
@@ -1295,7 +1421,17 @@ export const configCenterService = {
       );
 
     if (pending.resourceType === "RULE") {
-      store.rules = activate(store.rules);
+      store.rules = store.rules.map((item) =>
+        item.id === pending.resourceId
+          ? {
+              ...item,
+              status: "ACTIVE",
+              effectiveStartAt: resolvedRuleEffectiveStartAt,
+              effectiveEndAt: resolvedRuleEffectiveEndAt,
+              updatedAt: nowIso()
+            }
+          : item
+      );
     } else if (pending.resourceType === "JOB_SCENE") {
       store.scenes = activate(store.scenes);
     } else if (pending.resourceType === "PAGE_RESOURCE") {
@@ -1314,10 +1450,22 @@ export const configCenterService = {
 
     store.pendingItems = store.pendingItems.filter((item) => item.id !== pendingId);
     recalcPendingSummary();
-    appendAuditLog("PUBLISH", pending.resourceType, pending.resourceName, operator, pending.resourceId);
+    appendAuditLog("PUBLISH", pending.resourceType, pending.resourceName, operator, pending.resourceId, {
+      effectiveScopeType: normalizedEffectiveOrgIds.length === 0 ? "ALL_ORGS" : "CUSTOM_ORGS",
+      effectiveOrgIds: normalizedEffectiveOrgIds,
+      effectiveScopeSummary,
+      effectiveStartAt: pending.resourceType === "RULE" ? resolvedRuleEffectiveStartAt : undefined,
+      effectiveEndAt: pending.resourceType === "RULE" ? resolvedRuleEffectiveEndAt : undefined
+    });
     return {
       success: true,
-      report: toPublishValidationReport(pending, report)
+      report: {
+        ...toPublishValidationReport(pending, report),
+        impactSummary:
+          pending.resourceType === "RULE"
+            ? `${pending.resourceName} 生效范围：${effectiveScopeSummary}；生效时间：${resolvedRuleEffectiveStartAt} ~ ${resolvedRuleEffectiveEndAt}`
+            : `${pending.resourceName} 生效范围：${effectiveScopeSummary}`
+      }
     };
   },
 
@@ -1479,9 +1627,31 @@ export const configCenterService = {
   },
 
   async upsertRole(
-    payload: Omit<RoleItem, "updatedAt" | "memberCount"> & { memberCount?: number; updatedAt?: string }
+    payload: Omit<RoleItem, "updatedAt" | "memberCount"> & { memberCount?: number; updatedAt?: string },
+    operator?: RolePermissionOperator
   ): Promise<RoleItem> {
     await sleep(140);
+    const effectiveOperator: RolePermissionOperator = operator ?? {
+      operatorId: "person-head-office-permission-admin",
+      roleType: "PERMISSION_ADMIN",
+      orgScopeId: HEAD_OFFICE_ORG_ID
+    };
+    const approvalMeta: Pick<PublishAuditLog, "approvalTicketId" | "approvalSource" | "approvalStatus"> = {
+      approvalTicketId: operator?.approvalTicketId ?? "APPR-DEFAULT-PENDING-INTEGRATION",
+      approvalSource: operator?.approvalSource ?? "EXTERNAL_APPROVAL_FLOW",
+      approvalStatus: operator?.approvalStatus ?? "PRE_APPROVED"
+    };
+    const normalizedActions = normalizeRoleActions(payload.roleType, payload.orgScopeId, payload.actions);
+    const hasHighPrivilege = hasHighPrivilegeAction(normalizedActions);
+    if (isHeadOfficeOnlyRole(payload.roleType) && payload.orgScopeId !== HEAD_OFFICE_ORG_ID) {
+      throw new Error("技术支持角色仅允许配置为总行范围。");
+    }
+    if (hasHighPrivilege && payload.orgScopeId !== HEAD_OFFICE_ORG_ID) {
+      throw new Error("高权限操作仅允许分配到总行范围角色。");
+    }
+    if (hasHighPrivilege && !isHeadOfficePermissionAdmin(effectiveOperator)) {
+      throw new Error("仅总行权限管理人员可分配高权限操作。");
+    }
     const exists = store.roles.find((item) => item.id === payload.id);
     if (!store.roleMembers[payload.id]) {
       store.roleMembers[payload.id] = [];
@@ -1489,11 +1659,13 @@ export const configCenterService = {
     const memberCount = store.roleMembers[payload.id]?.length ?? payload.memberCount ?? 0;
     const next: RoleItem = {
       ...payload,
+      actions: normalizedActions,
       memberCount,
       updatedAt: payload.updatedAt ?? nowIso()
     };
     store.roles = exists ? store.roles.map((item) => (item.id === next.id ? next : item)) : [next, ...store.roles];
-    appendAuditLog("ROLE_UPDATE", "ROLE", next.name, "person-business-admin", next.id);
+    appendAuditLog("ROLE_UPDATE", "ROLE", next.name, effectiveOperator.operatorId, next.id, approvalMeta);
+    notifyRolePermissionsChanged();
     return clone(next);
   },
 
@@ -1513,6 +1685,7 @@ export const configCenterService = {
     store.roles = [cloned, ...store.roles];
     store.roleMembers[cloned.id] = [];
     appendAuditLog("ROLE_UPDATE", "ROLE", cloned.name, "person-business-admin", cloned.id);
+    notifyRolePermissionsChanged();
     return clone(cloned);
   },
 
@@ -1528,6 +1701,7 @@ export const configCenterService = {
         updatedAt: nowIso()
       };
     });
+    notifyRolePermissionsChanged();
   },
 
   async listRoleMembers(roleId: number): Promise<string[]> {
@@ -1547,6 +1721,7 @@ export const configCenterService = {
     if (role) {
       appendAuditLog("ROLE_UPDATE", "ROLE", role.name, "person-business-admin", role.id);
     }
+    notifyRolePermissionsChanged();
   }
 };
 

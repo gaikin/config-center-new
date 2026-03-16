@@ -1,5 +1,6 @@
 import { Button, Form, Grid, Input, Select, Switch, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { getOrgLabel } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
 import { getRightOverlayDrawerWidth } from "../../utils";
 import { createFieldIssue, tryParseJson, validateInterfaceDraftPayload } from "../../validation/formRules";
@@ -36,6 +37,15 @@ import {
   ApiRegisterForm
 } from "./interfacesPageShared";
 
+function toInterfaceDraftPayload(
+  row: InterfaceDefinition
+): Omit<InterfaceDefinition, "updatedAt"> & { updatedAt?: string } {
+  return {
+    ...row,
+    status: "DRAFT"
+  };
+}
+
 export function useInterfacesPageModel() {
   const screens = Grid.useBreakpoint();
   const drawerWidth = getRightOverlayDrawerWidth(Boolean(screens.lg));
@@ -62,7 +72,7 @@ export function useInterfacesPageModel() {
   const [saveValidationReport, setSaveValidationReport] = useState<SaveValidationReport | null>(null);
   const [inputValidationIssues, setInputValidationIssues] = useState<FieldValidationIssue[]>([]);
   const [outputValidationIssues, setOutputValidationIssues] = useState<FieldValidationIssue[]>([]);
-  const [publishNotice, setPublishNotice] = useState<{ objectName: string; warningCount: number } | null>(null);
+  const [publishNotice, setPublishNotice] = useState<{ objectName: string; warningCount: number; resourceId: number } | null>(null);
 
   const [form] = Form.useForm<ApiRegisterForm>();
   const [msgApi, holder] = message.useMessage();
@@ -388,10 +398,56 @@ export function useInterfacesPageModel() {
     );
     setPublishNotice({
       objectName: payload.name,
-      warningCount: result.report.warningCount
+      warningCount: result.report.warningCount,
+      resourceId: result.data?.id ?? payload.id
     });
     closeDrawer();
     await loadData();
+  }
+
+  async function publishInterfaceNow(interfaceId: number, interfaceName: string, effectiveOrgIds: string[] = []): Promise<boolean> {
+    const pendingRows = await configCenterService.listPendingItems();
+    const pending = pendingRows.find((item) => item.resourceType === "INTERFACE" && item.resourceId === interfaceId);
+    if (!pending) {
+      msgApi.warning("当前 API 没有可生效版本，请先保存草稿。");
+      return false;
+    }
+    const result = await configCenterService.publishPendingItem(pending.id, "person-business-manager", effectiveOrgIds);
+    if (!result.success) {
+      msgApi.error("生效未通过，请先处理阻断项后再试。");
+      return false;
+    }
+    msgApi.success(`已生效：${interfaceName}（${effectiveOrgIds.length > 0 ? effectiveOrgIds.map((orgId) => getOrgLabel(orgId)).join("、") : "全部机构"}）`);
+    await loadData();
+    return true;
+  }
+
+  async function restoreInterfaceNow(
+    row: InterfaceDefinition,
+    effectiveOrgIds: string[] = []
+  ): Promise<boolean> {
+    const draftResult = await configCenterService.saveInterfaceDraft(
+      toInterfaceDraftPayload(row),
+      {
+        inputConfig: normalizeInputConfig(row.inputConfigJson),
+        outputConfig: normalizeOutputConfig(row.outputConfigJson)
+      }
+    );
+    if (!draftResult.success || !draftResult.data) {
+      msgApi.error(draftResult.report.summary);
+      return false;
+    }
+    return publishInterfaceNow(draftResult.data.id, draftResult.data.name, effectiveOrgIds);
+  }
+
+  async function publishNoticeNow() {
+    if (!publishNotice) {
+      return;
+    }
+    const success = await publishInterfaceNow(publishNotice.resourceId, publishNotice.objectName);
+    if (success) {
+      setPublishNotice(null);
+    }
   }
 
   async function switchStatus(item: InterfaceDefinition) {
@@ -549,6 +605,9 @@ export function useInterfacesPageModel() {
     inputValidationIssues,
     outputValidationIssues: [...outputValidationIssues, ...liveOutputSampleIssues],
     publishNotice,
-    dismissPublishNotice: () => setPublishNotice(null)
+    dismissPublishNotice: () => setPublishNotice(null),
+    publishNoticeNow,
+    publishInterfaceNow,
+    restoreInterfaceNow
   };
 }

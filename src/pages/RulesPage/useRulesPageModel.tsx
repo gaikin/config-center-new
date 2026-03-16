@@ -1,9 +1,11 @@
 import { Form, Grid, Modal, message } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getOrgLabel } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
 import { workflowService } from "../../services/workflowService";
 import { createId, getRightOverlayDrawerWidth } from "../../utils";
 import { createFieldIssue, validateRuleDraftPayload } from "../../validation/formRules";
+import { parsePromptContentConfig, stringifyPromptContentConfig } from "../../promptContent";
 import type {
   BusinessFieldDefinition,
   FieldValidationIssue,
@@ -21,12 +23,14 @@ import type {
   RuleListLookupCondition,
   SaveValidationReport
 } from "../../types";
-import type { OperandDraft, OperandSide } from "./rulesPageShared";
+import type { OperandDraft, OperandSide, PromptVariableOption } from "./rulesPageShared";
 import {
   buildDefaultCondition,
   buildPreprocessorId,
   collectInterfaceInputParams,
   collectOutputPathMeta,
+  contextOptions,
+  deriveMachineKeyFromOutputPath,
   FlatConditionDraft,
   hasDirtyOperandConfig,
   normalizeOperator,
@@ -59,6 +63,7 @@ type PublishNotice = {
   objectLabel: string;
   objectName: string;
   warningCount: number;
+  resourceId: number;
 };
 
 function cloneListLookupConditions(conditions: RuleDefinition["listLookupConditions"] = []): RuleListLookupCondition[] {
@@ -75,6 +80,13 @@ function buildDefaultListLookupCondition(listDatas: ListDataDefinition[]): RuleL
     listDataName: picked?.name,
     matchColumn: picked?.importColumns[0] ?? "",
     judgement: "MATCHED"
+  };
+}
+
+function toRuleDraftPayload(row: RuleDefinition): RuleDefinition {
+  return {
+    ...row,
+    status: "DRAFT"
   };
 }
 
@@ -181,6 +193,83 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       group: field.scope === "GLOBAL" ? "公共字段" : "页面特有字段"
     }));
   }, [activePageResourceId, activeRuleScope, businessFields, pageFieldBindings]);
+  const promptVariableOptions = useMemo<PromptVariableOption[]>(() => {
+    const result: PromptVariableOption[] = [];
+    const seenKeys = new Set<string>();
+    const exampleValues: Record<string, string> = {
+      customer_id: "62220001",
+      id_no: "330102199001010011",
+      mobile: "13800138000",
+      account_purpose: "经营结算",
+      collateral_type: "房产抵押",
+      org_id: "branch-east",
+      operator_role: "客户经理",
+      channel: "柜面",
+      user_role: "新员工",
+      score: "92",
+      riskLevel: "高风险",
+      name: "张三"
+    };
+
+    for (const field of pageFieldOptions) {
+      if (seenKeys.has(field.value)) {
+        continue;
+      }
+      seenKeys.add(field.value);
+      result.push({
+        key: field.value,
+        label: field.label.split("/").pop()?.trim() ?? field.value,
+        exampleValue: exampleValues[field.value] ?? `${field.label.split("/").pop()?.trim() ?? field.value}示例`,
+        sourceType: "PAGE_FIELD"
+      });
+    }
+
+    for (const item of contextOptions) {
+      if (seenKeys.has(item)) {
+        continue;
+      }
+      seenKeys.add(item);
+      result.push({
+        key: item,
+        label: item,
+        exampleValue: exampleValues[item] ?? `${item}-示例`,
+        sourceType: "CONTEXT"
+      });
+    }
+
+    const collectInterfaceVariables = (
+      outputs: unknown[],
+      interfaceName: string
+    ) => {
+      for (const item of outputs) {
+        if (!item || typeof item !== "object") {
+          continue;
+        }
+        const row = item as { name?: unknown; path?: unknown; children?: unknown[] };
+        const outputPath = typeof row.path === "string" ? row.path : "";
+        const key = deriveMachineKeyFromOutputPath(outputPath);
+        const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : key;
+        if (key && !seenKeys.has(key)) {
+          seenKeys.add(key);
+          result.push({
+            key,
+            label: `API / ${interfaceName} / ${name}`,
+            exampleValue: exampleValues[key] ?? `${name}示例`,
+            sourceType: "INTERFACE_FIELD"
+          });
+        }
+        if (Array.isArray(row.children)) {
+          collectInterfaceVariables(row.children, interfaceName);
+        }
+      }
+    };
+
+    for (const target of interfaces) {
+      collectInterfaceVariables(parseJsonSafe<unknown[]>(target.outputConfigJson, []), target.name);
+    }
+
+    return result;
+  }, [interfaces, pageFieldOptions]);
   function buildRuleSnapshot(values: Partial<RuleForm>) {
     return JSON.stringify({
       templateRuleId: values.templateRuleId ?? null,
@@ -189,11 +278,13 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       pageResourceId: values.pageResourceId ?? null,
       priority: values.priority ?? 1,
       promptMode: values.promptMode ?? "FLOATING",
+      titleSuffix: values.titleSuffix ?? "",
+      bodyTemplate: values.bodyTemplate ?? "",
       closeMode: values.closeMode ?? "MANUAL_CLOSE",
       closeTimeoutSec: values.closeTimeoutSec ?? null,
       hasConfirmButton: values.hasConfirmButton ?? true,
       sceneId: values.sceneId ?? null,
-      status: values.status ?? "DRAFT",
+      status: "DRAFT",
       ownerOrgId: values.ownerOrgId ?? ""
     });
   }
@@ -282,6 +373,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       typeof options.initialSceneId === "number" && scenes.some((item) => item.id === options.initialSceneId)
         ? options.initialSceneId
         : undefined;
+    const presetPromptContent = parsePromptContentConfig(presetTemplate?.promptContentConfigJson);
     const values: RuleForm = {
       templateRuleId: presetTemplate?.id,
       name: presetTemplate ? `${presetTemplate.name}-副本` : "",
@@ -289,9 +381,11 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       pageResourceId: mode === "TEMPLATE" ? undefined : presetPageId,
       priority: presetTemplate?.priority ?? 500,
       promptMode: presetTemplate?.promptMode ?? "FLOATING",
+      titleSuffix: presetPromptContent.titleSuffix,
+      bodyTemplate: presetPromptContent.bodyTemplate,
       closeMode: presetTemplate?.closeMode ?? "MANUAL_CLOSE",
       closeTimeoutSec: presetTemplate?.closeTimeoutSec,
-      hasConfirmButton: presetTemplate?.hasConfirmButton ?? true,
+      hasConfirmButton: true,
       sceneId: presetTemplate?.sceneId ?? presetSceneId,
       status: "DRAFT",
       ownerOrgId: presetTemplate?.ownerOrgId ?? "branch-east"
@@ -322,6 +416,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       return;
     }
     const currentValues = ruleForm.getFieldsValue();
+    const promptContent = parsePromptContentConfig(template?.promptContentConfigJson);
     ruleForm.setFieldsValue({
       ...currentValues,
       templateRuleId: template.id,
@@ -329,14 +424,17 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       ruleScope: "PAGE_RESOURCE",
       priority: template.priority,
       promptMode: template.promptMode,
+      titleSuffix: currentValues.titleSuffix?.trim() ? currentValues.titleSuffix : promptContent.titleSuffix,
+      bodyTemplate: currentValues.bodyTemplate?.trim() ? currentValues.bodyTemplate : promptContent.bodyTemplate,
       closeMode: template.closeMode,
       closeTimeoutSec: template.closeTimeoutSec,
-      hasConfirmButton: template.hasConfirmButton,
+      hasConfirmButton: true,
       sceneId: template.sceneId,
       ownerOrgId: currentValues.ownerOrgId?.trim() ? currentValues.ownerOrgId : template.ownerOrgId
     });
   }
   function openEdit(row: RuleDefinition) {
+    const promptContent = parsePromptContentConfig(row.promptContentConfigJson);
     const values: RuleForm = {
       templateRuleId: row.sourceRuleId,
       name: row.name,
@@ -344,11 +442,13 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       pageResourceId: row.pageResourceId,
       priority: row.priority,
       promptMode: row.promptMode,
+      titleSuffix: promptContent.titleSuffix,
+      bodyTemplate: promptContent.bodyTemplate,
       closeMode: row.closeMode,
       closeTimeoutSec: row.closeTimeoutSec,
-      hasConfirmButton: row.hasConfirmButton,
+      hasConfirmButton: true,
       sceneId: row.sceneId,
-      status: row.status,
+      status: "DRAFT",
       ownerOrgId: row.ownerOrgId
     };
     setEditing(row);
@@ -373,15 +473,20 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
         pageResourceId: effectiveScope === "PAGE_RESOURCE" ? values.pageResourceId : undefined,
         priority: values.priority ?? 1,
         promptMode: values.promptMode ?? "FLOATING",
+        promptContentConfigJson: stringifyPromptContentConfig({
+          titleSuffix: values.titleSuffix,
+          bodyTemplate: values.bodyTemplate
+        }),
         closeMode: values.closeMode ?? "MANUAL_CLOSE",
         closeTimeoutSec: values.closeTimeoutSec,
-        hasConfirmButton: values.hasConfirmButton ?? true,
+        hasConfirmButton: true,
         sceneId: values.sceneId,
-        ownerOrgId: values.ownerOrgId ?? ""
+        ownerOrgId: values.ownerOrgId ?? "",
+        availablePromptVariableKeys: promptVariableOptions.map((item) => item.key)
       },
       rows
     );
-  }, [editing?.id, mode, open, rows, watchedRuleValues]);
+  }, [editing?.id, mode, open, promptVariableOptions, rows, watchedRuleValues]);
   const activeSaveValidationReport = liveSaveValidationReport ?? saveValidationReport;
   async function submitRule() {
     const values = await ruleForm.validateFields();
@@ -408,12 +513,18 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
         mode === "PAGE_RULE" ? (!editing ? reuseSourceRule?.name : editing?.sourceRuleName) : undefined,
       priority: values.priority,
       promptMode: values.promptMode,
+      promptContentConfigJson: stringifyPromptContentConfig({
+        titleSuffix: values.titleSuffix,
+        bodyTemplate: values.bodyTemplate
+      }),
       closeMode: values.closeMode,
       closeTimeoutSec: values.closeMode === "TIMER_THEN_MANUAL" ? values.closeTimeoutSec : undefined,
-      hasConfirmButton: values.hasConfirmButton,
-      sceneId: values.hasConfirmButton ? values.sceneId : undefined,
-      sceneName: values.hasConfirmButton ? scene?.name : undefined,
-      status: values.status,
+      hasConfirmButton: true,
+      sceneId: values.sceneId,
+      sceneName: scene?.name,
+      effectiveStartAt: editing?.effectiveStartAt,
+      effectiveEndAt: editing?.effectiveEndAt,
+      status: "DRAFT",
       currentVersion: editing?.currentVersion ?? 1,
       ownerOrgId: values.ownerOrgId
     });
@@ -441,11 +552,71 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
     setPublishNotice({
       objectLabel: savedObjectLabel,
       objectName: saved.name,
-      warningCount: result.report.warningCount
+      warningCount: result.report.warningCount,
+      resourceId: saved.id
     });
     closeRuleModalDirectly();
     await loadData();
   }
+
+  async function publishRuleNow(
+    ruleId: number,
+    ruleName: string,
+    options?: {
+      effectiveOrgIds?: string[];
+      effectiveStartAt?: string;
+      effectiveEndAt?: string;
+    }
+  ): Promise<boolean> {
+    const pendingRows = await configCenterService.listPendingItems();
+    const pending = pendingRows.find((item) => item.resourceType === "RULE" && item.resourceId === ruleId);
+    if (!pending) {
+      msgApi.warning("当前对象没有可生效版本，请先保存草稿。");
+      return false;
+    }
+    const normalizedEffectiveOrgIds = options?.effectiveOrgIds ?? [];
+    const result = await configCenterService.publishPendingItem(pending.id, "person-business-manager", options);
+    if (!result.success) {
+      msgApi.error("生效未通过，请先处理阻断项后再试。");
+      return false;
+    }
+    const effectiveTimeSummary =
+      options?.effectiveStartAt && options?.effectiveEndAt
+        ? `，时间 ${options.effectiveStartAt} ~ ${options.effectiveEndAt}`
+        : "";
+    msgApi.success(
+      `已生效：${ruleName}（${normalizedEffectiveOrgIds.length > 0 ? normalizedEffectiveOrgIds.map((orgId) => getOrgLabel(orgId)).join("、") : "全部机构"}${effectiveTimeSummary}）`
+    );
+    await loadData();
+    return true;
+  }
+
+  async function publishNoticeNow() {
+    if (!publishNotice) {
+      return;
+    }
+    const success = await publishRuleNow(publishNotice.resourceId, publishNotice.objectName);
+    if (success) {
+      setPublishNotice(null);
+    }
+  }
+
+  async function restoreRuleNow(
+    row: RuleDefinition,
+    options?: {
+      effectiveOrgIds?: string[];
+      effectiveStartAt?: string;
+      effectiveEndAt?: string;
+    }
+  ): Promise<boolean> {
+    const draftResult = await configCenterService.saveRuleDraft(toRuleDraftPayload(row));
+    if (!draftResult.success || !draftResult.data) {
+      msgApi.error(draftResult.report.summary);
+      return false;
+    }
+    return publishRuleNow(draftResult.data.id, draftResult.data.name, options);
+  }
+
   async function switchStatus(row: RuleDefinition) {
     const next: LifecycleState = row.status === "ACTIVE" ? "DISABLED" : "ACTIVE";
     await configCenterService.updateRuleStatus(row.id, next);
@@ -820,8 +991,9 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
     return {
       0: allIssues.filter((issue) => issue.section === "page").length,
       1: allIssues.filter((issue) => issue.section === "basic").length,
-      2: logicValidationIssues.length,
-      3: allIssues.filter((issue) => issue.section === "confirm").length
+      2: allIssues.filter((issue) => issue.section === "content").length,
+      3: logicValidationIssues.length,
+      4: allIssues.filter((issue) => issue.section === "confirm").length
     };
   }, [activeSaveValidationReport, logicValidationIssues]);
   return {
@@ -831,6 +1003,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
     resources, scenes, preprocessors, interfaces, listDatas,
     open, editing, ruleForm, logicOpen, currentRule, globalLogicType, setGlobalLogicType,
     pageFieldOptions,
+    promptVariableOptions,
     conditionsDraft, listLookupDrafts, selectedOperand, setSelectedOperand, savingQuery,
     closeRuleModal, closeLogicDrawer, openCreate, applyTemplate, openEdit, submitRule, switchStatus, openLogic,
     addCondition, removeCondition, addListLookupCondition, updateListLookupCondition, removeListLookupCondition,
@@ -845,7 +1018,10 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
     hasSelectedOperandDirtyConfig: Boolean(selectedContext && hasDirtyOperandConfig(selectedContext.operand)),
     wizardStepIssues,
     publishNotice,
-    dismissPublishNotice: () => setPublishNotice(null)
+    dismissPublishNotice: () => setPublishNotice(null),
+    publishNoticeNow,
+    publishRuleNow,
+    restoreRuleNow
   };
 }
 

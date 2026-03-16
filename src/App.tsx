@@ -21,14 +21,14 @@ const JobScenesPage = lazy(() =>
 const InterfacesPage = lazy(() =>
   import("./pages/InterfacesPage/InterfacesPage").then((m) => ({ default: m.InterfacesPage }))
 );
-const PublishPage = lazy(() =>
-  import("./pages/PublishPage/PublishPage").then((m) => ({ default: m.PublishPage }))
-);
 const AuditMetricsPage = lazy(() =>
   import("./pages/AuditMetricsPage/AuditMetricsPage").then((m) => ({ default: m.AuditMetricsPage }))
 );
 const AdvancedConfigPage = lazy(() =>
   import("./pages/AdvancedConfigPage/AdvancedConfigPage").then((m) => ({ default: m.AdvancedConfigPage }))
+);
+const LoginTestPage = lazy(() =>
+  import("./pages/LoginTestPage/LoginTestPage").then((m) => ({ default: m.LoginTestPage }))
 );
 
 export default function App() {
@@ -41,16 +41,17 @@ export default function App() {
           <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/jobs" element={<JobScenesPage />} />
           <Route path="/interfaces" element={<InterfacesPage />} />
-          <Route path="/publish" element={<PublishPage />} />
           <Route path="/stats" element={<AuditMetricsPage />} />
           <Route path="/advanced" element={<AdvancedConfigPage />} />
+          <Route path="/login-test" element={<LoginTestPage />} />
 
           <Route path="/page-resources" element={<PageResourcesPage />} />
           <Route path="/page-activation" element={<Navigate to="/page-management" replace />} />
           <Route path="/rules" element={<Navigate to="/prompts" replace />} />
           <Route path="/rule-templates" element={<Navigate to="/prompts" replace />} />
           <Route path="/job-scenes" element={<Navigate to="/jobs" replace />} />
-          <Route path="/sdk-version-center" element={<Navigate to="/publish" replace />} />
+          <Route path="/publish" element={<Navigate to="/" replace />} />
+          <Route path="/sdk-version-center" element={<Navigate to="/advanced" replace />} />
           <Route path="/audit-metrics" element={<Navigate to="/stats" replace />} />
           <Route path="/preprocessors" element={<Navigate to="/advanced" replace />} />
           <Route path="/roles" element={<Navigate to="/advanced" replace />} />

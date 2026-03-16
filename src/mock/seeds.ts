@@ -656,9 +656,13 @@ export const seedRules: RuleDefinition[] = [
     priority: 950,
     promptMode: "FLOATING",
     closeMode: "MANUAL_CLOSE",
+    promptContentConfigJson:
+      "{\"version\":1,\"titleSuffix\":\"贷款高风险客户\",\"bodyTemplate\":\"检测到客户 {{customer_id}} 风险等级为 {{riskLevel}}，请核对证件信息并确认是否继续办理。\"}",
     hasConfirmButton: true,
     sceneId: 5001,
     sceneName: "贷款申请自动查数预填",
+    effectiveStartAt: "2026-03-01 00:00",
+    effectiveEndAt: "2026-12-31 23:59",
     status: "ACTIVE",
     currentVersion: 6,
     ownerOrgId: "branch-east",
@@ -674,6 +678,8 @@ export const seedRules: RuleDefinition[] = [
     priority: 700,
     promptMode: "SILENT",
     closeMode: "AUTO_CLOSE",
+    promptContentConfigJson:
+      "{\"version\":1,\"titleSuffix\":\"开户资料补录\",\"bodyTemplate\":\"检测到开户用途缺失，请补充客户开户地址及用途说明后再继续提交。\"}",
     hasConfirmButton: false,
     status: "DRAFT",
     currentVersion: 1,
@@ -1108,32 +1114,52 @@ export const seedJobNodeRunLogs: JobNodeRunLog[] = [
 export const seedRoles: RoleItem[] = [
   {
     id: 7001,
-    name: "业务配置角色-华东",
-    roleType: "BUSINESS_CONFIG",
+    name: "配置人员-华东",
+    roleType: "CONFIG_OPERATOR",
     status: "ACTIVE",
     orgScopeId: "branch-east",
-    actions: ["VIEW", "CONFIG", "VALIDATE"],
+    actions: ["VIEW", "CONFIG", "VALIDATE", "PUBLISH"],
     memberCount: 16,
     updatedAt: now()
   },
   {
     id: 7002,
-    name: "业务管理角色-华东",
-    roleType: "BUSINESS_MANAGER",
+    name: "权限管理人员-华东",
+    roleType: "PERMISSION_ADMIN",
     status: "ACTIVE",
     orgScopeId: "branch-east",
-    actions: ["VIEW", "VALIDATE", "PUBLISH", "DISABLE", "DEFER", "ROLLBACK", "AUDIT_VIEW", "RISK_CONFIRM"],
+    actions: ["VIEW", "ROLE_MANAGE"],
     memberCount: 8,
     updatedAt: now()
   },
   {
     id: 7003,
-    name: "平台支持角色-总行",
-    roleType: "PLATFORM_SUPPORT",
+    name: "权限管理人员-总行",
+    roleType: "PERMISSION_ADMIN",
+    status: "ACTIVE",
+    orgScopeId: "head-office",
+    actions: ["VIEW", "ROLE_MANAGE", "MENU_ENABLE_MANAGE"],
+    memberCount: 5,
+    updatedAt: now()
+  },
+  {
+    id: 7004,
+    name: "技术支持人员-总行",
+    roleType: "TECH_SUPPORT",
     status: "ACTIVE",
     orgScopeId: "head-office",
     actions: ["VIEW", "VALIDATE", "AUDIT_VIEW"],
-    memberCount: 5,
+    memberCount: 4,
+    updatedAt: now()
+  },
+  {
+    id: 7005,
+    name: "配置人员-总行",
+    roleType: "CONFIG_OPERATOR",
+    status: "ACTIVE",
+    orgScopeId: "head-office",
+    actions: ["VIEW", "CONFIG", "VALIDATE", "PUBLISH", "MENU_ENABLE_MANAGE"],
+    memberCount: 3,
     updatedAt: now()
   }
 ];
@@ -1141,7 +1167,9 @@ export const seedRoles: RoleItem[] = [
 export const seedRoleMembers: Record<number, string[]> = {
   7001: ["person-zhao-yi", "person-qian-er", "person-sun-san"],
   7002: ["person-zhou-zong", "person-wu-zhuguan"],
-  7003: ["person-platform-support-a"]
+  7003: ["person-head-admin-a", "person-head-admin-b"],
+  7004: ["person-platform-support-a"],
+  7005: ["person-head-config-a", "person-head-config-b"]
 };
 
 export const seedDashboardOverview: DashboardOverview = {
