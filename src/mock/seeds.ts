@@ -12,6 +12,8 @@
   JobSceneDefinition,
   ListDataDefinition,
   MenuSdkPolicy,
+  MenuCapabilityPolicy,
+  MenuCapabilityRequest,
   PageElement,
   PageFieldBinding,
   PageMenu,
@@ -368,6 +370,48 @@ export const seedMenuSdkPolicies: MenuSdkPolicy[] = [
     ownerOrgId: "head-office",
     updatedAt: now(),
     resolutionSummary: "全部机构命中 stable"
+  }
+];
+
+export const seedMenuCapabilityPolicies: MenuCapabilityPolicy[] = [
+  {
+    id: 8401,
+    menuId: 101,
+    promptStatus: "ENABLED",
+    jobStatus: "ENABLED",
+    status: "ACTIVE",
+    updatedAt: now(),
+    updatedBy: "person-platform-admin"
+  },
+  {
+    id: 8402,
+    menuId: 102,
+    promptStatus: "DISABLED",
+    jobStatus: "DISABLED",
+    status: "DRAFT",
+    updatedAt: now(),
+    updatedBy: "person-platform-admin"
+  },
+  {
+    id: 8403,
+    menuId: 201,
+    promptStatus: "PENDING",
+    jobStatus: "ENABLED",
+    status: "DRAFT",
+    updatedAt: now(),
+    updatedBy: "person-platform-admin"
+  }
+];
+
+export const seedMenuCapabilityRequests: MenuCapabilityRequest[] = [
+  {
+    id: 8501,
+    menuId: 201,
+    capabilityType: "PROMPT",
+    reason: "开户办理场景需要补充提示开通，减少漏填。",
+    status: "PENDING",
+    applicant: "person-business-manager-south",
+    createdAt: now()
   }
 ];
 

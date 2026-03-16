@@ -354,6 +354,7 @@ export interface SdkReleaseLane {
 }
 
 export type JobPreloadPolicy = "immediate" | "idle" | "intent" | "none";
+export type CapabilityOpenStatus = "ENABLED" | "DISABLED" | "PENDING";
 
 export interface MenuSdkPolicy {
   id: number;
@@ -370,6 +371,26 @@ export interface MenuSdkPolicy {
   ownerOrgId: string;
   updatedAt: string;
   resolutionSummary: string;
+}
+
+export interface MenuCapabilityPolicy {
+  id: number;
+  menuId: number;
+  promptStatus: CapabilityOpenStatus;
+  jobStatus: CapabilityOpenStatus;
+  status: LifecycleState;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface MenuCapabilityRequest {
+  id: number;
+  menuId: number;
+  capabilityType: "PROMPT" | "JOB";
+  reason: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  applicant: string;
+  createdAt: string;
 }
 
 export interface PageActivationPolicy {

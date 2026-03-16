@@ -583,7 +583,7 @@ export function RulesPage({
                 showIcon
                 type={previewResult?.matched ? "success" : "info"}
                 message={previewResult?.matched ? "预览通过" : "请执行预览"}
-                description={previewResult?.detail ?? "保存前建议先执行一次预览，确认规则表达和触发方式。"}
+                description={previewResult?.detail ?? "保存前可执行一次预览，确认规则表达和触发方式。"}
               />
               <Space>
                 <Button loading={previewLoading} type="primary" onClick={() => void runWizardPreview()}>
@@ -619,7 +619,7 @@ export function RulesPage({
                       状态：{summaryStatus ? lifecycleLabelMap[summaryStatus] : "-"}，组织范围：{getOrgLabel(ruleForm.getFieldValue("ownerOrgId"))}
                     </Typography.Text>
                     <Typography.Text type="secondary">
-                      保存后会进入待发布列表，建议下一步前往“发布与灰度”完成上线。
+                      保存后会进入待发布列表，可前往“发布与灰度”完成上线。
                     </Typography.Text>
                   </Space>
                 );

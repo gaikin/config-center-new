@@ -6,6 +6,8 @@ import {
   seedInterfaces,
   seedJobScenes,
   seedListDatas,
+  seedMenuCapabilityPolicies,
+  seedMenuCapabilityRequests,
   seedMenuSdkPolicies,
   seedPageElements,
   seedPageFieldBindings,
@@ -39,6 +41,8 @@ import type {
   JobSceneDefinition,
   JobScenePreviewField,
   ListDataDefinition,
+  MenuCapabilityPolicy,
+  MenuCapabilityRequest,
   MenuSdkPolicy,
   LifecycleState,
   PageElement,
@@ -92,6 +96,8 @@ const store = {
   sdkArtifactVersions: structuredClone(seedSdkArtifactVersions),
   sdkReleaseLanes: structuredClone(seedSdkReleaseLanes),
   menuSdkPolicies: structuredClone(seedMenuSdkPolicies),
+  menuCapabilityPolicies: structuredClone(seedMenuCapabilityPolicies),
+  menuCapabilityRequests: structuredClone(seedMenuCapabilityRequests),
   pageActivationPolicies: structuredClone(seedPageActivationPolicies),
   listDatas: structuredClone(seedListDatas),
   interfaces: structuredClone(seedInterfaces),
@@ -559,6 +565,95 @@ export const configCenterService = {
       ? store.menuSdkPolicies.map((item) => (item.id === next.id ? next : item))
       : [next, ...store.menuSdkPolicies];
     touchPendingForResource("MENU_SDK_POLICY", next.id, next.status, next.ownerOrgId, `菜单策略-${next.menuCode}`);
+    return clone(next);
+  },
+
+  async listMenuCapabilityPolicies(): Promise<MenuCapabilityPolicy[]> {
+    await sleep(120);
+    return clone(store.menuCapabilityPolicies);
+  },
+
+  async listMenuCapabilityRequests(menuId?: number): Promise<MenuCapabilityRequest[]> {
+    await sleep(120);
+    const rows = typeof menuId === "number"
+      ? store.menuCapabilityRequests.filter((item) => item.menuId === menuId)
+      : store.menuCapabilityRequests;
+    return clone([...rows].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)));
+  },
+
+  async submitMenuCapabilityRequest(payload: {
+    menuId: number;
+    capabilityTypes: Array<"PROMPT" | "JOB">;
+    reason: string;
+    applicant?: string;
+  }): Promise<MenuCapabilityPolicy> {
+    await sleep(180);
+    const current = store.menuCapabilityPolicies.find((item) => item.menuId === payload.menuId);
+    const requested = Array.from(new Set(payload.capabilityTypes));
+    if (requested.length === 0) {
+      throw new Error("请选择至少一个申请能力");
+    }
+    if (!payload.reason.trim()) {
+      throw new Error("请填写申请原因");
+    }
+
+    let nextPromptStatus = current?.promptStatus ?? "DISABLED";
+    let nextJobStatus = current?.jobStatus ?? "DISABLED";
+    let createdCount = 0;
+
+    for (const capabilityType of requested) {
+      if (capabilityType === "PROMPT") {
+        if (nextPromptStatus === "DISABLED") {
+          nextPromptStatus = "PENDING";
+          createdCount += 1;
+          store.menuCapabilityRequests = [
+            {
+              id: nextId(store.menuCapabilityRequests),
+              menuId: payload.menuId,
+              capabilityType,
+              reason: payload.reason.trim(),
+              status: "PENDING",
+              applicant: payload.applicant ?? "person-business-operator",
+              createdAt: nowIso()
+            },
+            ...store.menuCapabilityRequests
+          ];
+        }
+      } else if (nextJobStatus === "DISABLED") {
+        nextJobStatus = "PENDING";
+        createdCount += 1;
+        store.menuCapabilityRequests = [
+          {
+            id: nextId(store.menuCapabilityRequests),
+            menuId: payload.menuId,
+            capabilityType,
+            reason: payload.reason.trim(),
+            status: "PENDING",
+            applicant: payload.applicant ?? "person-business-operator",
+            createdAt: nowIso()
+          },
+          ...store.menuCapabilityRequests
+        ];
+      }
+    }
+
+    if (createdCount === 0) {
+      throw new Error("所选能力已开通或已在申请中，请勿重复申请");
+    }
+
+    const next: MenuCapabilityPolicy = {
+      id: current?.id ?? nextId(store.menuCapabilityPolicies),
+      menuId: payload.menuId,
+      promptStatus: nextPromptStatus,
+      jobStatus: nextJobStatus,
+      status: nextPromptStatus === "ENABLED" && nextJobStatus === "ENABLED" ? "ACTIVE" : "DRAFT",
+      updatedAt: nowIso(),
+      updatedBy: payload.applicant ?? "person-business-operator"
+    };
+    store.menuCapabilityPolicies = current
+      ? store.menuCapabilityPolicies.map((item) => (item.id === current.id ? next : item))
+      : [next, ...store.menuCapabilityPolicies];
+
     return clone(next);
   },
 
