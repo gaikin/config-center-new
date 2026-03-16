@@ -160,7 +160,7 @@ export function SdkVersionCenterPage() {
       menuCode: matchedMenu?.menuCode ?? editing?.menuCode ?? "",
       id: editing?.id ?? Date.now()
     });
-    msgApi.success(editing ? "版本灰度策略已更新，可前往发布与灰度继续处理" : "版本灰度策略已创建，可前往发布与灰度查看待发布项");
+    msgApi.success(editing ? "版本灰度策略已更新，可前往“发布与灰度”完成发布" : "版本灰度策略已创建，可前往“发布与灰度”查看待发布项");
     setOpen(false);
     await loadData();
   }

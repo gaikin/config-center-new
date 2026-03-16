@@ -113,7 +113,7 @@ export function DashboardPage() {
           pageName,
           scope: index % 2 === 0 ? "branch-east" : "branch-south",
           dropRatio: ratio,
-          detail: ratio >= 50 ? "触发命中下降明显，建议复核规则和发布变更。" : "波动可控，持续观察。"
+          detail: ratio >= 50 ? "触发命中下降明显，请复核规则和发布变更。" : "波动可控，持续观察。"
         };
       })
       .filter((item) => item.dropRatio >= 30)

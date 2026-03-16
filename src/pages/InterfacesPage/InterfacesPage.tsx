@@ -153,7 +153,7 @@ export function InterfacesPage() {
       {holder}
       <Typography.Title level={4}>API注册</Typography.Title>
       <Typography.Paragraph type="secondary">
-        保留 API注册 术语，主流程改为五步向导：选用途 → 填基础信息 → 填参数示例 → 在线测试 → 保存。保存后继续到“发布与灰度”完成上线。
+        保留 API注册 术语，主流程改为五步向导：选用途 → 填基础信息 → 填参数示例 → 在线测试 → 保存。保存后可前往“发布与灰度”完成发布。
       </Typography.Paragraph>
       {publishNotice ? (
         <PublishContinuationAlert
@@ -497,7 +497,7 @@ export function InterfacesPage() {
           {wizardStep === 3 ? (
             <Card title="步骤 4：在线测试" size="small">
               <Typography.Paragraph type="secondary">
-                建议保存前先执行一次在线测试，确认请求路径、入参与返回结构满足当前用途。
+                保存前请执行一次在线测试，确认请求路径、入参与返回结构满足当前用途。
               </Typography.Paragraph>
               <Space>
                 <Button type="primary" onClick={openDebugDraft}>

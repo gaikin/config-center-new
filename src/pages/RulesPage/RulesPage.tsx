@@ -64,7 +64,7 @@ function CompactHint({
       <Space size={[8, 4]} wrap style={{ width: "100%", justifyContent: "space-between" }}>
         <Space size={[8, 4]} wrap>
           <Tag color={tone === "success" ? "success" : tone === "info" ? "processing" : "warning"} style={{ marginInlineEnd: 0 }}>
-            {tone === "success" ? "已配置" : tone === "info" ? "说明" : "提醒"}
+            {tone === "success" ? "已配置" : tone === "info" ? "说明" : "待处理"}
           </Tag>
           <Typography.Text style={{ color: palette.text }}>{title}</Typography.Text>
           {description ? <Typography.Text type="secondary">{description}</Typography.Text> : null}
@@ -164,7 +164,7 @@ export function RulesPage({
   const pageTitle = isTemplateMode ? "模板复用" : "智能提示";
   const pageDescription = isTemplateMode
     ? "沉淀高复用规则模板。模板仅引用公共字段，供业务人员在新建页面规则时快速套用。"
-    : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。保存后可继续去“发布与灰度”完成上线。";
+    : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。保存后可前往“发布与灰度”完成发布。";
   const createButtonLabel = isTemplateMode ? "新建模板" : "新建规则";
   const modalTitle = editing ? (isTemplateMode ? "编辑规则模板" : "编辑规则") : isTemplateMode ? "新建规则模板" : "新建规则";
   const modalAlert = isTemplateMode
@@ -619,7 +619,7 @@ export function RulesPage({
                       状态：{summaryStatus ? lifecycleLabelMap[summaryStatus] : "-"}，组织范围：{getOrgLabel(ruleForm.getFieldValue("ownerOrgId"))}
                     </Typography.Text>
                     <Typography.Text type="secondary">
-                      保存后会进入待发布列表，可前往“发布与灰度”完成上线。
+                      保存后会进入待发布列表，可前往“发布与灰度”完成发布。
                     </Typography.Text>
                   </Space>
                 );

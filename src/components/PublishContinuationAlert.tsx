@@ -26,8 +26,8 @@ export function PublishContinuationAlert({
         <Space direction="vertical" style={{ width: "100%" }} size={8}>
           <Typography.Text type="secondary">
             {warningCount > 0
-              ? `当前还有 ${warningCount} 个提醒可继续优化，但不影响进入发布与灰度。`
-              : "当前配置已进入待发布列表，建议继续完成发布与灰度。"}
+              ? `当前还有 ${warningCount} 个待处理项，不影响进入发布与灰度。`
+              : "当前配置已进入待发布列表，可前往“发布与灰度”完成发布。"}
           </Typography.Text>
           <Space>
             <Button type="primary" size="small" onClick={onGoPublish}>

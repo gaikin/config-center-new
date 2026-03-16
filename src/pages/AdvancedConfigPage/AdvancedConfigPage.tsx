@@ -26,7 +26,7 @@ export function AdvancedConfigPage() {
         showIcon
         style={{ marginBottom: 12 }}
         message="修改高级配置前请确认影响范围"
-        description="建议先在发布与灰度页面确认试点机构和生效时间，再执行高风险改动。"
+        description="请先在“发布与灰度”确认试点机构和生效时间，再执行高风险改动。"
       />
 
       <Card>

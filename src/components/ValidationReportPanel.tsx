@@ -60,7 +60,7 @@ export function ValidationReportPanel({
     title ??
     (blockingCount > 0
       ? `发现 ${blockingCount} 个阻断项`
-      : `有 ${warningCount} 个提醒建议处理`);
+      : `有 ${warningCount} 个待处理项`);
   const previewIssues = visibleIssues.slice(0, maxPreviewItems).map((issue) => formatIssue(issue));
   const showCompactToggle = compact;
 
@@ -97,7 +97,7 @@ export function ValidationReportPanel({
                 <div key={issue.key}>
                   <Space size={8} wrap>
                     <Tag color={item.level === "blocking" ? "red" : "gold"}>
-                      {item.level === "blocking" ? "阻断" : "提醒"}
+                      {item.level === "blocking" ? "阻断" : "待处理"}
                     </Tag>
                     <Typography.Text strong>{item.title}</Typography.Text>
                   </Space>
@@ -106,7 +106,7 @@ export function ValidationReportPanel({
                   </Typography.Paragraph>
                   {item.action ? (
                     <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                      处理建议：{item.action}
+                      处理方式：{item.action}
                     </Typography.Paragraph>
                   ) : null}
                 </div>

@@ -723,7 +723,7 @@ export function PageManagementPage() {
               { min: 10, message: "申请原因至少 10 个字，便于管理员评估" }
             ]}
           >
-            <Input.TextArea rows={4} maxLength={300} placeholder="例如：贷款审核菜单近期需要上线提示+作业能力，降低人工漏检风险。" />
+            <Input.TextArea rows={4} maxLength={300} placeholder="例如：贷款审核菜单近期需要发布提示与作业能力，降低人工漏检风险。" />
           </Form.Item>
         </Form>
       </Modal>

@@ -150,7 +150,7 @@ export function JobScenesPage() {
       {holder}
       <Typography.Title level={4}>智能作业</Typography.Title>
       <Typography.Paragraph type="secondary">
-        从页面上下文进入场景配置，优先表达业务场景与触发方式，再进入高级编排与节点细节。保存后可继续到“发布与灰度”完成上线。
+        从页面上下文进入场景配置，优先表达业务场景与触发方式，再进入高级编排与节点细节。保存后可前往“发布与灰度”完成发布。
       </Typography.Paragraph>
       {publishNotice ? (
         <PublishContinuationAlert
@@ -167,7 +167,7 @@ export function JobScenesPage() {
           type="info"
           style={{ marginBottom: 12 }}
           message={`已切换到页面：${presetPageName ?? "当前页面"}`}
-          description="你可以直接新建该页面的作业配置，系统会自动带入页面；保存后可前往“发布与灰度”继续处理。"
+          description="你可以直接新建该页面的作业配置，系统会自动带入页面；保存后可前往“发布与灰度”完成发布。"
         />
       ) : null}
 
@@ -287,7 +287,7 @@ export function JobScenesPage() {
       <Modal title={editing ? "编辑场景" : "新建场景"} open={open} onCancel={closeSceneModal} onOk={() => void submitScene()} width={680}>
         <Form form={form} layout="vertical">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            场景编号和版本由系统自动维护，你只需要关注页面、执行方式和风险控制。保存后可继续到“发布与灰度”上线。
+            场景编号和版本由系统自动维护，你只需要关注页面、执行方式和风险控制。保存后可前往“发布与灰度”发布生效。
           </Typography.Paragraph>
           <ValidationReportPanel report={sceneSaveValidationReport} title="保存前检查结果" />
           <Alert
@@ -368,14 +368,14 @@ export function JobScenesPage() {
             </Space>
           </Card>
 
-          <Card title="发布检查与上线" size="small">
+          <Card title="发布检查" size="small">
             <Alert
               type={builderScene?.riskConfirmed ? "success" : "warning"}
               showIcon
               message={
                 builderScene?.riskConfirmed
-                  ? "风险确认已完成：保存后可直接进入发布与灰度，系统会自动完成最终检查。"
-                  : "风险确认未完成：自动化场景上线前需先完成责任确认，否则发布时会被阻断。"
+                  ? "风险确认已完成：保存后可直接进入“发布与灰度”，系统会自动完成最终检查。"
+                  : "风险确认未完成：自动化场景发布前需先完成责任确认，否则发布时会被阻断。"
               }
             />
           </Card>
@@ -601,7 +601,7 @@ export function JobScenesPage() {
             <Alert
               type="warning"
               showIcon
-              message="有异常字段，建议先取消勾选再执行。"
+              message="有异常字段，请先取消勾选后再执行。"
             />
           ) : (
             <Typography.Text type="secondary">请勾选需要写入的字段，确认后执行。</Typography.Text>

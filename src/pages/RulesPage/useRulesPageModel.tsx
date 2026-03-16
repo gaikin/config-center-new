@@ -426,7 +426,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
     const savedObjectLabel = isTemplateMode(mode) ? "模板" : "规则";
     const savedMessage =
       result.report.warningCount > 0
-        ? `${savedObjectLabel}已保存草稿，另有 ${result.report.warningCount} 个提醒可继续处理`
+        ? `${savedObjectLabel}已保存草稿，另有 ${result.report.warningCount} 个待处理项`
         : mode === "PAGE_RULE" && !editing && reuseSourceRule
           ? "规则模板已复用为页面规则，并已进入待发布列表"
           : !editing

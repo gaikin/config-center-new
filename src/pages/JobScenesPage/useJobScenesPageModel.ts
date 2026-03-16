@@ -269,7 +269,7 @@ export function useJobScenesPageModel() {
     }
     msgApi.success(
       result.report.warningCount > 0
-        ? `场景已保存草稿，另有 ${result.report.warningCount} 个提醒可继续处理`
+        ? `场景已保存草稿，另有 ${result.report.warningCount} 个待处理项`
         : editing
           ? "场景已更新，并已进入待发布列表"
           : "场景已创建，并已进入待发布列表"
@@ -314,7 +314,7 @@ export function useJobScenesPageModel() {
               label: item.fieldName,
               message: `预览发现异常来源：${item.source}`,
               level: "warning",
-              action: "建议先取消勾选异常字段，再执行写入。"
+              action: "请先取消勾选异常字段，再执行写入。"
             })
           )
       );

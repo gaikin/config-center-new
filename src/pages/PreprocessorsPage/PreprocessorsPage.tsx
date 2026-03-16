@@ -83,7 +83,7 @@ export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) 
       id: editing?.id ?? Date.now(),
       usedByCount: editing?.usedByCount ?? 0
     });
-    msgApi.success(editing ? "数据转换规则已更新，可前往发布与灰度继续处理" : "数据转换规则已创建，可前往发布与灰度查看待发布项");
+    msgApi.success(editing ? "数据转换规则已更新，可前往“发布与灰度”完成发布" : "数据转换规则已创建，可前往“发布与灰度”查看待发布项");
     setOpen(false);
     await loadData();
   }

@@ -381,7 +381,7 @@ export function useInterfacesPageModel() {
     }
     msgApi.success(
       result.report.warningCount > 0
-        ? `API注册已保存草稿，另有 ${result.report.warningCount} 个提醒可继续处理`
+        ? `API注册已保存草稿，另有 ${result.report.warningCount} 个待处理项`
         : editing
           ? "API注册已更新，并已进入待发布列表"
           : "API注册已创建，并已进入待发布列表"

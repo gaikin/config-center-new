@@ -128,7 +128,7 @@ export function PageActivationPoliciesPage() {
       ...values,
       id: editing?.id ?? Date.now()
     });
-    msgApi.success(editing ? "页面开通设置已更新，可前往发布与灰度继续处理" : "页面开通设置已创建，可前往发布与灰度查看待发布项");
+    msgApi.success(editing ? "页面开通设置已更新，可前往“发布与灰度”完成发布" : "页面开通设置已创建，可前往“发布与灰度”查看待发布项");
     setOpen(false);
     await loadData();
   }
