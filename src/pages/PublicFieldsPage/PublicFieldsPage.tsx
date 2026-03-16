@@ -80,7 +80,7 @@ export function PublicFieldsPage({ embedded = false }: { embedded?: boolean }) {
       {holder}
       {!embedded ? <Typography.Title level={4}>公共字段治理</Typography.Title> : null}
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        这里维护跨页面复用的公共字段。页面特有字段仍然在页面管理详情的字段维护抽屉中按需补充。
+        这里维护跨页面复用的公共字段。页面特有字段仍然在菜单管理详情的元素映射抽屉中按需补充。
       </Typography.Paragraph>
 
       <Card

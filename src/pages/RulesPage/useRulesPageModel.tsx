@@ -280,6 +280,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       promptMode: values.promptMode ?? "FLOATING",
       titleSuffix: values.titleSuffix ?? "",
       bodyTemplate: values.bodyTemplate ?? "",
+      bodyEditorStateJson: values.bodyEditorStateJson ?? "",
       closeMode: values.closeMode ?? "MANUAL_CLOSE",
       closeTimeoutSec: values.closeTimeoutSec ?? null,
       hasConfirmButton: values.hasConfirmButton ?? true,
@@ -383,6 +384,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       promptMode: presetTemplate?.promptMode ?? "FLOATING",
       titleSuffix: presetPromptContent.titleSuffix,
       bodyTemplate: presetPromptContent.bodyTemplate,
+      bodyEditorStateJson: presetPromptContent.bodyEditorStateJson,
       closeMode: presetTemplate?.closeMode ?? "MANUAL_CLOSE",
       closeTimeoutSec: presetTemplate?.closeTimeoutSec,
       hasConfirmButton: true,
@@ -426,6 +428,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       promptMode: template.promptMode,
       titleSuffix: currentValues.titleSuffix?.trim() ? currentValues.titleSuffix : promptContent.titleSuffix,
       bodyTemplate: currentValues.bodyTemplate?.trim() ? currentValues.bodyTemplate : promptContent.bodyTemplate,
+      bodyEditorStateJson: currentValues.bodyEditorStateJson?.trim() ? currentValues.bodyEditorStateJson : promptContent.bodyEditorStateJson,
       closeMode: template.closeMode,
       closeTimeoutSec: template.closeTimeoutSec,
       hasConfirmButton: true,
@@ -444,6 +447,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       promptMode: row.promptMode,
       titleSuffix: promptContent.titleSuffix,
       bodyTemplate: promptContent.bodyTemplate,
+      bodyEditorStateJson: promptContent.bodyEditorStateJson,
       closeMode: row.closeMode,
       closeTimeoutSec: row.closeTimeoutSec,
       hasConfirmButton: true,
@@ -475,7 +479,8 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
         promptMode: values.promptMode ?? "FLOATING",
         promptContentConfigJson: stringifyPromptContentConfig({
           titleSuffix: values.titleSuffix,
-          bodyTemplate: values.bodyTemplate
+          bodyTemplate: values.bodyTemplate,
+          bodyEditorStateJson: values.bodyEditorStateJson
         }),
         closeMode: values.closeMode ?? "MANUAL_CLOSE",
         closeTimeoutSec: values.closeTimeoutSec,
@@ -515,7 +520,8 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       promptMode: values.promptMode,
       promptContentConfigJson: stringifyPromptContentConfig({
         titleSuffix: values.titleSuffix,
-        bodyTemplate: values.bodyTemplate
+        bodyTemplate: values.bodyTemplate,
+        bodyEditorStateJson: values.bodyEditorStateJson
       }),
       closeMode: values.closeMode,
       closeTimeoutSec: values.closeMode === "TIMER_THEN_MANUAL" ? values.closeTimeoutSec : undefined,

@@ -296,7 +296,7 @@ export function InterfacesPage() {
           type="info"
           style={{ marginBottom: 12 }}
           message={`已按机构过滤：${getOrgLabel(ownerOrgFilter)}`}
-          description="该过滤来自页面管理详情中的“新建关联 API”快捷动作。"
+          description="该过滤来自菜单管理详情中的“新建关联 API”快捷动作。"
         />
       ) : null}
 

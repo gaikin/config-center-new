@@ -12,7 +12,7 @@ import type {
   ValidationIssue,
   ValidationLevel
 } from "../types";
-import { extractPromptTemplateKeys, parsePromptContentConfig } from "../promptContent";
+import { extractPromptTemplateKeys, parsePromptContentConfig, validatePromptEditorState } from "../promptContent";
 
 let validationCounter = 0;
 
@@ -217,6 +217,21 @@ export function validateRuleDraftPayload(
         })
       );
     }
+  }
+  const editorStateIssues = validatePromptEditorState({
+    bodyTemplate: promptContent.bodyTemplate,
+    bodyEditorStateJson: promptContent.bodyEditorStateJson,
+    availableVariableKeys: payload.availablePromptVariableKeys
+  });
+  for (const issue of editorStateIssues) {
+    fieldIssues.push(
+      createFieldIssue({
+        section: "content",
+        field: "bodyTemplate",
+        label: "提示正文",
+        message: issue
+      })
+    );
   }
   if (payload.closeMode === "TIMER_THEN_MANUAL") {
     const timeoutError = validatePositiveInteger(payload.closeTimeoutSec, 1);

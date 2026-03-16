@@ -141,7 +141,7 @@ export function DashboardPage() {
       <PageHeader>
         <PageTitle className="type-24">我的工作台</PageTitle>
         <PageIntro className="type-14">
-          今天先看待处理和下降提醒，再从“页面管理”进入主路径，继续完成配置、发布和结果查看。
+          今天先看待处理和下降提醒，再从“菜单管理”进入主路径，继续完成配置、发布和结果查看。
         </PageIntro>
       </PageHeader>
 
@@ -239,7 +239,7 @@ export function DashboardPage() {
         <Col xs={24} lg={12}>
           <Card title="常用入口">
             <DashboardSpace direction="vertical" size={12}>
-              <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/page-management")}>进入页面管理</Button>
+              <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/page-management")}>进入菜单管理</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/prompts?action=create")}>新建提示规则</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/prompts")}>复制已有规则</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/interfaces")}>注册 API</Button>

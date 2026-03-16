@@ -20,6 +20,7 @@ export type RuleForm = {
   promptMode: PromptMode;
   titleSuffix?: string;
   bodyTemplate: string;
+  bodyEditorStateJson?: string;
   closeMode: PromptCloseMode;
   closeTimeoutSec?: number;
   hasConfirmButton: boolean;

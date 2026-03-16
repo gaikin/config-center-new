@@ -179,6 +179,7 @@ export interface PromptContentConfig {
   version: 1;
   titleSuffix?: string;
   bodyTemplate: string;
+  bodyEditorStateJson?: string;
 }
 
 export interface RuleDefinition {

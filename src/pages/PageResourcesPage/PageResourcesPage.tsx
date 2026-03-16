@@ -455,7 +455,7 @@ export function PageResourcesPage() {
       {holder}
       <Typography.Title level={4}>页面字段与元素维护</Typography.Title>
       <Typography.Paragraph type="secondary">
-        当页面管理里需要补充字段维护时，在这里统一维护页面识别、字段字典和元素映射。这里属于高级维护区，默认不放在业务主路径首屏。
+        当菜单管理中的页面需要补充高级维护时，在这里统一维护页面识别、字段字典和元素映射。这里属于高级维护区，默认不放在业务主路径首屏。
       </Typography.Paragraph>
 
       <Card style={{ marginBottom: 12 }}>

@@ -3,12 +3,15 @@ import {
   Button,
   Card,
   Checkbox,
+  Col,
   Descriptions,
   Drawer,
   Form,
   Input,
+  List,
   Modal,
   Popconfirm,
+  Row,
   Select,
   Space,
   Statistic,
@@ -20,7 +23,7 @@ import {
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { OrgSelect, OrgText } from "../../components/DirectoryFields";
+import { OrgSelect } from "../../components/DirectoryFields";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { toOrgOption } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
@@ -315,6 +318,12 @@ export function PageManagementPage() {
   }, [selectedMenu, selectedMenuPages, selectedPageId]);
 
   const selectedPage = selectedMenuPages.find((item) => item.id === selectedPageId) ?? null;
+  const selectedMenuNeedRequest = selectedMenu
+    ? selectedMenu.promptStatus === "DISABLED" || selectedMenu.jobStatus === "DISABLED"
+    : false;
+  const selectedMenuPending = selectedMenu
+    ? selectedMenu.promptStatus === "PENDING" || selectedMenu.jobStatus === "PENDING"
+    : false;
 
   const selectedRules = useMemo(
     () => rules.filter((item) => item.pageResourceId === selectedPage?.id),
@@ -588,42 +597,6 @@ export function PageManagementPage() {
     await loadFieldDrawerModel(fieldDrawerPage.id);
   }
 
-  function getMenuTargetPage(menuId: number) {
-    const pages = menuPagesMap[menuId] ?? [];
-    if (pages.length === 0) {
-      return undefined;
-    }
-    if (selectedMenuId === menuId) {
-      const currentPage = pages.find((item) => item.id === selectedPageId);
-      if (currentPage) {
-        return currentPage;
-      }
-    }
-    return pages[0];
-  }
-
-  function createPromptFromMenu(menuId: number) {
-    const targetPage = getMenuTargetPage(menuId);
-    if (!targetPage) {
-      msgApi.warning("该菜单下暂无页面，暂不可新增提示规则");
-      return;
-    }
-    setSelectedMenuId(menuId);
-    setSelectedPageId(targetPage.id);
-    createPrompt(targetPage);
-  }
-
-  function createJobFromMenu(menuId: number) {
-    const targetPage = getMenuTargetPage(menuId);
-    if (!targetPage) {
-      msgApi.warning("该菜单下暂无页面，暂不可新增作业配置");
-      return;
-    }
-    setSelectedMenuId(menuId);
-    setSelectedPageId(targetPage.id);
-    createJob(targetPage);
-  }
-
   function openPublicFieldGovernance() {
     navigate("/advanced?tab=public-fields");
   }
@@ -658,9 +631,9 @@ export function PageManagementPage() {
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>页面管理</Typography.Title>
+      <Typography.Title level={4}>菜单管理</Typography.Title>
       <Typography.Paragraph type="secondary">
-        以菜单为业务入口：先选菜单，再查看该菜单下页面配置详情，直接发起提示或作业配置。
+        以菜单为业务入口：先找到目标菜单，再定位菜单下页面，直接发起提示或作业配置。
       </Typography.Paragraph>
 
       {pendingMenus > 0 ? (
@@ -688,7 +661,7 @@ export function PageManagementPage() {
             value={keyword}
             allowClear
             style={{ width: 260 }}
-            placeholder="搜索菜单名称 / 页面名称"
+            placeholder="搜索菜单 / 页面"
             onChange={(event) => setKeyword(event.target.value)}
             onSearch={(value) => setKeyword(value)}
           />
@@ -714,213 +687,191 @@ export function PageManagementPage() {
         </Space>
       </Card>
 
-      <Card title="菜单列表">
-        <Table<MenuOverviewRow>
-          rowKey="id"
-          loading={loading}
-          dataSource={filteredMenuRows}
-          pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: ["8", "12", "20"] }}
-          onRow={(row) => ({
-            onClick: () => setSelectedMenuId(row.id)
-          })}
-          rowClassName={(row) => (row.id === selectedMenuId ? "ant-table-row-selected" : "")}
-          columns={[
-            {
-              title: "菜单",
-              width: 260,
-              render: (_, row) => (
-                <Space direction="vertical" size={0}>
-                  <Typography.Text strong>{row.menuName}</Typography.Text>
-                  <Typography.Text type="secondary">{row.regionName}</Typography.Text>
-                </Space>
-              )
-            },
-            {
-              title: "涉及机构",
-              width: 220,
-              render: (_, row) => (
-                <Space size={[4, 4]} wrap>
-                  {row.ownerOrgIds.slice(0, 2).map((item) => (
-                    <Tag key={item}>
-                      <OrgText value={item} />
-                    </Tag>
-                  ))}
-                  {row.ownerOrgIds.length > 2 ? <Tag>+{row.ownerOrgIds.length - 2}</Tag> : null}
-                </Space>
-              )
-            },
-            {
-              title: "配置概览",
-              width: 300,
-              render: (_, row) => (
-                <Space size={[4, 4]} wrap>
-                  <Tag color={row.configuredPromptPages > 0 ? "blue" : "default"}>
-                    提示页 {row.configuredPromptPages}/{row.pageCount}
-                  </Tag>
-                  <Tag color={row.configuredJobPages > 0 ? "purple" : "default"}>
-                    作业页 {row.configuredJobPages}/{row.pageCount}
-                  </Tag>
-                  <Tag color={row.promptRuleTotal > 0 ? "blue" : "default"}>规则 {row.promptRuleTotal}</Tag>
-                  <Tag color={row.jobSceneTotal > 0 ? "purple" : "default"}>场景 {row.jobSceneTotal}</Tag>
-                </Space>
-              )
-            },
-            {
-              title: "动作",
-              width: 260,
-              render: (_, row) => {
-                const needRequest = row.promptStatus === "DISABLED" || row.jobStatus === "DISABLED";
-                const pending = row.promptStatus === "PENDING" || row.jobStatus === "PENDING";
-                if (pending) {
-                  return <Button size="small" disabled>开通中</Button>;
-                }
-                if (needRequest) {
-                  return (
-                    <Button size="small" onClick={(e) => { e.stopPropagation(); openRequest(row.id); }}>
+      <Row gutter={[12, 12]} align="stretch">
+        <Col xs={24} xl={11}>
+          <Card title="菜单列表" style={{ height: "100%" }}>
+            <List<MenuOverviewRow>
+              loading={loading}
+              dataSource={filteredMenuRows}
+              pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: ["8", "12", "20"] }}
+              locale={{ emptyText: "暂无符合条件的菜单" }}
+              renderItem={(row) => {
+                const active = row.id === selectedMenuId;
+                return (
+                  <List.Item style={{ paddingInline: 0 }}>
+                    <Card
+                      hoverable
+                      size="small"
+                      onClick={() => setSelectedMenuId(row.id)}
+                      style={{
+                        width: "100%",
+                        cursor: "pointer",
+                        borderColor: active ? "#1677ff" : undefined,
+                        background: active ? "#f0f7ff" : undefined
+                      }}
+                    >
+                      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                        <Space direction="vertical" size={0}>
+                          <Typography.Text strong>{row.menuName}</Typography.Text>
+                          <Typography.Text type="secondary">{row.regionName}</Typography.Text>
+                        </Space>
+                        <Space size={[4, 4]} wrap>
+                          <Tag color={row.promptRuleTotal > 0 ? "blue" : "default"}>智能提示 {row.promptRuleTotal}</Tag>
+                          <Tag color={row.jobSceneTotal > 0 ? "purple" : "default"}>作业数 {row.jobSceneTotal}</Tag>
+                        </Space>
+                      </Space>
+                    </Card>
+                  </List.Item>
+                );
+              }}
+            />
+          </Card>
+        </Col>
+
+        <Col xs={24} xl={13}>
+          <Card
+            title={selectedMenu ? `菜单详情：${selectedMenu.menuName}` : "菜单详情"}
+            style={{ height: "100%" }}
+            extra={
+              selectedMenu ? (
+                <Space>
+                  {selectedMenuPending ? (
+                    <Button size="small" disabled>
+                      开通中
+                    </Button>
+                  ) : selectedMenuNeedRequest ? (
+                    <Button size="small" onClick={() => openRequest(selectedMenu.id)}>
                       申请菜单开通
                     </Button>
-                  );
-                }
-                return (
-                  <Space size={6} wrap>
-                    <Button size="small" type="primary" onClick={(e) => { e.stopPropagation(); createPromptFromMenu(row.id); }}>
-                      新增提示规则
-                    </Button>
-                    <Button size="small" onClick={(e) => { e.stopPropagation(); createJobFromMenu(row.id); }}>
-                      新增智能作业
-                    </Button>
-                  </Space>
-                );
-              }
-            }
-          ]}
-        />
-      </Card>
-
-      {selectedMenu ? (
-        <Card
-          style={{ marginTop: 12 }}
-          title={`菜单下页面配置详情：${selectedMenu.menuName}`}
-          extra={
-            selectedMenuPages.length > 1 ? (
-              <Space>
-                <Select
-                  value={selectedPageId}
-                  style={{ width: 280 }}
-                  onChange={(value) => setSelectedPageId(value)}
-                  options={selectedMenuPages.map((item) => ({
-                    label: `${item.name}（提示 ${item.promptRuleCount} / 作业 ${item.jobSceneCount}）`,
-                    value: item.id
-                  }))}
-                />
-                <Button onClick={goPrevPage} disabled={!selectedPage || selectedMenuPages.findIndex((item) => item.id === selectedPage.id) <= 0}>
-                  上一页
-                </Button>
-                <Button
-                  onClick={goNextPage}
-                  disabled={
-                    !selectedPage ||
-                    selectedMenuPages.findIndex((item) => item.id === selectedPage.id) >= selectedMenuPages.length - 1
-                  }
-                >
-                  下一页
-                </Button>
-              </Space>
-            ) : null
-          }
-        >
-          {selectedPage ? (
-            <Space direction="vertical" style={{ width: "100%" }} size={12}>
-              {selectedPageActionState?.needRequest ? (
-                <Alert
-                  type={selectedPageActionState.pending ? "warning" : "info"}
-                  showIcon
-                  message={selectedPageActionState.pending ? "菜单能力开通中" : "菜单能力尚未开通"}
-                  description={
-                    <Space>
-                      <Typography.Text>当前页面暂不可新增提示或作业。</Typography.Text>
-                      {selectedPageActionState.pending ? (
-                        <Button size="small" disabled>
-                          开通中
-                        </Button>
-                      ) : (
-                        <Button size="small" onClick={() => openRequest(selectedPage.menuId)}>
-                          申请菜单开通
-                        </Button>
-                      )}
-                    </Space>
-                  }
-                />
-              ) : null}
-
-              {!selectedPageActionState?.needRequest ? (
-                <Card
-                  size="small"
-                  title="配置动作"
-                  extra={
-                    <Space>
-                      <Button type="primary" onClick={() => createPrompt(selectedPage)}>
-                        新增提示规则
+                  ) : null}
+                  {selectedMenuPages.length > 1 ? (
+                    <>
+                      <Select
+                        value={selectedPageId}
+                        style={{ width: 280 }}
+                        onChange={(value) => setSelectedPageId(value)}
+                        options={selectedMenuPages.map((item) => ({
+                          label: `${item.name}（提示 ${item.promptRuleCount} / 作业 ${item.jobSceneCount}）`,
+                          value: item.id
+                        }))}
+                      />
+                      <Button onClick={goPrevPage} disabled={!selectedPage || selectedMenuPages.findIndex((item) => item.id === selectedPage.id) <= 0}>
+                        上一页
                       </Button>
-                      <Button onClick={() => createJob(selectedPage)}>新增作业配置</Button>
-                    </Space>
-                  }
-                >
-                  <Space size={[8, 8]} wrap>
-                    <Tag color="blue">提示规则 {selectedPage.promptRuleCount}</Tag>
-                    <Tag color="purple">作业场景 {selectedPage.jobSceneCount}</Tag>
-                    <Tag color={selectedPage.enabled ? "green" : "default"}>{selectedPage.enabled ? "页面已启用" : "页面未启用"}</Tag>
-                  </Space>
-                </Card>
-              ) : null}
-
-              <Card
-                size="small"
-                title="页面信息"
-                extra={
-                  <Button size="small" onClick={() => void openFieldMaintenance(selectedPage)}>
-                    元素映射
-                  </Button>
-                }
-              >
-                <Descriptions size="small" column={2}>
-                  <Descriptions.Item label="页面名称">{selectedPage.name}</Descriptions.Item>
-                  <Descriptions.Item label="所属专区">{selectedPage.regionName}</Descriptions.Item>
-                  <Descriptions.Item label="所属菜单">{selectedPage.menuName}</Descriptions.Item>
-                  <Descriptions.Item label="页面状态">{lifecycleLabelMap[selectedPage.status]}</Descriptions.Item>
-                  <Descriptions.Item label="已绑定字段数">{selectedPageFieldBindingCount}</Descriptions.Item>
-                  <Descriptions.Item label="最近更新">{selectedPage.updatedAt}</Descriptions.Item>
-                </Descriptions>
-              </Card>
-
-              <Card size="small" title="运行情况">
-                <Space size={24} wrap>
-                  <Statistic title="近 7 天触发次数" value={selectedPage.trend7d} />
-                  <Statistic title="近 30 天触发次数" value={selectedPage.trend7d * 4 + 18} />
-                  <Statistic
-                    title="发布后下降比例"
-                    value={selectedPage.dropRate}
-                    suffix="%"
-                    valueStyle={{ color: selectedPage.dropRate >= 10 ? "#d46b08" : "#389e0d" }}
-                  />
+                      <Button
+                        onClick={goNextPage}
+                        disabled={
+                          !selectedPage ||
+                          selectedMenuPages.findIndex((item) => item.id === selectedPage.id) >= selectedMenuPages.length - 1
+                        }
+                      >
+                        下一页
+                      </Button>
+                    </>
+                  ) : null}
                 </Space>
-              </Card>
+              ) : null
+            }
+          >
+            {selectedMenu ? (
+              <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                {selectedPage ? (
+                  <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                    {selectedPageActionState?.needRequest ? (
+                      <Alert
+                        type={selectedPageActionState.pending ? "warning" : "info"}
+                        showIcon
+                        message={selectedPageActionState.pending ? "菜单能力开通中" : "菜单能力尚未开通"}
+                        description={
+                          <Space>
+                            <Typography.Text>当前页面暂不可新增提示或作业配置。</Typography.Text>
+                            {selectedPageActionState.pending ? (
+                              <Button size="small" disabled>
+                                开通中
+                              </Button>
+                            ) : (
+                              <Button size="small" onClick={() => openRequest(selectedPage.menuId)}>
+                                申请菜单开通
+                              </Button>
+                            )}
+                          </Space>
+                        }
+                      />
+                    ) : null}
 
-              {selectedRules.length > 0 ? (
-                <Card size="small" title="当前页面已配置规则">
-                  <Space size={[4, 4]} wrap>
-                    {selectedRules.map((item) => (
-                      <Tag key={item.id}>{item.name}</Tag>
-                    ))}
+                    {!selectedPageActionState?.needRequest ? (
+                      <Card
+                        size="small"
+                        title="配置动作"
+                        extra={
+                          <Space>
+                            <Button type="primary" onClick={() => createPrompt(selectedPage)}>
+                              新增提示规则
+                            </Button>
+                            <Button onClick={() => createJob(selectedPage)}>新增作业配置</Button>
+                          </Space>
+                        }
+                      >
+                        <Space size={[8, 8]} wrap>
+                          <Tag color="blue">提示规则 {selectedPage.promptRuleCount}</Tag>
+                          <Tag color="purple">作业场景 {selectedPage.jobSceneCount}</Tag>
+                          <Tag color={selectedPage.enabled ? "green" : "default"}>{selectedPage.enabled ? "页面已启用" : "页面未启用"}</Tag>
+                        </Space>
+                      </Card>
+                    ) : null}
+
+                    <Card
+                      size="small"
+                      title={`当前页面：${selectedPage.name}`}
+                      extra={
+                        <Button size="small" onClick={() => void openFieldMaintenance(selectedPage)}>
+                          元素映射
+                        </Button>
+                      }
+                    >
+                      <Descriptions size="small" column={2}>
+                        <Descriptions.Item label="页面名称">{selectedPage.name}</Descriptions.Item>
+                        <Descriptions.Item label="所属专区">{selectedPage.regionName}</Descriptions.Item>
+                        <Descriptions.Item label="所属菜单">{selectedPage.menuName}</Descriptions.Item>
+                        <Descriptions.Item label="页面状态">{lifecycleLabelMap[selectedPage.status]}</Descriptions.Item>
+                        <Descriptions.Item label="已绑定字段数">{selectedPageFieldBindingCount}</Descriptions.Item>
+                        <Descriptions.Item label="最近更新">{selectedPage.updatedAt}</Descriptions.Item>
+                      </Descriptions>
+                    </Card>
+
+                    <Card size="small" title="运行情况">
+                      <Space size={24} wrap>
+                        <Statistic title="近 7 天触发次数" value={selectedPage.trend7d} />
+                        <Statistic title="近 30 天触发次数" value={selectedPage.trend7d * 4 + 18} />
+                        <Statistic
+                          title="发布后下降比例"
+                          value={selectedPage.dropRate}
+                          suffix="%"
+                          valueStyle={{ color: selectedPage.dropRate >= 10 ? "#d46b08" : "#389e0d" }}
+                        />
+                      </Space>
+                    </Card>
+
+                    {selectedRules.length > 0 ? (
+                      <Card size="small" title="当前页面已配置规则">
+                        <Space size={[4, 4]} wrap>
+                          {selectedRules.map((item) => (
+                            <Tag key={item.id}>{item.name}</Tag>
+                          ))}
+                        </Space>
+                      </Card>
+                    ) : null}
                   </Space>
-                </Card>
-              ) : null}
-            </Space>
-          ) : (
-            <Typography.Text type="secondary">该菜单下暂无页面。</Typography.Text>
-          )}
-        </Card>
-      ) : null}
+                ) : (
+                  <Typography.Text type="secondary">该菜单下暂无页面。</Typography.Text>
+                )}
+              </Space>
+            ) : (
+              <Typography.Text type="secondary">请选择一个菜单查看详情。</Typography.Text>
+            )}
+          </Card>
+        </Col>
+      </Row>
 
       <Drawer
         title={fieldDrawerPage ? `元素映射：${fieldDrawerPage.name}` : "元素映射"}

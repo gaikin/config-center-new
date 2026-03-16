@@ -15,8 +15,12 @@
     "backend:start": "java -jar backend/target/config-center-backend-0.1.0.jar"
   },
   "dependencies": {
+    "@lexical/react": "^0.41.0",
+    "@lexical/rich-text": "^0.41.0",
+    "@lexical/selection": "^0.41.0",
     "@xyflow/react": "^12.10.1",
     "antd": "^5.27.2",
+    "lexical": "^0.41.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-querybuilder": "^8.14.0",

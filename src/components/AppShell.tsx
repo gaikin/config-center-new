@@ -23,7 +23,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { key: "/", label: "我的工作台", personas: activePersonas },
-  { key: "/page-management", label: "页面管理", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
+  { key: "/page-management", label: "菜单管理", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
   { key: "/prompts", label: "智能提示", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
   { key: "/jobs", label: "智能作业", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
   { key: "/interfaces", label: "API注册", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },

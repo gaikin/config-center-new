@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Collapse, Drawer, Form, Input, InputNumber, Modal, Select, Space, Steps, Table, Tag, Tooltip, Typography, message } from "antd";
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { OrgSelect } from "../../components/DirectoryFields";
 import { EffectiveConfirmModal } from "../../components/EffectiveConfirmModal";
@@ -9,10 +9,11 @@ import { ValidationReportPanel } from "../../components/ValidationReportPanel";
 import { EffectiveScopeMode, getEffectiveActionMeta, getEffectivePermissionBlockedMessage, getPublishValidationByResource } from "../../effectiveFlow";
 import { lifecycleLabelMap, promptModeLabelMap } from "../../enumLabels";
 import { getOrgLabel, orgOptions } from "../../orgOptions";
-import { DEFAULT_PROMPT_TITLE, renderPromptTemplate } from "../../promptContent";
+import { DEFAULT_PROMPT_TITLE } from "../../promptContent";
 import { configCenterService } from "../../services/configCenterService";
 import { useMockSession } from "../../session/mockSession";
-import { PromptTemplateEditor, type PromptTemplateEditorHandle } from "./PromptTemplateEditor";
+import { PromptRichPreview } from "./PromptRichPreview";
+import { PromptTemplateEditor } from "./PromptTemplateEditor";
 import { RulesPageMode, useRulesPageModel } from "./useRulesPageModel";
 import { buildDefaultListLookupMatcher, InterfaceInputParamDraft, ListLookupMatcherDraft, LOGIC_OPERATOR_WIDTH, deriveMachineKeyFromOutputPath, normalizeLookupSourceType, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, listLookupSourceOptions, operatorOptions, sourceOptions, statusColor, valueTypeOptions } from "./rulesPageShared";
 import { OperandPill, InterfaceInputValueEditor } from "./rulesOperandRenderers";
@@ -194,8 +195,6 @@ export function RulesPage({
         description: "模板是快捷来源，不是业务人员的主操作对象；选择模板后会自动带入条件逻辑、提示方式和关闭策略。"
       };
   const [wizardStep, setWizardStep] = useState(0);
-  const [selectedPromptVariable, setSelectedPromptVariable] = useState<string>();
-  const promptEditorRef = useRef<PromptTemplateEditorHandle | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState<{ matched: boolean; detail: string } | null>(null);
   const [effectiveTarget, setEffectiveTarget] = useState<EffectiveTarget | null>(null);
@@ -208,8 +207,10 @@ export function RulesPage({
   const [effectiveStartAt, setEffectiveStartAt] = useState("");
   const [effectiveEndAt, setEffectiveEndAt] = useState("");
   const watchedPromptMode = Form.useWatch("promptMode", ruleForm);
+  const watchedTemplateRuleId = Form.useWatch("templateRuleId", ruleForm);
   const watchedTitleSuffix = Form.useWatch("titleSuffix", ruleForm);
   const watchedBodyTemplate = Form.useWatch("bodyTemplate", ruleForm);
+  const watchedBodyEditorStateJson = Form.useWatch("bodyEditorStateJson", ruleForm);
   const effectiveMeta = effectiveTarget ? getEffectiveActionMeta(effectiveTarget.status) : null;
   const effectiveScopeOptions = useMemo(
     () => orgOptions.map((item) => ({ label: item.label, value: String(item.value) })),
@@ -244,7 +245,7 @@ export function RulesPage({
     [promptVariableOptions]
   );
   const promptPreviewTitle = watchedTitleSuffix?.trim() ? `${DEFAULT_PROMPT_TITLE} · ${watchedTitleSuffix.trim()}` : DEFAULT_PROMPT_TITLE;
-  const promptPreviewBody = renderPromptTemplate(watchedBodyTemplate ?? "", promptPreviewValues);
+  const promptEditorKey = `${editing?.id ?? "create"}-${watchedTemplateRuleId ?? "none"}`;
 
   function updateListMatchers(
     updater:
@@ -279,15 +280,6 @@ export function RulesPage({
       }
       return previous.filter((item) => item.id !== matcherId);
     });
-  }
-
-  function insertPromptVariable(variableKey: string) {
-    promptEditorRef.current?.insertVariable(variableKey);
-  }
-
-  function handlePromptVariableDragStart(event: React.DragEvent<HTMLElement>, variableKey: string) {
-    event.dataTransfer.setData("text/plain", `{{${variableKey}}}`);
-    event.dataTransfer.effectAllowed = "copy";
   }
 
   useEffect(() => {
@@ -773,44 +765,6 @@ export function RulesPage({
                 >
                   <Input maxLength={20} placeholder="例如：贷款高风险客户" />
                 </Form.Item>
-                <div>
-                  <Typography.Text type="secondary">可用变量（支持拖拽到正文）</Typography.Text>
-                  <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {promptVariableOptions.map((item) => (
-                      <Tag
-                        key={item.key}
-                        color="processing"
-                        draggable
-                        style={{ cursor: "grab", userSelect: "none" }}
-                        onClick={() => insertPromptVariable(item.key)}
-                        onDragStart={(event) => handlePromptVariableDragStart(event, item.key)}
-                      >
-                        {item.label}
-                      </Tag>
-                    ))}
-                  </div>
-                </div>
-                <Space.Compact style={{ width: "100%" }}>
-                  <Select
-                    style={{ width: "100%" }}
-                    allowClear
-                    placeholder="选择变量后插入正文"
-                    value={selectedPromptVariable}
-                    options={promptVariableOptions.map((item) => ({ label: `${item.label}（${item.key}）`, value: item.key }))}
-                    onChange={(value) => setSelectedPromptVariable(value)}
-                  />
-                  <Button
-                    onClick={() => {
-                      if (!selectedPromptVariable) {
-                        return;
-                      }
-                      insertPromptVariable(selectedPromptVariable);
-                      setSelectedPromptVariable(undefined);
-                    }}
-                  >
-                    插入变量
-                  </Button>
-                </Space.Compact>
                 <Form.Item
                   name="bodyTemplate"
                   label="提示正文"
@@ -829,11 +783,17 @@ export function RulesPage({
                   extra={`${(watchedBodyTemplate ?? "").length} / 300`}
                 >
                   <PromptTemplateEditor
-                    ref={promptEditorRef}
+                    key={promptEditorKey}
                     value={watchedBodyTemplate ?? ""}
+                    editorStateJson={watchedBodyEditorStateJson ?? ""}
                     variableOptions={promptVariableOptions}
                     placeholder="请输入提示正文，可点击或拖拽变量到此处"
-                    onChange={(nextValue) => ruleForm.setFieldValue("bodyTemplate", nextValue)}
+                    onChange={(nextValue, nextEditorStateJson) =>
+                      ruleForm.setFieldsValue({
+                        bodyTemplate: nextValue,
+                        bodyEditorStateJson: nextEditorStateJson
+                      })
+                    }
                   />
                 </Form.Item>
               </Space>
@@ -862,9 +822,17 @@ export function RulesPage({
                   >
                     <Space direction="vertical" size={12} style={{ width: "100%" }}>
                       <Typography.Text strong>{promptPreviewTitle}</Typography.Text>
-                      <Typography.Paragraph style={{ marginBottom: 0, whiteSpace: "pre-wrap" }}>
-                        {promptPreviewBody || "请输入提示正文后查看浮窗预览效果。"}
-                      </Typography.Paragraph>
+                      <div style={{ whiteSpace: "pre-wrap", color: "rgba(0,0,0,0.88)" }}>
+                        {watchedBodyTemplate ? (
+                          <PromptRichPreview
+                            bodyTemplate={watchedBodyTemplate}
+                            bodyEditorStateJson={watchedBodyEditorStateJson}
+                            previewValues={promptPreviewValues}
+                          />
+                        ) : (
+                          "请输入提示正文后查看浮窗预览效果。"
+                        )}
+                      </div>
                       <Space style={{ justifyContent: "flex-end", width: "100%" }}>
                         <Button disabled>取消</Button>
                         <Button type="primary" disabled>
@@ -915,9 +883,18 @@ export function RulesPage({
                       {summaryCloseMode ? closeModeLabel[summaryCloseMode] : "-"}
                     </Typography.Text>
                     <Typography.Text type="secondary">标题：{promptPreviewTitle}</Typography.Text>
-                    <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                      正文预览：{promptPreviewBody || "未填写提示正文"}
-                    </Typography.Paragraph>
+                    <div style={{ color: "rgba(0,0,0,0.45)" }}>
+                      <Typography.Text type="secondary">正文预览：</Typography.Text>
+                      {watchedBodyTemplate ? (
+                        <PromptRichPreview
+                          bodyTemplate={watchedBodyTemplate}
+                          bodyEditorStateJson={watchedBodyEditorStateJson}
+                          previewValues={promptPreviewValues}
+                        />
+                      ) : (
+                        "未填写提示正文"
+                      )}
+                    </div>
                     <Typography.Text type="secondary">
                       状态：草稿（发布后生效），组织范围：{getOrgLabel(ruleForm.getFieldValue("ownerOrgId"))}
                     </Typography.Text>

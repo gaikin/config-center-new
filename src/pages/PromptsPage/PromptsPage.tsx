@@ -19,7 +19,7 @@ export function PromptsPage() {
       return null;
     }
     return {
-      message: "已从页面管理带入页面",
+      message: "已从菜单管理带入页面",
       description: "新建规则时会默认选中当前页面；保存后可在规则页直接发布。"
     };
   }, [hasPresetPage]);
