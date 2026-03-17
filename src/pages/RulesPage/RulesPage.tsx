@@ -2,7 +2,6 @@ import { Alert, Button, Card, Collapse, Drawer, Form, Input, InputNumber, Modal,
 import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { OrgSelect } from "../../components/DirectoryFields";
 import { EffectiveConfirmModal } from "../../components/EffectiveConfirmModal";
 import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
 import { ValidationReportPanel } from "../../components/ValidationReportPanel";
@@ -246,6 +245,7 @@ export function RulesPage({
   );
   const promptPreviewTitle = watchedTitleSuffix?.trim() ? `${DEFAULT_PROMPT_TITLE} · ${watchedTitleSuffix.trim()}` : DEFAULT_PROMPT_TITLE;
   const promptEditorKey = `${editing?.id ?? "create"}-${watchedTemplateRuleId ?? "none"}`;
+  const ownerOrgLabel = getOrgLabel(ruleForm.getFieldValue("ownerOrgId"));
 
   function updateListMatchers(
     updater:
@@ -741,8 +741,11 @@ export function RulesPage({
               <Form.Item label="状态">
                 <Tag color="default">草稿（发布后生效）</Tag>
               </Form.Item>
-              <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请选择组织范围" }]}>
-                <OrgSelect />
+              <Form.Item name="ownerOrgId" hidden rules={[{ required: true, message: "请选择组织范围" }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item label="组织范围">
+                <Input value={ownerOrgLabel} readOnly disabled placeholder="系统自动带出" />
               </Form.Item>
               {!isTemplateMode ? (
                 <Button onClick={() => (editing ? void openLogic(editing) : undefined)} disabled={!editing}>
@@ -755,15 +758,8 @@ export function RulesPage({
           {!isTemplateMode && wizardStep === 2 ? (
             <Card size="small" title="提示内容配置">
               <Space direction="vertical" style={{ width: "100%" }} size={12}>
-                <Typography.Text type="secondary">
-                  标题前缀固定为“{DEFAULT_PROMPT_TITLE}”，本期不开放配置。
-                </Typography.Text>
-                <Form.Item
-                  name="titleSuffix"
-                  label="标题后缀"
-                  rules={[{ max: 20, message: "标题后缀最多 20 个字符" }]}
-                >
-                  <Input maxLength={20} placeholder="例如：贷款高风险客户" />
+                <Form.Item name="titleSuffix" hidden rules={[{ max: 20, message: "标题后缀最多 20 个字符" }]}>
+                  <Input />
                 </Form.Item>
                 <Form.Item
                   name="bodyTemplate"
