@@ -1,0 +1,351 @@
+src/components\ValidationReportPanel.tsx:62:      ? `发现 ${blockingCount} 个阻断项`
+src/components\ValidationReportPanel.tsx:63:      : `有 ${warningCount} 个提醒建议处理`);
+src/components\ValidationReportPanel.tsx:100:                      {item.level === "blocking" ? "阻断" : "提醒"}
+src/components\ValidationReportPanel.tsx:109:                      处理建议：{item.action}
+src/components\PublishContinuationAlert.tsx:29:              ? `当前还有 ${warningCount} 个提醒可继续优化，但不影响进入发布与灰度。`
+src/components\PublishContinuationAlert.tsx:30:              : "当前配置已进入待发布列表，建议继续完成发布与灰度。"}
+src/components\PublishContinuationAlert.tsx:37:              稍后再说
+src/pages\DashboardPage\DashboardPage.tsx:116:          detail: ratio >= 50 ? "触发命中下降明显，建议复核规则和发布变更。" : "波动可控，持续观察。"
+src/pages\DashboardPage\DashboardPage.tsx:144:          今天先看待处理和下降提醒，再从“页面管理”进入主路径，继续完成配置、发布和结果查看。
+src/pages\DashboardPage\DashboardPage.tsx:156:            <Statistic title="待确认事项" value={pendingSummary?.riskConfirmPendingCount ?? 0} />
+src/pages\DashboardPage\DashboardPage.tsx:166:            <Statistic title="下降提醒" value={dropReminders.length} />
+src/pages\DashboardPage\DashboardPage.tsx:176:              <Tag>待确认 {pendingSummary?.riskConfirmPendingCount ?? 0}</Tag>
+src/pages\DashboardPage\DashboardPage.tsx:183:                locale={{ emptyText: "暂无待处理事项" }}
+src/pages\DashboardPage\DashboardPage.tsx:198:          <Card title="运行提醒（触发下降）" loading={loading}>
+src/pages\DashboardPage\DashboardPage.tsx:202:              locale={{ emptyText: "暂无明显下降提醒" }}
+src/pages\DashboardPage\DashboardPage.tsx:223:          locale={{ emptyText: "暂无最近修改记录" }}
+src/pages\DashboardPage\DashboardPage.tsx:264:                <Statistic title="下降提醒数" value={dropReminders.length} />
+src/pages\ListDataPage\ListDataPage.tsx:149:      msgApi.error("导入文件已变更，请重新解析表头后再保存");
+src/pages\ListDataPage\ListDataPage.tsx:180:      msgApi.success(`已完成索引构建：${row.name}`);
+src/pages\ListDataPage\ListDataPage.tsx:197:      msgApi.warning("请先填写导入文件名");
+src/pages\ListDataPage\ListDataPage.tsx:210:    msgApi.success(`已解析 ${preview.importColumns.length} 个字段，请继续选择输出字段`);
+src/pages\ListDataPage\ListDataPage.tsx:285:                  return <Typography.Text type="secondary">暂无引用</Typography.Text>;
+src/pages\ListDataPage\ListDataPage.tsx:321:                    title={row.status === "ACTIVE" ? "确认停用该名单？" : "确认启用该名单？"}
+src/pages\ListDataPage\ListDataPage.tsx:344:            <Form.Item name="name" label="名单名称" rules={[{ required: true, message: "请输入名单名称" }]}>
+src/pages\ListDataPage\ListDataPage.tsx:347:            <Form.Item name="description" label="名单说明">
+src/pages\ListDataPage\ListDataPage.tsx:348:              <Input.TextArea rows={3} placeholder="说明名单用途、适用场景和维护责任" />
+src/pages\ListDataPage\ListDataPage.tsx:350:            <Form.Item name="ownerOrgId" label="归属机构" rules={[{ required: true, message: "请选择归属机构" }]}>
+src/pages\ListDataPage\ListDataPage.tsx:353:            <Form.Item name="scope" label="适用范围" rules={[{ required: true, message: "请输入适用范围" }]}>
+src/pages\ListDataPage\ListDataPage.tsx:359:            <Form.Item name="effectiveStartAt" label="生效开始时间" rules={[{ required: true, message: "请输入开始时间" }]}>
+src/pages\ListDataPage\ListDataPage.tsx:362:            <Form.Item name="effectiveEndAt" label="生效结束时间" rules={[{ required: true, message: "请输入结束时间" }]}>
+src/pages\ListDataPage\ListDataPage.tsx:368:            <Form.Item label="导入文件" required extra="先录入文件名并解析表头，再从解析结果中选择需要输出的字段。">
+src/pages\ListDataPage\ListDataPage.tsx:370:                <Form.Item name="importFileName" noStyle rules={[{ required: true, message: "请输入导入文件名" }]}>
+src/pages\ListDataPage\ListDataPage.tsx:383:                  ? "请先解析表头"
+src/pages\ListDataPage\ListDataPage.tsx:385:                    ? "导入文件已变更，请重新解析表头"
+src/pages\ListDataPage\ListDataPage.tsx:399:                        throw new Error("请先解析表头");
+src/pages\ListDataPage\ListDataPage.tsx:421:              rules={[{ required: true, message: "请至少选择一个输出字段" }]}
+src/pages\ListDataPage\ListDataPage.tsx:428:                placeholder={importColumns.length === 0 ? "请先解析表头" : "请选择需要暴露给下游的输出字段"}
+src/pages\ListDataPage\ListDataPage.tsx:431:            <Form.Item name="rowCount" label="数据条数" rules={[{ required: true, message: "请输入数据条数" }]}>
+src/pages\ListDataPage\ListDataPage.tsx:437:                  当前索引状态：{buildStatusLabel[editing.indexBuildStatus]}
+src/pages\ListDataPage\ListDataPage.tsx:439:                <Typography.Text type="secondary">当前生效别名：{editing.activeAlias || "-"}</Typography.Text>
+src/pages\AuditMetricsPage\AuditMetricsPage.tsx:191:        仅保留业务有感知的两类视图：触发统计与下降提醒。匹配失败明细不进入业务提醒主视图。
+src/pages\AuditMetricsPage\AuditMetricsPage.tsx:201:              { label: "下降提醒", value: "DROP" }
+src/pages\AuditMetricsPage\AuditMetricsPage.tsx:296:                <Card size="small" title="发布前后对比（示意）">
+src/pages\AuditMetricsPage\AuditMetricsPage.tsx:306:                      { title: "发布后", dataIndex: "afterPublish", width: 100 },
+src/pages\AuditMetricsPage\AuditMetricsPage.tsx:333:              { title: "当前周期(7天)", dataIndex: "currentPeriod", width: 130 },
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:218:        message: "JSON 格式错误，当前还不能解析为返回字段",
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:250:      msgApi.warning("请先输入 Body JSON");
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:269:      msgApi.success("Body JSON 解析成功（同名字段已按后者覆盖）");
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:277:          message: "JSON 格式错误，无法解析为请求参数",
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:278:          action: "请检查括号、引号和逗号是否完整。"
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:281:      msgApi.error("Body JSON 解析失败，请检查格式");
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:323:      msgApi.warning("请先输入返回 JSON 示例");
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:344:          action: "请检查 JSON 结构是否完整。"
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:347:      msgApi.error("出参 JSON 解析失败，请检查格式");
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:384:        ? `API注册已保存草稿，另有 ${result.report.warningCount} 个提醒可继续处理`
+src/pages\InterfacesPage\useInterfacesPageModel.tsx:469:    msgApi.success("调试执行完成");
+src/pages\AdvancedConfigPage\AdvancedConfigPage.tsx:21:        收纳低频复杂能力，默认按角色后置展示。业务人员主路径不需要先进入本页面。
+src/pages\AdvancedConfigPage\AdvancedConfigPage.tsx:28:        message="修改高级配置前请确认影响范围"
+src/pages\AdvancedConfigPage\AdvancedConfigPage.tsx:29:        description="建议先在发布与灰度页面确认试点机构和生效时间，再执行高风险改动。"
+src/pages\AdvancedConfigPage\AdvancedConfigPage.tsx:51:                    当前原型阶段先收口到统一入口，后续可按角色拆分为「高级识别参数」「接口高级配置」「底层运行参数」等分区。
+src/pages\InterfacesPage\InterfacesPage.tsx:156:        保留 API注册 术语，主流程改为五步向导：选用途 → 填基础信息 → 填参数示例 → 在线测试 → 保存。保存后继续到“发布与灰度”完成上线。
+src/pages\InterfacesPage\InterfacesPage.tsx:278:                下一步
+src/pages\InterfacesPage\InterfacesPage.tsx:297:            <ValidationReportPanel report={saveValidationReport} sections={["purpose"]} title="当前步骤还有待处理问题" />
+src/pages\InterfacesPage\InterfacesPage.tsx:303:                先明确接口用途和调用方式，后续再补参数和测试。可先从模板或复制已有 API 创建。
+src/pages\InterfacesPage\InterfacesPage.tsx:305:              <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
+src/pages\InterfacesPage\InterfacesPage.tsx:308:              <Form.Item name="description" label="用途说明" rules={[{ required: true, message: "请输入用途说明" }]}>
+src/pages\InterfacesPage\InterfacesPage.tsx:311:              <Form.Item name="method" label="调用方式" rules={[{ required: true, message: "请选择方法" }]}>
+src/pages\InterfacesPage\InterfacesPage.tsx:331:                  <Form.Item name="ownerOrgId" label="机构范围" rules={[{ required: true, message: "请选择机构范围" }]}>
+src/pages\InterfacesPage\InterfacesPage.tsx:338:                  <Form.Item name="testPath" label="测试环境路径" rules={[{ required: true, message: "请输入测试路径" }]}>
+src/pages\InterfacesPage\InterfacesPage.tsx:343:                  <Form.Item name="prodPath" label="生产环境路径" rules={[{ required: true, message: "请输入生产路径" }]}>
+src/pages\InterfacesPage\InterfacesPage.tsx:350:                  <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true, message: "请输入超时" }]}>
+src/pages\InterfacesPage\InterfacesPage.tsx:355:                  <Form.Item name="retryTimes" label="重试次数" rules={[{ required: true, message: "请输入重试次数" }]}>
+src/pages\InterfacesPage\InterfacesPage.tsx:360:              <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+src/pages\InterfacesPage\InterfacesPage.tsx:376:              <ValidationReportPanel issues={inputValidationIssues} title="请求参数还有待处理问题" />
+src/pages\InterfacesPage\InterfacesPage.tsx:500:                建议保存前先执行一次在线测试，确认请求路径、入参与返回结构满足当前用途。
+src/pages\InterfacesPage\InterfacesPage.tsx:504:                  使用当前草稿在线测试
+src/pages\InterfacesPage\InterfacesPage.tsx:516:            <Card title="步骤 5：保存前确认" size="small">
+src/pages\InterfacesPage\InterfacesPage.tsx:631:                请求路径：
+src/pages\InterfacesPage\InterfacesPage.tsx:636:          <Card size="small" title="请求入参(JSON)">
+src/pages\InterfacesPage\InterfacesPage.tsx:642:                <Card size="small" title="请求预览">
+src/pages\InterfacesPage\InterfacesPage.tsx:658:            <Typography.Text type="secondary">点击“执行测试”后会展示请求和响应结果。</Typography.Text>
+src/pages\InterfacesPage\InterfacesPage.tsx:674:        message="确认后保存"
+src/pages\InterfacesPage\InterfacesPage.tsx:675:        description="保存后会在列表中展示引用关系，并进入发布与灰度流程。"
+src/pages\PageActivationPoliciesPage\PageActivationPoliciesPage.tsx:131:    msgApi.success(editing ? "页面开通设置已更新，可前往发布与灰度继续处理" : "页面开通设置已创建，可前往发布与灰度查看待发布项");
+src/pages\PageActivationPoliciesPage\PageActivationPoliciesPage.tsx:221:          <Form.Item name="pageResourceId" label="页面" rules={[{ required: true, message: "请选择页面" }]}>
+src/pages\PageActivationPoliciesPage\PageActivationPoliciesPage.tsx:240:          <Form.Item name="promptRuleSetName" label="提示规则" rules={[{ required: true, message: "请选择提示规则" }]}>
+src/pages\PageActivationPoliciesPage\PageActivationPoliciesPage.tsx:260:                  <Form.Item name="jobPreloadPolicy" label="作业准备时机" rules={[{ required: true, message: "请选择作业准备时机" }]}>
+src/pages\PageActivationPoliciesPage\PageActivationPoliciesPage.tsx:270:            rules={[{ required: true, message: "请选择归属机构" }]}
+src/pages\PageActivationPoliciesPage\PageActivationPoliciesPage.tsx:275:          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:143:      title: "预览确认后执行",
+src/pages\JobScenesPage\JobScenesPage.tsx:144:      desc: "先预览拟写入值，再确认执行，降低误操作风险。",
+src/pages\JobScenesPage\JobScenesPage.tsx:153:        从页面上下文进入场景配置，优先表达业务场景与触发方式，再进入高级编排与节点细节。保存后可继续到“发布与灰度”完成上线。
+src/pages\JobScenesPage\JobScenesPage.tsx:169:          message={`已切换到页面：${presetPageName ?? "当前页面"}`}
+src/pages\JobScenesPage\JobScenesPage.tsx:170:          description="你可以直接新建该页面的作业配置，系统会自动带入页面；保存后可前往“发布与灰度”继续处理。"
+src/pages\JobScenesPage\JobScenesPage.tsx:260:            { title: "风险确认", width: 100, render: (_, row) => row.riskConfirmed ? <Tag color="green">已确认</Tag> : <Tag color="orange">待确认</Tag> },
+src/pages\JobScenesPage\JobScenesPage.tsx:269:                  <Button size="small" onClick={() => void openPreview(row)}>预览确认</Button>
+src/pages\JobScenesPage\JobScenesPage.tsx:270:                  <Popconfirm title="确认触发悬浮按钮执行？" onConfirm={() => void triggerFloating(row)}>
+src/pages\JobScenesPage\JobScenesPage.tsx:273:                  {!row.riskConfirmed ? <Button size="small" onClick={() => void confirmRisk(row)}>确认风险</Button> : null}
+src/pages\JobScenesPage\JobScenesPage.tsx:275:                    title={row.status === "ACTIVE" ? "确认停用该场景？" : "确认启用该场景？"}
+src/pages\JobScenesPage\JobScenesPage.tsx:290:            场景编号和版本由系统自动维护，你只需要关注页面、执行方式和风险控制。保存后可继续到“发布与灰度”上线。
+src/pages\JobScenesPage\JobScenesPage.tsx:297:            message={editing?.riskConfirmed ? "风险确认：已确认（只读）" : "风险确认：未确认（只读）"}
+src/pages\JobScenesPage\JobScenesPage.tsx:330:                  {builderScene.riskConfirmed ? "风险已确认" : "风险待确认"}
+src/pages\JobScenesPage\JobScenesPage.tsx:347:                <Typography.Text type="secondary">当前场景未绑定规则触发。</Typography.Text>
+src/pages\JobScenesPage\JobScenesPage.tsx:354:              <Typography.Text>当前执行方式：</Typography.Text>
+src/pages\JobScenesPage\JobScenesPage.tsx:357:                打开预览确认
+src/pages\JobScenesPage\JobScenesPage.tsx:360:                title="确认触发悬浮按钮执行？"
+src/pages\JobScenesPage\JobScenesPage.tsx:371:          <Card title="发布检查与上线" size="small">
+src/pages\JobScenesPage\JobScenesPage.tsx:377:                  ? "风险确认已完成：保存后可直接进入发布与灰度，系统会自动完成最终检查。"
+src/pages\JobScenesPage\JobScenesPage.tsx:378:                  : "风险确认未完成：自动化场景上线前需先完成责任确认，否则发布时会被阻断。"
+src/pages\JobScenesPage\JobScenesPage.tsx:409:                        <Typography.Text type="secondary">请先到高级配置维护名单数据后，再添加名单检索节点。</Typography.Text>
+src/pages\JobScenesPage\JobScenesPage.tsx:421:                  <Alert type="warning" showIcon message="当前场景暂无节点，请先从左侧节点库添加。" style={{ marginBottom: 12 }} />
+src/pages\JobScenesPage\JobScenesPage.tsx:445:                  拖拽节点调整布局，连线定义执行顺序，点击节点后在右侧编辑属性。
+src/pages\JobScenesPage\JobScenesPage.tsx:451:                  <Typography.Text type="secondary">请先在画布中点击一个节点，再编辑节点属性。</Typography.Text>
+src/pages\JobScenesPage\JobScenesPage.tsx:456:                      <Form.Item name="name" label="节点名称" rules={[{ required: true, message: "请输入节点名称" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:457:                        <Input placeholder="请输入节点名称" />
+src/pages\JobScenesPage\JobScenesPage.tsx:467:                        <Form.Item name="field" label="读取字段" rules={[{ required: true, message: "请输入字段名" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:474:                          <Form.Item name="interfaceId" label="接口ID" rules={[{ required: true, message: "请输入接口ID" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:489:                            message="当前没有可用名单数据"
+src/pages\JobScenesPage\JobScenesPage.tsx:492:                                <Typography.Text type="secondary">名单检索节点依赖名单中心资产，请先维护名单数据。</Typography.Text>
+src/pages\JobScenesPage\JobScenesPage.tsx:501:                            <Form.Item name="listDataId" label="名单数据" rules={[{ required: true, message: "请选择名单数据" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:522:                            <Form.Item name="matchColumn" label="匹配字段" rules={[{ required: true, message: "请选择匹配字段" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:525:                                placeholder={selectedNodeListData ? "请选择匹配字段" : "请先选择名单数据"}
+src/pages\JobScenesPage\JobScenesPage.tsx:529:                            <Form.Item name="inputSource" label="输入来源" rules={[{ required: true, message: "请输入输入来源" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:532:                            <Form.Item name="resultKey" label="结果键名" rules={[{ required: true, message: "请输入结果键名" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:540:                        <Form.Item name="script" label="脚本标识" rules={[{ required: true, message: "请输入脚本标识" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:547:                          <Form.Item name="target" label="写入目标字段" rules={[{ required: true, message: "请输入目标字段" }]}>
+src/pages\JobScenesPage\JobScenesPage.tsx:558:                      <Typography.Text type="secondary">修改后请先保存节点属性</Typography.Text>
+src/pages\JobScenesPage\JobScenesPage.tsx:563:                        <Popconfirm title="确认删除当前节点?" onConfirm={() => void removeSelectedNode()}>
+src/pages\JobScenesPage\JobScenesPage.tsx:579:        title={previewScene ? `预览确认：${previewScene.name}` : "预览确认"}
+src/pages\JobScenesPage\JobScenesPage.tsx:585:        okText="确认写入"
+src/pages\JobScenesPage\JobScenesPage.tsx:604:              message="有异常字段，建议先取消勾选再执行。"
+src/pages\JobScenesPage\JobScenesPage.tsx:607:            <Typography.Text type="secondary">请勾选需要写入的字段，确认后执行。</Typography.Text>
+src/pages\JobScenesPage\JobScenesPage.tsx:610:          <ValidationReportPanel issues={previewValidationIssues} title="预览提醒" />
+src/pages\JobScenesPage\useJobScenesPageModel.ts:166:        content: "关闭后将丢失当前场景编辑内容，是否继续？",
+src/pages\JobScenesPage\useJobScenesPageModel.ts:272:        ? `场景已保存草稿，另有 ${result.report.warningCount} 个提醒可继续处理`
+src/pages\JobScenesPage\useJobScenesPageModel.ts:294:    msgApi.success(`风险已确认: ${item.name}`);
+src/pages\JobScenesPage\useJobScenesPageModel.ts:317:              action: "建议先取消勾选异常字段，再执行写入。"
+src/pages\JobScenesPage\useJobScenesPageModel.ts:322:      msgApi.error(error instanceof Error ? error.message : "预览确认加载失败");
+src/pages\JobScenesPage\useJobScenesPageModel.ts:338:      msgApi.success(`执行完成：${result.detail}`);
+src/pages\JobScenesPage\useJobScenesPageModel.ts:378:        content: "关闭后将丢失节点属性改动，是否继续？",
+src/pages\JobScenesPage\useJobScenesPageModel.ts:427:      nextIssues.push(createFieldIssue({ section: "node", field: "field", label: "读取字段", message: "请输入读取字段" }));
+src/pages\JobScenesPage\useJobScenesPageModel.ts:430:      nextIssues.push(createFieldIssue({ section: "node", field: "interfaceId", label: "接口", message: "请选择接口" }));
+src/pages\JobScenesPage\useJobScenesPageModel.ts:434:        nextIssues.push(createFieldIssue({ section: "node", field: "listDataId", label: "名单数据", message: "请选择名单数据" }));
+src/pages\JobScenesPage\useJobScenesPageModel.ts:439:        nextIssues.push(createFieldIssue({ section: "node", field: "matchColumn", label: "匹配字段", message: "请选择匹配字段" }));
+src/pages\JobScenesPage\useJobScenesPageModel.ts:442:        nextIssues.push(createFieldIssue({ section: "node", field: "inputSource", label: "输入来源", message: "请输入输入来源" }));
+src/pages\JobScenesPage\useJobScenesPageModel.ts:445:        nextIssues.push(createFieldIssue({ section: "node", field: "resultKey", label: "结果键名", message: "请输入结果键名" }));
+src/pages\JobScenesPage\useJobScenesPageModel.ts:449:      nextIssues.push(createFieldIssue({ section: "node", field: "script", label: "脚本标识", message: "请输入脚本标识" }));
+src/pages\JobScenesPage\useJobScenesPageModel.ts:452:      nextIssues.push(createFieldIssue({ section: "node", field: "target", label: "写入目标字段", message: "请输入写入目标字段" }));
+src/pages\JobScenesPage\useJobScenesPageModel.ts:466:      msgApi.error("节点属性还有待处理问题，请先修复");
+src/pages\PageManagementPage\PageManagementPage.tsx:69:  DISABLED: { label: "未开通", color: "default" },
+src/pages\PageManagementPage\PageManagementPage.tsx:70:  PENDING: { label: "申请中", color: "gold" }
+src/pages\PageManagementPage\PageManagementPage.tsx:313:      reason: `菜单「${menuRow.menuName}」当前业务需要补充能力开通，请协助处理。`
+src/pages\PageManagementPage\PageManagementPage.tsx:334:      msgApi.success("申请已提交给菜单开通管理员");
+src/pages\PageManagementPage\PageManagementPage.tsx:336:      const errorMessage = error instanceof Error ? error.message : "申请提交失败";
+src/pages\PageManagementPage\PageManagementPage.tsx:378:      msgApi.warning("该菜单下暂无页面，暂不可新增提示规则");
+src/pages\PageManagementPage\PageManagementPage.tsx:389:      msgApi.warning("该菜单下暂无页面，暂不可新增作业配置");
+src/pages\PageManagementPage\PageManagementPage.tsx:429:        以菜单为业务入口：先选菜单，再查看该菜单下页面配置详情，直接发起提示或作业配置。
+src/pages\PageManagementPage\PageManagementPage.tsx:437:          message={`当前有 ${pendingMenus} 个菜单能力申请处于开通中`}
+src/pages\PageManagementPage\PageManagementPage.tsx:438:          description="申请处理完成后，相关页面会自动开放新增提示/新增作业入口。"
+src/pages\PageManagementPage\PageManagementPage.tsx:476:              { label: "开通中", value: "PENDING" }
+src/pages\PageManagementPage\PageManagementPage.tsx:541:                  return <Button size="small" disabled>开通中</Button>;
+src/pages\PageManagementPage\PageManagementPage.tsx:546:                      申请菜单开通
+src/pages\PageManagementPage\PageManagementPage.tsx:604:                  message={selectedPageActionState.pending ? "菜单能力开通中" : "菜单能力尚未开通"}
+src/pages\PageManagementPage\PageManagementPage.tsx:607:                      <Typography.Text>当前页面暂不可新增提示或作业。</Typography.Text>
+src/pages\PageManagementPage\PageManagementPage.tsx:610:                          开通中
+src/pages\PageManagementPage\PageManagementPage.tsx:614:                          申请菜单开通
+src/pages\PageManagementPage\PageManagementPage.tsx:658:                    title="发布后下降比例"
+src/pages\PageManagementPage\PageManagementPage.tsx:667:                <Card size="small" title="当前页面已配置规则">
+src/pages\PageManagementPage\PageManagementPage.tsx:677:            <Typography.Text type="secondary">该菜单下暂无页面。</Typography.Text>
+src/pages\PageManagementPage\PageManagementPage.tsx:683:        title={requestMenu ? `申请菜单开通：${requestMenu.menuName}` : "申请菜单开通"}
+src/pages\PageManagementPage\PageManagementPage.tsx:688:        okText="提交申请"
+src/pages\PageManagementPage\PageManagementPage.tsx:695:            message="申请会提交给菜单开通管理员审批"
+src/pages\PageManagementPage\PageManagementPage.tsx:696:            description="请选择未开通能力并说明业务原因，审批通过后即可在页面继续配置。"
+src/pages\PageManagementPage\PageManagementPage.tsx:700:            label="申请能力"
+src/pages\PageManagementPage\PageManagementPage.tsx:701:            rules={[{ required: true, message: "请至少选择一个能力" }]}
+src/pages\PageManagementPage\PageManagementPage.tsx:720:            label="申请原因"
+src/pages\PageManagementPage\PageManagementPage.tsx:722:              { required: true, message: "请填写申请原因" },
+src/pages\PageManagementPage\PageManagementPage.tsx:723:              { min: 10, message: "申请原因至少 10 个字，便于管理员评估" }
+src/pages\PageManagementPage\PageManagementPage.tsx:726:            <Input.TextArea rows={4} maxLength={300} placeholder="例如：贷款审核菜单近期需要上线提示+作业能力，降低人工漏检风险。" />
+src/pages\JobScenesPage\jobScenesPageShared.ts:56:  AUTO_AFTER_PROMPT: "提示后自动",
+src/pages\JobScenesPage\jobScenesPageShared.ts:57:  PREVIEW_THEN_EXECUTE: "预览后执行",
+src/pages\PageResourcesPage\PageResourcesPage.tsx:52:  "业务标识优先 + URL兜底",
+src/pages\PageResourcesPage\PageResourcesPage.tsx:226:      detectRulesSummary: "业务标识优先 + URL兜底"
+src/pages\PageResourcesPage\PageResourcesPage.tsx:266:      content: "当前页面资源配置尚未保存，关闭后将丢失。",
+src/pages\PageResourcesPage\PageResourcesPage.tsx:334:      content: "当前元素映射尚未保存，关闭后将丢失。",
+src/pages\PageResourcesPage\PageResourcesPage.tsx:577:          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:580:          <Form.Item name="menuId" label="菜单" rules={[{ required: true, message: "请选择菜单" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:588:          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:591:          <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请选择组织" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:594:          <Form.Item name="detectRulesSummary" label="识别口径" rules={[{ required: true, message: "请选择或输入识别口径" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:597:              placeholder="请选择或输入识别规则口径"
+src/pages\PageResourcesPage\PageResourcesPage.tsx:648:                  <Popconfirm title="确认删除该元素映射？" onConfirm={() => void removeElement(row)}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:674:          <Form.Item name="pageResourceId" hidden rules={[{ required: true, message: "请选择所属页面" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:680:          <Form.Item name="logicName" label="逻辑名" rules={[{ required: true, message: "请输入逻辑名" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:683:          <Form.Item name="selector" label="定位表达式" rules={[{ required: true, message: "请输入定位表达式" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:686:          <Form.Item name="selectorType" label="选择器类型" rules={[{ required: true, message: "请选择选择器类型" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:703:          公共字段可在多个页面复用；页面字段只作用当前页面。规则和作业统一引用这里维护的字段，不直接引用页面元素。
+src/pages\PageResourcesPage\PageResourcesPage.tsx:735:                render: (_, row) => <Tag color={row.scope === "GLOBAL" ? "blue" : "geekblue"}>{row.scope === "GLOBAL" ? "公共字段" : "当前页面字段"}</Tag>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:737:              { title: "说明", dataIndex: "description" },
+src/pages\PageResourcesPage\PageResourcesPage.tsx:795:                    <Popconfirm title="确认删除该字段绑定？" onConfirm={() => void removeBinding(row)}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:818:          <Form.Item name="scope" label="字段归属" rules={[{ required: true, message: "请选择字段归属" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:830:                  <Form.Item name="pageResourceId" hidden rules={[{ required: true, message: "请选择所属页面" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:840:          <Form.Item name="name" label="字段名称" rules={[{ required: true, message: "请输入字段名称" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:843:          <Form.Item name="description" label="说明">
+src/pages\PageResourcesPage\PageResourcesPage.tsx:846:          <Form.Item name="ownerOrgId" label="归属组织" rules={[{ required: true, message: "请选择归属组织" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:849:          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:865:          <Form.Item name="pageResourceId" hidden rules={[{ required: true, message: "请选择页面资源" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:871:          <Form.Item name="businessFieldCode" label="字段" rules={[{ required: true, message: "请选择字段" }]}>
+src/pages\PageResourcesPage\PageResourcesPage.tsx:880:          <Form.Item name="pageElementId" label="元素" rules={[{ required: true, message: "请选择元素" }]}>
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:86:    msgApi.success(editing ? "数据转换规则已更新，可前往发布与灰度继续处理" : "数据转换规则已创建，可前往发布与灰度查看待发布项");
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:99:      content: "当前表单有未保存内容，确认关闭后将丢失。",
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:120:            这是高级维护区，用来统一管理规则和作业共用的数据转换逻辑。优先使用内置能力，脚本方式仅作受控增强。
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:164:                    title={row.status === "ACTIVE" ? "确认停用该预处理器？" : "确认启用该预处理器？"}
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:187:          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:190:          <Form.Item name="processorType" label="类型" rules={[{ required: true, message: "请选择类型" }]}>
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:193:          <Form.Item name="category" label="分类" rules={[{ required: true, message: "请选择分类" }]}>
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:203:          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:206:          <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请选择组织" }]}>
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:214:                placeholder="请输入脚本内容（原型态）"
+src/pages\PreprocessorsPage\PreprocessorsPage.tsx:219:            <Alert type="success" showIcon message="内置类型无需脚本内容" description="当前将使用平台内置实现。" />
+src/pages\PublishPage\PublishPage.tsx:55:      summary: "贷款专区先放开智能提示与自动查数能力"
+src/pages\PublishPage\PublishPage.tsx:70:    summary: "当前菜单尚未开通智能提示 / 智能作业"
+src/pages\PublishPage\PublishPage.tsx:213:      msgApi.warning("请至少选择一个待发布对象");
+src/pages\PublishPage\PublishPage.tsx:217:      msgApi.warning("请选择定时生效时间");
+src/pages\PublishPage\PublishPage.tsx:250:                .join("；") || "存在阻断项",
+src/pages\PublishPage\PublishPage.tsx:286:        msgApi.error("发布前检查未通过，请先处理阻断项");
+src/pages\PublishPage\PublishPage.tsx:311:    msgApi.success(`已完成风险确认：${item.resourceName}`);
+src/pages\PublishPage\PublishPage.tsx:317:    msgApi.success(`已标记处理完成：${item.resourceName}`);
+src/pages\PublishPage\PublishPage.tsx:341:              当前模块：{activeTab === "CONFIG_RELEASE" ? "配置发布" : "菜单能力"}
+src/pages\PublishPage\PublishPage.tsx:349:                message="当前是业务配置人员视角"
+src/pages\PublishPage\PublishPage.tsx:350:                description="你可以查看待发布对象、检查阻断原因并提交管理员处理，但不能直接发布。正式发布由发布管理员完成。"
+src/pages\PublishPage\PublishPage.tsx:356:                message="当前是发布管理员视角"
+src/pages\PublishPage\PublishPage.tsx:364:              message="当前是菜单开通管理员视角"
+src/pages\PublishPage\PublishPage.tsx:371:              message="当前是只读菜单能力视角"
+src/pages\PublishPage\PublishPage.tsx:393:            <Statistic title="待风险确认" value={publishPendingItems.filter((item) => item.pendingType === "RISK_CONFIRM").length} />
+src/pages\PublishPage\PublishPage.tsx:419:            { title: "确认影响并发布" }
+src/pages\PublishPage\PublishPage.tsx:433:              { label: "待风险确认", value: "RISK_CONFIRM" }
+src/pages\PublishPage\PublishPage.tsx:455:              title: "当前状态",
+src/pages\PublishPage\PublishPage.tsx:484:                      风险确认
+src/pages\PublishPage\PublishPage.tsx:489:                      标记完成
+src/pages\PublishPage\PublishPage.tsx:519:                title: "当前状态",
+src/pages\PublishPage\PublishPage.tsx:578:      <Card title="菜单能力说明" style={{ marginTop: 12 }}>
+src/pages\PublishPage\PublishPage.tsx:619:              render: (_, row) => (row.grayLaneId ? laneSlotMap[row.grayLaneId] ?? "-" : <Typography.Text type="secondary">未配置</Typography.Text>)
+src/pages\PublishPage\PublishPage.tsx:647:                  <Typography.Text type="secondary">未配置</Typography.Text>
+src/pages\PublishPage\PublishPage.tsx:652:              title: "能力说明",
+src/pages\PublishPage\PublishPage.tsx:676:              title: "当前状态",
+src/pages\PublishPage\PublishPage.tsx:687:                  <Typography.Text type="secondary">当前视角只读查看</Typography.Text>
+src/pages\PublishPage\PublishPage.tsx:744:              message={validationModal.report.pass ? "检查通过，可继续正式发布" : "存在阻断项，请先修复"}
+src/pages\PublishPage\PublishPage.tsx:748:              <Card size="small" title="风险确认项">
+src/pages\PublishPage\PublishPage.tsx:769:                    row.passed ? <Tag color="green">通过</Tag> : <Tag color="red">阻断</Tag>
+src/pages\PublishPage\PublishPage.tsx:771:                { title: "说明", dataIndex: "detail" }
+src/pages\PublishPage\PublishPage.tsx:790:                ? `已发布 ${batchPublishResult.published.length} 个对象，另有 ${batchPublishResult.blocked.length} 个对象被阻断`
+src/pages\PublishPage\PublishPage.tsx:795:                ? `另有 ${batchPublishResult.skippedRiskPending.length} 个对象因待风险确认未参与本次发布。`
+src/pages\PublishPage\PublishPage.tsx:796:                : "本次没有待风险确认的跳过对象。"
+src/pages\PublishPage\PublishPage.tsx:812:          <Card size="small" title="被阻断">
+src/pages\PublishPage\PublishPage.tsx:821:                  { title: "阻断原因", dataIndex: "reason" },
+src/pages\PublishPage\PublishPage.tsx:826:              <Typography.Text type="secondary">本次没有阻断对象。</Typography.Text>
+src/pages\PublishPage\PublishPage.tsx:829:          <Card size="small" title="待风险确认（未参与本次发布）">
+src/pages\PublishPage\PublishPage.tsx:839:              <Typography.Text type="secondary">本次没有因风险确认被跳过的对象。</Typography.Text>
+src/pages\PublishPage\PublishPage.tsx:864:            {releaseStep === 3 ? "确认发布" : "下一步"}
+src/pages\PublishPage\PublishPage.tsx:876:            { title: "确认影响范围" }
+src/pages\PublishPage\PublishPage.tsx:883:              当前主发布路径只承载 API、名单、智能提示、作业四类对象。菜单能力、页面开通设置等不在本次发布内。
+src/pages\PublishPage\PublishPage.tsx:923:                当前已录入 IP：{selectedTrialIps.length > 0 ? selectedTrialIps.join("、") : "未配置"}
+src/pages\PublishPage\PublishPage.tsx:943:                <Typography.Text type="secondary">将于当前提交后立即生效。</Typography.Text>
+src/pages\PublishPage\PublishPage.tsx:950:          <Card size="small" title="影响确认">
+src/pages\PublishPage\PublishPage.tsx:955:                message="请确认本次配置发布影响范围"
+src/pages\PublishPage\PublishPage.tsx:956:                description="确认后将对选中对象逐项执行最终检查并发布；存在阻断项的对象会留在待发布列表。"
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:163:    msgApi.success(editing ? "版本灰度策略已更新，可前往发布与灰度继续处理" : "版本灰度策略已创建，可前往发布与灰度查看待发布项");
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:176:        这是高级维护区，用来维护菜单层级的版本发布与灰度范围。业务侧通常直接在“发布与灰度”查看结果，不需要先进入这里。
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:180:        当前原型只保留三个业务可理解的信息：当前线上版本、试点版本、影响机构范围。
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:201:            { title: "兼容说明", dataIndex: "compatibility" },
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:323:          <Form.Item name="siteId" label="站点" rules={[{ required: true, message: "请选择站点" }]}>
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:347:                  <Form.Item name="regionId" label="专区" rules={[{ required: true, message: "请选择专区" }]}>
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:350:                  <Form.Item name="menuId" label="菜单" rules={[{ required: true, message: "请选择菜单" }]}>
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:366:          <Form.Item name="stableLaneId" label="线上版本" rules={[{ required: true, message: "请选择线上版本" }]}>
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:375:          <Form.Item name="effectiveStart" label="生效开始" rules={[{ required: true, message: "请输入开始时间" }]}>
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:378:          <Form.Item name="effectiveEnd" label="生效结束" rules={[{ required: true, message: "请输入结束时间" }]}>
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:381:          <Form.Item name="ownerOrgId" label="归属组织" rules={[{ required: true, message: "请选择归属组织" }]}>
+src/pages\SdkVersionCenterPage\SdkVersionCenterPage.tsx:384:          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+src/pages\RulesPage\RulesPage.tsx:67:            {tone === "success" ? "已配置" : tone === "info" ? "说明" : "提醒"}
+src/pages\RulesPage\RulesPage.tsx:167:    : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。保存后可继续去“发布与灰度”完成上线。";
+src/pages\RulesPage\RulesPage.tsx:177:        description: "模板是快捷来源，不是业务人员的主操作对象；选择模板后会自动带入条件逻辑、提示方式和关闭策略。"
+src/pages\RulesPage\RulesPage.tsx:272:          detail: `规则「${values.name}」预览通过：已完成字段完整性检查，可继续保存。`
+src/pages\RulesPage\RulesPage.tsx:364:            { title: "优先级", dataIndex: "priority", width: 90 },
+src/pages\RulesPage\RulesPage.tsx:396:                    title={row.status === "ACTIVE" ? `确认停用该${isTemplateMode ? "模板" : "规则"}？` : `确认启用该${isTemplateMode ? "模板" : "规则"}？`}
+src/pages\RulesPage\RulesPage.tsx:437:                  {wizardStep === 3 ? "保存规则" : "下一步"}
+src/pages\RulesPage\RulesPage.tsx:456:              title="当前步骤还有待处理问题"
+src/pages\RulesPage\RulesPage.tsx:474:                  rules={[{ required: true, message: "请选择页面资源" }]}
+src/pages\RulesPage\RulesPage.tsx:486:                    placeholder={templates.length > 0 ? "可选：套用已沉淀模板" : "暂无可复用模板"}
+src/pages\RulesPage\RulesPage.tsx:501:                  rules={[{ required: true, message: "请选择页面资源" }]}
+src/pages\RulesPage\RulesPage.tsx:515:                模板不绑定页面，只能使用公共字段。需要页面特有字段时，请在页面规则里补充。
+src/pages\RulesPage\RulesPage.tsx:522:              <Form.Item name="name" label={isTemplateMode ? "模板名称" : "规则名称"} rules={[{ required: true, message: `请输入${isTemplateMode ? "模板" : "规则"}名称` }]}>
+src/pages\RulesPage\RulesPage.tsx:525:              <Form.Item name="priority" label="优先级" rules={[{ required: true }]}>
+src/pages\RulesPage\RulesPage.tsx:541:                        { required: true, message: "超时后关闭必须填写关闭超时时间" },
+src/pages\RulesPage\RulesPage.tsx:550:              <Form.Item name="hasConfirmButton" label="确认按钮">
+src/pages\RulesPage\RulesPage.tsx:565:              <Form.Item name="ownerOrgId" label="组织范围" rules={[{ required: true, message: "请选择组织范围" }]}>
+src/pages\RulesPage\RulesPage.tsx:585:                message={previewResult?.matched ? "预览通过" : "请执行预览"}
+src/pages\RulesPage\RulesPage.tsx:586:                description={previewResult?.detail ?? "保存前可执行一次预览，确认规则表达和触发方式。"}
+src/pages\RulesPage\RulesPage.tsx:600:            <Card size="small" title="保存确认">
+src/pages\RulesPage\RulesPage.tsx:622:                      保存后会进入待发布列表，可前往“发布与灰度”完成上线。
+src/pages\RulesPage\RulesPage.tsx:653:            所有普通条件与名单字段来源会一并保存。多个提示同时命中时，会按优先级依次展示。
+src/pages\RulesPage\RulesPage.tsx:722:                <Typography.Text type="secondary">先在左侧点击要编辑的左值或右值。</Typography.Text>
+src/pages\RulesPage\RulesPage.tsx:725:                  <ValidationReportPanel issues={selectedOperandIssues} title="当前值还有待处理问题" compact />
+src/pages\RulesPage\RulesPage.tsx:727:                    <CompactHint title="当前来源下已有配置内容" description="切换来源类型后会自动清理旧配置。" />
+src/pages\RulesPage\RulesPage.tsx:730:                    当前正在编辑：条件 {selectedContext.index + 1} - {selectedContext.side === "left" ? "左值" : "右值"}
+src/pages\RulesPage\RulesPage.tsx:762:                        placeholder="请输入固定值"
+src/pages\RulesPage\RulesPage.tsx:781:                        placeholder="请选择页面字段"
+src/pages\RulesPage\RulesPage.tsx:802:                        placeholder="请选择上下文变量"
+src/pages\RulesPage\RulesPage.tsx:823:                          placeholder="请选择 API"
+src/pages\RulesPage\RulesPage.tsx:847:                          placeholder="请选择API输出路径"
+src/pages\RulesPage\RulesPage.tsx:870:                                <Typography.Text type="secondary">当前 API 没有配置入参，可直接继续。</Typography.Text>
+src/pages\RulesPage\RulesPage.tsx:918:                        description={selectedContext.operand.outputPath?.trim() ? "接口输出已绑定" : "请选择一个 API 输出路径"}
+src/pages\RulesPage\RulesPage.tsx:928:                        message="当前没有可用名单数据"
+src/pages\RulesPage\RulesPage.tsx:931:                            <Typography.Text type="secondary">请先到高级配置维护名单资产，再回到规则里使用名单字段来源。</Typography.Text>
+src/pages\RulesPage\RulesPage.tsx:946:                            placeholder="请选择名单数据"
+src/pages\RulesPage\RulesPage.tsx:991:                            placeholder={selectedListOutputOptions.length > 0 ? "请选择输出字段" : "当前名单未配置输出字段"}
+src/pages\RulesPage\RulesPage.tsx:1008:                          description={`已完成检索键 ${selectedContext.operand.listMatchers.filter((item) => item.matchColumn.trim() && item.sourceValue.trim()).length} / ${selectedContext.operand.listMatchers.length}`}
+src/pages\RulesPage\RulesPage.tsx:1076:                                            placeholder="请选择页面字段"
+src/pages\RulesPage\RulesPage.tsx:1086:                                            placeholder="请选择上下文变量"
+src/pages\RulesPage\RulesPage.tsx:1093:                                            placeholder={matcher.sourceType === "CONST" ? "请输入固定值" : "请输入接口输出标识"}
+src/pages\RulesPage\RulesPage.tsx:1130:                            <Typography.Text type="secondary">暂无预处理器</Typography.Text>
+src/pages\RulesPage\rulesPageShared.ts:98:  TIMER_THEN_MANUAL: "超时后关闭"
+src/pages\RulesPage\rulesPageShared.ts:458:      subText: operand.interfaceInputConfig.trim() ? "含入参配置" : "未配置入参"
+src/pages\RulesPage\rulesPageShared.ts:470:      subText: matcherCount > 0 ? `检索键 ${matcherCount} 个` : "未配置检索键"
+src/pages\RulesPage\rulesPageShared.ts:477:    mainText: operand.displayValue.trim() || "(未配置)",
+src/pages\RulesPage\useRulesPageModel.tsx:223:        content: "关闭后将丢失当前规则基础配置，是否继续？",
+src/pages\RulesPage\useRulesPageModel.tsx:237:        content: "关闭后将丢失当前条件编辑结果，是否继续？",
+src/pages\RulesPage\useRulesPageModel.tsx:394:      msgApi.error("请选择页面资源");
+src/pages\RulesPage\useRulesPageModel.tsx:429:        ? `${savedObjectLabel}已保存草稿，另有 ${result.report.warningCount} 个提醒可继续处理`
+src/pages\RulesPage\useRulesPageModel.tsx:546:      content: "来源切换后将清空当前值、接口入参与预处理器配置，是否继续？",
+src/pages\RulesPage\useRulesPageModel.tsx:583:            message: "请选择 API 来源"
+src/pages\RulesPage\useRulesPageModel.tsx:593:            message: "请选择 API 输出路径"
+src/pages\RulesPage\useRulesPageModel.tsx:620:            message: "请选择名单数据"
+src/pages\RulesPage\useRulesPageModel.tsx:641:            message: "请至少配置一个检索键"
+src/pages\RulesPage\useRulesPageModel.tsx:676:            message: "请选择输出字段"
+src/pages\RulesPage\useRulesPageModel.tsx:697:          message: "请输入比较值"
+src/pages\RulesPage\useRulesPageModel.tsx:708:          message: "存在未完成选择的数据转换规则"
+src/pages\RulesPage\useRulesPageModel.tsx:727:      msgApi.error("高级条件存在未处理问题，请先修复后再保存");
+src/pages\RolesPage\RolesPage.tsx:62:  RISK_CONFIRM: "风险确认",
+src/pages\RolesPage\RolesPage.tsx:69:  VALIDATE: "查看发布检查结果并处理阻断项",
+src/pages\RolesPage\RolesPage.tsx:75:  RISK_CONFIRM: "确认自动化风险责任",
+src/pages\RolesPage\RolesPage.tsx:181:      content: "当前角色配置未保存，关闭后将丢失。",
+src/pages\RolesPage\RolesPage.tsx:298:                    title={row.status === "ACTIVE" ? "确认停用该角色？" : "确认启用该角色？"}
+src/pages\RolesPage\RolesPage.tsx:321:          <Form.Item name="name" label="角色名称" rules={[{ required: true, message: "请输入角色名称" }]}>
+src/pages\RolesPage\RolesPage.tsx:324:          <Form.Item name="roleType" label="角色类型" rules={[{ required: true, message: "请选择角色类型" }]}>
+src/pages\RolesPage\RolesPage.tsx:337:          <Form.Item name="orgScopeId" label="组织范围" rules={[{ required: true, message: "请选择组织范围" }]}>
+src/pages\RolesPage\RolesPage.tsx:340:          <Form.Item name="actions" label="操作类型" rules={[{ required: true, message: "请选择操作类型" }]}>
+src/pages\RolesPage\RolesPage.tsx:348:            权限说明：
+src/pages\RolesPage\RolesPage.tsx:355:          <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
+src/pages\PromptsPage\PromptsPage.tsx:23:      description: "新建规则时会默认选中当前页面；保存后可前往“发布与灰度”查看待发布内容。"
+src/pages\PromptsPage\PromptsPage.tsx:31:        规则列表是主入口；模板复用仅作快捷来源。新建流程按「选页面 → 改内容 → 预览 → 保存」推进，保存后继续到“发布与灰度”完成上线。

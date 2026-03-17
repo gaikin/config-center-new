@@ -11,6 +11,7 @@ import {
   Segmented,
   Select,
   Space,
+  Switch,
   Table,
   Tag,
   Tooltip,
@@ -30,8 +31,17 @@ import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { orgOptions } from "../../orgOptions";
 import { useMockSession } from "../../session/mockSession";
 import { useJobScenesPageModel } from "./useJobScenesPageModel";
-import { executionLabel, nodeTypeLabel, StatusFilter } from "./jobScenesPageShared";
-import type { JobSceneDefinition, JobScenePreviewField, LifecycleState, PublishValidationReport } from "../../types";
+import {
+  buildExecutionMode,
+  derivePreviewBeforeExecute,
+  deriveTriggerMode,
+  getRunModeLabel,
+  getTriggerModeLabel,
+  nodeTypeLabel,
+  StatusFilter,
+  type TriggerMode
+} from "./jobScenesPageShared";
+import type { ExecutionMode, JobSceneDefinition, JobScenePreviewField, LifecycleState, PublishValidationReport } from "../../types";
 
 type EffectiveTarget = {
   id: number;
@@ -39,6 +49,10 @@ type EffectiveTarget = {
   status: LifecycleState;
   source: "row" | "notice";
 };
+
+const DEFAULT_FLOATING_BUTTON_LABEL = "重新执行";
+const DEFAULT_FLOATING_BUTTON_X = 86;
+const DEFAULT_FLOATING_BUTTON_Y = 78;
 
 export function JobScenesPage() {
   const navigate = useNavigate();
@@ -52,8 +66,6 @@ export function JobScenesPage() {
     switchStatus,
     openBuilder,
     openPreview,
-    triggerFloating,
-    confirmRisk,
     loading,
     linkedRulesByScene,
     open,
@@ -161,25 +173,25 @@ export function JobScenesPage() {
     }
     return filteredRows.filter((item) => item.pageResourceId === pageResourceFilter);
   }, [filteredRows, hasPageFilter, pageResourceFilter]);
+  const watchedExecutionMode = Form.useWatch("executionMode", form) as ExecutionMode | undefined;
+  const watchedPreviewBeforeExecute = Form.useWatch("previewBeforeExecute", form) as boolean | undefined;
+  const watchedFloatingButtonEnabled = Form.useWatch("floatingButtonEnabled", form) as boolean | undefined;
+  const selectedTriggerMode: TriggerMode = watchedExecutionMode ? deriveTriggerMode(watchedExecutionMode) : "AUTO";
+  const selectedPreviewBeforeExecute = Boolean(watchedPreviewBeforeExecute);
+  const floatingRetriggerEnabled = selectedTriggerMode === "BUTTON" || Boolean(watchedFloatingButtonEnabled);
 
   const sceneCards = [
     {
-      key: "query-fill",
-      title: "查询并回填",
-      desc: "适合根据页面字段查外部数据并自动回填。",
+      key: "auto-run",
+      title: "自动执行",
+      desc: "提示完成后自动进入作业流程，默认直接执行，可选预览确认。",
       mode: "AUTO_AFTER_PROMPT" as const
     },
     {
-      key: "multi-assist",
-      title: "多字段辅助录入",
-      desc: "适合录入前批量补全、格式修正和风险标记。",
+      key: "button-run",
+      title: "按钮触发",
+      desc: "提示完成后展示悬浮按钮，用户点击后再执行。",
       mode: "FLOATING_BUTTON" as const
-    },
-    {
-      key: "preview-confirm",
-      title: "预览确认后执行",
-      desc: "先预览拟写入值，再确认执行，降低误操作风险。",
-      mode: "PREVIEW_THEN_EXECUTE" as const
     }
   ];
 
@@ -364,7 +376,27 @@ export function JobScenesPage() {
           columns={[
             { title: "场景名称", dataIndex: "name", width: 220 },
             { title: "所属页面", dataIndex: "pageResourceName", width: 160 },
-            { title: "执行模式", width: 170, render: (_, row) => <Tag color="blue">{executionLabel[row.executionMode]}</Tag> },
+            {
+              title: "执行策略",
+              width: 280,
+              render: (_, row) => {
+                const triggerMode = deriveTriggerMode(row.executionMode);
+                const previewBeforeExecute = derivePreviewBeforeExecute(row);
+                const floatingEnabled = row.floatingButtonEnabled ?? row.executionMode === "FLOATING_BUTTON";
+                const shouldShowRetriggerTag = triggerMode === "AUTO" && floatingEnabled;
+                const isDefault = triggerMode === "AUTO" && !previewBeforeExecute && !shouldShowRetriggerTag;
+                if (isDefault) {
+                  return null;
+                }
+                return (
+                  <Space size={[6, 4]} wrap>
+                    {triggerMode === "BUTTON" ? <Tag color="blue">按钮触发</Tag> : null}
+                    {previewBeforeExecute ? <Tag color="gold">预览确认</Tag> : null}
+                    {shouldShowRetriggerTag ? <Tag color="processing">补充按钮</Tag> : null}
+                  </Space>
+                );
+              }
+            },
             {
               title: "触发关联",
               width: 240,
@@ -386,11 +418,10 @@ export function JobScenesPage() {
             },
             { title: "节点数", dataIndex: "nodeCount", width: 80 },
             { title: "人工基准(秒)", dataIndex: "manualDurationSec", width: 120 },
-            { title: "风险确认", width: 100, render: (_, row) => row.riskConfirmed ? <Tag color="green">已确认</Tag> : <Tag color="orange">待确认</Tag> },
             { title: "状态", width: 100, render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag> },
             {
               title: "操作",
-              width: 520,
+              width: 380,
               render: (_, row) => {
                 const actionMeta = getEffectiveActionMeta(row.status);
                 const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasAction);
@@ -399,10 +430,6 @@ export function JobScenesPage() {
                   <Button size="small" onClick={() => openEdit(row)}>编辑</Button>
                   <Button size="small" onClick={() => void openBuilder(row)}>作业编排</Button>
                   <Button size="small" onClick={() => void openPreview(row)}>预览确认</Button>
-                  <Popconfirm title="确认触发悬浮按钮执行？" onConfirm={() => void triggerFloating(row)}>
-                    <Button size="small">悬浮触发</Button>
-                  </Popconfirm>
-                  {!row.riskConfirmed ? <Button size="small" onClick={() => void confirmRisk(row)}>确认风险</Button> : null}
                   <Button
                     size="small"
                     type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
@@ -430,20 +457,147 @@ export function JobScenesPage() {
       <Modal title={editing ? "编辑场景" : "新建场景"} open={open} onCancel={closeSceneModal} onOk={() => void submitScene()} width={680}>
         <Form form={form} layout="vertical">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            场景编号和版本由系统自动维护，你只需要关注页面、执行方式和风险控制。保存后可直接发布当前对象。
+            场景编号和版本由系统自动维护，你只需要关注页面与执行方式。保存后可直接发布当前对象。
           </Typography.Paragraph>
           <ValidationReportPanel report={sceneSaveValidationReport} title="保存前检查结果" />
           <Alert
-            type={editing?.riskConfirmed ? "success" : "warning"}
+            type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message={editing?.riskConfirmed ? "风险确认：已确认（只读）" : "风险确认：未确认（只读）"}
+            message="节点数由作业编排自动统计"
+            description="基础信息里不再手填节点数；进入作业编排后，系统会按当前节点数量自动更新。"
           />
           <Form.Item name="name" label="场景名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="pageResourceId" label="页面资源" rules={[{ required: true }]}><Select options={resources.map((r) => ({ label: r.name, value: r.id }))} /></Form.Item>
-          <Form.Item name="executionMode" label="执行模式" rules={[{ required: true }]}><Select options={Object.entries(executionLabel).map(([value, label]) => ({ label, value }))} /></Form.Item>
+          <Form.Item hidden name="executionMode">
+            <Input />
+          </Form.Item>
+          <Form.Item hidden name="floatingButtonEnabled">
+            <Input />
+          </Form.Item>
+          <Form.Item label="触发方式" required>
+            <Segmented
+              value={selectedTriggerMode}
+              options={[
+                { label: "自动执行", value: "AUTO" },
+                { label: "按钮触发", value: "BUTTON" }
+              ]}
+              onChange={(value) => {
+                const nextTriggerMode = value as TriggerMode;
+                const nextExecutionMode = buildExecutionMode(nextTriggerMode, selectedPreviewBeforeExecute);
+                form.setFieldValue("executionMode", nextExecutionMode);
+                if (nextTriggerMode === "BUTTON") {
+                  form.setFieldValue("floatingButtonEnabled", true);
+                  if (!form.getFieldValue("floatingButtonLabel")) {
+                    form.setFieldValue("floatingButtonLabel", DEFAULT_FLOATING_BUTTON_LABEL);
+                  }
+                  if (typeof form.getFieldValue("floatingButtonX") !== "number") {
+                    form.setFieldValue("floatingButtonX", DEFAULT_FLOATING_BUTTON_X);
+                  }
+                  if (typeof form.getFieldValue("floatingButtonY") !== "number") {
+                    form.setFieldValue("floatingButtonY", DEFAULT_FLOATING_BUTTON_Y);
+                  }
+                } else if (form.getFieldValue("floatingButtonEnabled") === undefined) {
+                  form.setFieldValue("floatingButtonEnabled", false);
+                }
+              }}
+            />
+          </Form.Item>
+          <Form.Item
+            name="previewBeforeExecute"
+            label="预览确认"
+            valuePropName="checked"
+            style={{ marginBottom: 12 }}
+          >
+            <Switch
+              checkedChildren="开启"
+              unCheckedChildren="关闭"
+              onChange={(checked) => {
+                const currentTrigger = deriveTriggerMode((form.getFieldValue("executionMode") as ExecutionMode) ?? "AUTO_AFTER_PROMPT");
+                form.setFieldValue("executionMode", buildExecutionMode(currentTrigger, checked));
+              }}
+            />
+          </Form.Item>
+          <Form.Item label="悬浮按钮补充入口" style={{ marginBottom: 12 }}>
+            <Space align="center" style={{ width: "100%", justifyContent: "space-between" }}>
+              <Typography.Text type="secondary">
+                用于让用户在主流程完成后重复触发同一作业。
+              </Typography.Text>
+              <Switch
+                checked={floatingRetriggerEnabled}
+                disabled={selectedTriggerMode === "BUTTON"}
+                onChange={(checked) => {
+                  form.setFieldValue("floatingButtonEnabled", checked);
+                  if (checked) {
+                    if (!form.getFieldValue("floatingButtonLabel")) {
+                      form.setFieldValue("floatingButtonLabel", DEFAULT_FLOATING_BUTTON_LABEL);
+                    }
+                    if (typeof form.getFieldValue("floatingButtonX") !== "number") {
+                      form.setFieldValue("floatingButtonX", DEFAULT_FLOATING_BUTTON_X);
+                    }
+                    if (typeof form.getFieldValue("floatingButtonY") !== "number") {
+                      form.setFieldValue("floatingButtonY", DEFAULT_FLOATING_BUTTON_Y);
+                    }
+                  }
+                }}
+              />
+            </Space>
+          </Form.Item>
+          {floatingRetriggerEnabled ? (
+            <Card
+              size="small"
+              style={{ marginBottom: 12 }}
+              title={
+                <Space size={8}>
+                  <Typography.Text>悬浮按钮配置</Typography.Text>
+                  <Tag color="error">必填</Tag>
+                </Space>
+              }
+            >
+              <Space direction="vertical" style={{ width: "100%" }} size={8}>
+                <Typography.Text type="secondary">
+                  当前触发方式为“按钮触发”，必须配置悬浮按钮文案与位置。
+                </Typography.Text>
+                <Form.Item
+                  name="floatingButtonLabel"
+                  label="按钮文案"
+                  rules={[{ required: true, message: "请输入按钮文案" }]}
+                  style={{ marginBottom: 8 }}
+                >
+                  <Input maxLength={16} placeholder="如：重新执行" />
+                </Form.Item>
+                <Space align="start" size={12} wrap>
+                  <Form.Item
+                    name="floatingButtonX"
+                    label="横坐标 X(%)"
+                    rules={[{ required: true, message: "请输入X坐标" }]}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <InputNumber min={0} max={100} precision={0} />
+                  </Form.Item>
+                  <Form.Item
+                    name="floatingButtonY"
+                    label="纵坐标 Y(%)"
+                    rules={[{ required: true, message: "请输入Y坐标" }]}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <InputNumber min={0} max={100} precision={0} />
+                  </Form.Item>
+                </Space>
+                <Typography.Text type="secondary">
+                  坐标按页面可视区域百分比记录，便于不同分辨率下保持相对位置。
+                </Typography.Text>
+              </Space>
+            </Card>
+          ) : (
+            <Alert
+              showIcon
+              type="info"
+              style={{ marginBottom: 12 }}
+              message="当前为自动执行，无需配置悬浮按钮。"
+            />
+          )}
           <Form.Item name="status" label="状态" rules={[{ required: true }]}><Select options={lifecycleOptions} /></Form.Item>
-          <Form.Item name="nodeCount" label="节点数" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="manualDurationSec" label="人工基准(秒)" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
         </Form>
       </Modal>
@@ -456,75 +610,17 @@ export function JobScenesPage() {
         onClose={closeBuilder}
         extra={
           <Space>
+            <Button size="small" disabled={!builderScene} onClick={() => (builderScene ? void openPreview(builderScene) : undefined)}>
+              打开预览确认
+            </Button>
             <Button onClick={autoLayoutNodes}>自动排版</Button>
             <Button loading={savingFlow} onClick={() => void saveFlowLayout()}>保存编排</Button>
           </Space>
         }
       >
         <Space direction="vertical" style={{ width: "100%" }} size={12}>
-          <Card title="场景基础信息区" size="small">
-            {builderScene ? (
-              <Space size={[8, 8]} wrap>
-                <Tag>{builderScene.name}</Tag>
-                <Tag color="blue">{executionLabel[builderScene.executionMode]}</Tag>
-                <Tag>节点数 {builderScene.nodeCount}</Tag>
-                <Tag>人工基准 {builderScene.manualDurationSec}s</Tag>
-                <Tag color={builderScene.riskConfirmed ? "green" : "orange"}>
-                  {builderScene.riskConfirmed ? "风险已确认" : "风险待确认"}
-                </Tag>
-              </Space>
-            ) : null}
-          </Card>
-
-          <Card title="触发关联信息区" size="small">
-            {builderScene ? (
-              (linkedRulesByScene.get(builderScene.id) ?? []).length > 0 ? (
-                <Space size={[8, 8]} wrap>
-                  {(linkedRulesByScene.get(builderScene.id) ?? []).map((rule) => (
-                    <Tag key={rule.id} color="processing">
-                      触发规则：{rule.name}
-                    </Tag>
-                  ))}
-                </Space>
-              ) : (
-                <Typography.Text type="secondary">当前场景未绑定规则触发。</Typography.Text>
-              )
-            ) : null}
-          </Card>
-
-          <Card title="执行方式与预览配置区" size="small">
-            <Space align="center" wrap>
-              <Typography.Text>当前执行方式：</Typography.Text>
-              <Tag color="blue">{builderScene ? executionLabel[builderScene.executionMode] : "-"}</Tag>
-              <Button size="small" disabled={!builderScene} onClick={() => (builderScene ? void openPreview(builderScene) : undefined)}>
-                打开预览确认
-              </Button>
-              <Popconfirm
-                title="确认触发悬浮按钮执行？"
-                onConfirm={() => (builderScene ? void triggerFloating(builderScene) : undefined)}
-                disabled={!builderScene}
-              >
-                <Button size="small" disabled={!builderScene}>
-                  悬浮按钮触发（新实例）
-                </Button>
-              </Popconfirm>
-            </Space>
-          </Card>
-
-          <Card title="发布检查" size="small">
-            <Alert
-              type={builderScene?.riskConfirmed ? "success" : "warning"}
-              showIcon
-              message={
-                builderScene?.riskConfirmed
-                  ? "风险确认已完成：保存后可直接发布当前对象，系统会自动完成最终检查。"
-                  : "风险确认未完成：自动化场景发布前需先完成责任确认，否则发布时会被阻断。"
-              }
-            />
-          </Card>
-
           <Card title="节点编排区" size="small">
-            <div style={{ display: "flex", gap: 12, alignItems: "stretch", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "stretch", overflowX: "auto" }}>
               <Card title="节点库" style={{ flex: "0 0 220px" }}>
                 <Space direction="vertical" style={{ width: "100%" }}>
                   {nodeLibrary.map((item) => (
@@ -559,7 +655,7 @@ export function JobScenesPage() {
                 ) : null}
               </Card>
 
-              <Card title="编排画布" style={{ flex: "1 1 680px", minWidth: 540 }}>
+              <Card title="编排画布" style={{ flex: "1 0 680px", minWidth: 540 }}>
                 {flowNodes.length === 0 ? (
                   <Alert type="warning" showIcon message="当前场景暂无节点，请先从左侧节点库添加。" style={{ marginBottom: 12 }} />
                 ) : null}
@@ -589,7 +685,7 @@ export function JobScenesPage() {
                 </Typography.Paragraph>
               </Card>
 
-              <Card title="节点属性" style={{ flex: "0 0 320px" }}>
+              <Card title="节点属性" style={{ flex: "0 0 320px", minWidth: 320 }}>
                 {!selectedNode ? (
                   <Typography.Text type="secondary">请先在画布中点击一个节点，再编辑节点属性。</Typography.Text>
                 ) : (
@@ -731,7 +827,10 @@ export function JobScenesPage() {
           <Card size="small" title="作业摘要">
             <Space wrap>
               <Tag>{previewScene?.name ?? "-"}</Tag>
-              <Tag color="blue">{previewScene ? executionLabel[previewScene.executionMode] : "-"}</Tag>
+              <Tag color="blue">
+                {previewScene ? getTriggerModeLabel(deriveTriggerMode(previewScene.executionMode)) : "-"}
+              </Tag>
+              <Tag>{previewScene ? getRunModeLabel(derivePreviewBeforeExecute(previewScene)) : "-"}</Tag>
               <Tag>字段总数 {previewRows.length}</Tag>
               <Tag color="processing">待写入 {previewSelectedKeys.length}</Tag>
               <Tag color={previewRows.some((item) => item.abnormal) ? "red" : "green"}>

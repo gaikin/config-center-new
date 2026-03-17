@@ -1,12 +1,18 @@
 import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import type { JobNodeDefinition, JobSceneDefinition, LifecycleState } from "../../types";
 
+export type TriggerMode = "AUTO" | "BUTTON";
+
 export type SceneForm = {
   name: string;
   pageResourceId: number;
   executionMode: JobSceneDefinition["executionMode"];
+  previewBeforeExecute: boolean;
+  floatingButtonEnabled?: boolean;
+  floatingButtonLabel?: string;
+  floatingButtonX?: number;
+  floatingButtonY?: number;
   status: LifecycleState;
-  nodeCount: number;
   manualDurationSec: number;
 };
 export type StatusFilter = "ALL" | LifecycleState;
@@ -52,11 +58,37 @@ export const statusColor: Record<LifecycleState, string> = {
 };
 
 export const executionLabel: Record<JobSceneDefinition["executionMode"], string> = {
-  AUTO_WITHOUT_PROMPT: "自动执行(无提示)",
-  AUTO_AFTER_PROMPT: "提示后自动",
-  PREVIEW_THEN_EXECUTE: "预览后执行",
-  FLOATING_BUTTON: "悬浮按钮"
+  AUTO_WITHOUT_PROMPT: "自动执行(静默)",
+  AUTO_AFTER_PROMPT: "自动执行",
+  PREVIEW_THEN_EXECUTE: "自动执行 + 预览确认",
+  FLOATING_BUTTON: "按钮触发"
 };
+
+export function deriveTriggerMode(executionMode: JobSceneDefinition["executionMode"]): TriggerMode {
+  return executionMode === "FLOATING_BUTTON" ? "BUTTON" : "AUTO";
+}
+
+export function derivePreviewBeforeExecute(scene: Pick<JobSceneDefinition, "executionMode" | "previewBeforeExecute">) {
+  if (typeof scene.previewBeforeExecute === "boolean") {
+    return scene.previewBeforeExecute;
+  }
+  return scene.executionMode === "PREVIEW_THEN_EXECUTE";
+}
+
+export function buildExecutionMode(triggerMode: TriggerMode, previewBeforeExecute: boolean): JobSceneDefinition["executionMode"] {
+  if (triggerMode === "BUTTON") {
+    return "FLOATING_BUTTON";
+  }
+  return previewBeforeExecute ? "PREVIEW_THEN_EXECUTE" : "AUTO_AFTER_PROMPT";
+}
+
+export function getTriggerModeLabel(triggerMode: TriggerMode) {
+  return triggerMode === "BUTTON" ? "按钮触发" : "自动执行";
+}
+
+export function getRunModeLabel(previewBeforeExecute: boolean) {
+  return previewBeforeExecute ? "预览确认" : "直接执行";
+}
 
 export const nodeTypeLabel: Record<JobNodeDefinition["nodeType"], string> = {
   page_get: "页面取值",

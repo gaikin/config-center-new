@@ -542,6 +542,11 @@ export const seedJobScenes: JobSceneDefinition[] = [
     pageResourceId: 1001,
     pageResourceName: "贷款申请主页面",
     executionMode: "PREVIEW_THEN_EXECUTE",
+    previewBeforeExecute: true,
+    floatingButtonEnabled: true,
+    floatingButtonLabel: "重新执行",
+    floatingButtonX: 86,
+    floatingButtonY: 78,
     status: "ACTIVE",
     currentVersion: 4,
     nodeCount: 5,
@@ -555,6 +560,11 @@ export const seedJobScenes: JobSceneDefinition[] = [
     pageResourceId: 1003,
     pageResourceName: "开户办理主页面",
     executionMode: "AUTO_AFTER_PROMPT",
+    previewBeforeExecute: false,
+    floatingButtonEnabled: false,
+    floatingButtonLabel: "重试回填",
+    floatingButtonX: 84,
+    floatingButtonY: 76,
     status: "DRAFT",
     currentVersion: 1,
     nodeCount: 3,
@@ -751,11 +761,11 @@ export const seedRuleConditions: RuleCondition[] = [
 ];
 
 export const seedPendingSummary: PublishPendingSummary = {
-  draftCount: 5,
+  draftCount: 6,
   expiringSoonCount: 1,
   validationFailedCount: 1,
   conflictCount: 0,
-  riskConfirmPendingCount: 1
+  riskConfirmPendingCount: 0
 };
 
 export const seedPendingItems: PublishPendingItem[] = [
@@ -766,7 +776,7 @@ export const seedPendingItems: PublishPendingItem[] = [
     resourceName: "开户证件信息同步",
     status: "DRAFT",
     ownerOrgId: "branch-south",
-    pendingType: "RISK_CONFIRM",
+    pendingType: "DRAFT",
     updatedAt: now()
   },
   {

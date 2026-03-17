@@ -414,16 +414,6 @@ function createValidationReport(pending: PublishPendingItem): ValidationReport {
       passed: hasManualDuration,
       detail: hasManualDuration ? `${scene.manualDurationSec} 秒` : "尚未配置人工基准时长"
     });
-
-    const needsRiskConfirm =
-      scene.executionMode === "AUTO_AFTER_PROMPT" || scene.executionMode === "AUTO_WITHOUT_PROMPT";
-    const riskPass = !needsRiskConfirm || scene.riskConfirmed;
-    items.push({
-      key: "risk_confirm",
-      label: "自动执行风险确认",
-      passed: riskPass,
-      detail: riskPass ? "已满足自动执行风险要求" : "自动执行场景尚未完成风险确认"
-    });
   }
 
   if (pending.resourceType === "INTERFACE") {
@@ -533,15 +523,9 @@ function createValidationReport(pending: PublishPendingItem): ValidationReport {
   return { pass, items };
 }
 
-function buildPublishRiskItems(pending: PublishPendingItem, report: ValidationReport) {
+function buildPublishRiskItems(report: ValidationReport) {
   const riskItems = new Set<string>();
 
-  if (pending.pendingType === "RISK_CONFIRM") {
-    riskItems.add("当前对象仍待完成风险确认，本次不会正式生效。");
-  }
-  if (report.items.some((item) => item.key === "risk_confirm" && !item.passed)) {
-    riskItems.add("自动执行场景尚未完成风险确认，请先补齐责任确认。");
-  }
   if (report.items.some((item) => item.key === "rule_conflict" && !item.passed)) {
     riskItems.add("当前规则与同页已生效规则存在优先级冲突，请先确认覆盖策略。");
   }
@@ -557,7 +541,7 @@ function toPublishValidationReport(pending: PublishPendingItem, report: Validati
     blockingCount,
     warningCount,
     impactSummary: `${pending.resourceName} 预计影响机构：${getOrgLabel(pending.ownerOrgId)}`,
-    riskItems: buildPublishRiskItems(pending, report)
+    riskItems: buildPublishRiskItems(report)
   };
 }
 

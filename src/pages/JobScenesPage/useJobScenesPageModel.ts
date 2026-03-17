@@ -19,9 +19,11 @@ import type {
   SaveValidationReport
 } from "../../types";
 import {
+  buildExecutionMode,
   buildFormValuesFromNode,
   buildFlowFromNodeRows,
   buildNodeConfigFromForm,
+  derivePreviewBeforeExecute,
   deriveOrderedNodeIds,
   executionLabel,
   FlowEdge,
@@ -37,6 +39,10 @@ import {
   statusColor
 } from "./jobScenesPageShared";
 import type { ReactFlowInstance } from "@xyflow/react";
+
+const DEFAULT_FLOATING_BUTTON_LABEL = "重新执行";
+const DEFAULT_FLOATING_BUTTON_X = 86;
+const DEFAULT_FLOATING_BUTTON_Y = 78;
 
 function toSceneDraftPayload(row: JobSceneDefinition): Omit<JobSceneDefinition, "updatedAt"> & { updatedAt?: string } {
   return {
@@ -115,7 +121,18 @@ export function useJobScenesPageModel() {
         configCenterService.listRules(),
         configCenterService.listListDatas()
       ]);
-      setRows(sceneData);
+      const sceneNodeCounts = await Promise.all(
+        sceneData.map(async (scene) => ({
+          sceneId: scene.id,
+          count: (await workflowService.listJobNodes(scene.id)).length
+        }))
+      );
+      setRows(
+        sceneData.map((scene) => ({
+          ...scene,
+          nodeCount: sceneNodeCounts.find((item) => item.sceneId === scene.id)?.count ?? 0
+        }))
+      );
       setResources(resourceData);
       setRules(ruleData);
       setListDatas(listDataRows);
@@ -152,11 +169,21 @@ export function useJobScenesPageModel() {
     return JSON.stringify({
       name: values.name ?? "",
       pageResourceId: values.pageResourceId ?? null,
-      executionMode: values.executionMode ?? "PREVIEW_THEN_EXECUTE",
+      executionMode: values.executionMode ?? "AUTO_AFTER_PROMPT",
+      previewBeforeExecute: values.previewBeforeExecute ?? false,
+      floatingButtonEnabled: values.floatingButtonEnabled ?? false,
+      floatingButtonLabel: values.floatingButtonLabel ?? "",
+      floatingButtonX: values.floatingButtonX ?? null,
+      floatingButtonY: values.floatingButtonY ?? null,
       status: values.status ?? "DRAFT",
-      nodeCount: values.nodeCount ?? 1,
       manualDurationSec: values.manualDurationSec ?? 1
     });
+  }
+
+  function updateSceneNodeCount(sceneId: number, nextCount: number) {
+    setRows((previous) => previous.map((item) => (item.id === sceneId ? { ...item, nodeCount: nextCount } : item)));
+    setBuilderScene((previous) => (previous && previous.id === sceneId ? { ...previous, nodeCount: nextCount } : previous));
+    setEditing((previous) => (previous && previous.id === sceneId ? { ...previous, nodeCount: nextCount } : previous));
   }
 
   function closeSceneModalDirectly() {
@@ -187,6 +214,7 @@ export function useJobScenesPageModel() {
     const flow = buildFlowFromNodeRows(nodes);
     setFlowNodes(flow.nodes);
     setFlowEdges(flow.edges);
+    updateSceneNodeCount(sceneId, nodes.length);
 
     if (selectedNodeId && !nodes.some((item) => String(item.id) === selectedNodeId)) {
       setSelectedNodeId(null);
@@ -197,7 +225,7 @@ export function useJobScenesPageModel() {
     const pickedExecutionMode: ExecutionMode =
       preset?.executionMode && ["AUTO_WITHOUT_PROMPT", "AUTO_AFTER_PROMPT", "PREVIEW_THEN_EXECUTE", "FLOATING_BUTTON"].includes(preset.executionMode)
         ? preset.executionMode
-        : "PREVIEW_THEN_EXECUTE";
+        : "AUTO_AFTER_PROMPT";
     const pickedPageId =
       typeof preset?.pageResourceId === "number" && resources.some((item) => item.id === preset.pageResourceId)
         ? preset.pageResourceId
@@ -206,8 +234,14 @@ export function useJobScenesPageModel() {
       name: preset?.name ?? "",
       pageResourceId: pickedPageId,
       executionMode: pickedExecutionMode,
+      previewBeforeExecute: derivePreviewBeforeExecute({
+        executionMode: pickedExecutionMode
+      }),
+      floatingButtonEnabled: pickedExecutionMode === "FLOATING_BUTTON",
+      floatingButtonLabel: DEFAULT_FLOATING_BUTTON_LABEL,
+      floatingButtonX: DEFAULT_FLOATING_BUTTON_X,
+      floatingButtonY: DEFAULT_FLOATING_BUTTON_Y,
       status: "DRAFT",
-      nodeCount: 3,
       manualDurationSec: 30
     };
     setEditing(null);
@@ -223,8 +257,12 @@ export function useJobScenesPageModel() {
       name: row.name,
       pageResourceId: row.pageResourceId,
       executionMode: row.executionMode,
+      previewBeforeExecute: derivePreviewBeforeExecute(row),
+      floatingButtonEnabled: row.floatingButtonEnabled ?? row.executionMode === "FLOATING_BUTTON",
+      floatingButtonLabel: row.floatingButtonLabel ?? DEFAULT_FLOATING_BUTTON_LABEL,
+      floatingButtonX: row.floatingButtonX ?? DEFAULT_FLOATING_BUTTON_X,
+      floatingButtonY: row.floatingButtonY ?? DEFAULT_FLOATING_BUTTON_Y,
       status: row.status,
-      nodeCount: row.nodeCount,
       manualDurationSec: row.manualDurationSec
     };
     setEditing(row);
@@ -245,8 +283,15 @@ export function useJobScenesPageModel() {
         id: editing?.id ?? -1,
         name: values.name ?? "",
         pageResourceId: values.pageResourceId ?? 0,
-        executionMode: values.executionMode ?? "PREVIEW_THEN_EXECUTE",
-        nodeCount: values.nodeCount ?? 0,
+        executionMode: values.executionMode ?? "AUTO_AFTER_PROMPT",
+        floatingButtonEnabled:
+          values.floatingButtonEnabled ??
+          editing?.floatingButtonEnabled ??
+          (values.executionMode === "FLOATING_BUTTON"),
+        floatingButtonLabel: values.floatingButtonLabel ?? editing?.floatingButtonLabel ?? DEFAULT_FLOATING_BUTTON_LABEL,
+        floatingButtonX: values.floatingButtonX ?? editing?.floatingButtonX ?? DEFAULT_FLOATING_BUTTON_X,
+        floatingButtonY: values.floatingButtonY ?? editing?.floatingButtonY ?? DEFAULT_FLOATING_BUTTON_Y,
+        nodeCount: editing?.nodeCount ?? 0,
         manualDurationSec: values.manualDurationSec ?? 0,
         riskConfirmed: editing?.riskConfirmed ?? false
       },
@@ -264,11 +309,26 @@ export function useJobScenesPageModel() {
       return;
     }
     const sceneId = editing?.id ?? Date.now() + Math.floor(Math.random() * 1000);
+    const persistedNodeCount = rows.find((item) => item.id === sceneId)?.nodeCount ?? editing?.nodeCount ?? 0;
+    const nextExecutionMode = buildExecutionMode(
+      values.executionMode === "FLOATING_BUTTON" ? "BUTTON" : "AUTO",
+      Boolean(values.previewBeforeExecute)
+    );
     const result = await configCenterService.saveJobSceneDraft({
       id: sceneId,
       ...values,
+      executionMode: nextExecutionMode,
+      previewBeforeExecute: Boolean(values.previewBeforeExecute),
+      floatingButtonEnabled:
+        values.floatingButtonEnabled === undefined
+          ? nextExecutionMode === "FLOATING_BUTTON"
+          : Boolean(values.floatingButtonEnabled),
+      nodeCount: persistedNodeCount,
       currentVersion: editing?.currentVersion ?? 1,
       pageResourceName: resource.name,
+      floatingButtonLabel: values.floatingButtonLabel?.trim() || DEFAULT_FLOATING_BUTTON_LABEL,
+      floatingButtonX: typeof values.floatingButtonX === "number" ? values.floatingButtonX : DEFAULT_FLOATING_BUTTON_X,
+      floatingButtonY: typeof values.floatingButtonY === "number" ? values.floatingButtonY : DEFAULT_FLOATING_BUTTON_Y,
       riskConfirmed: editing?.riskConfirmed ?? false
     });
     setSceneSaveValidationReport(result.report);

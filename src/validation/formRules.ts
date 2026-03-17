@@ -405,7 +405,20 @@ export function validateInterfaceDraftPayload(
 }
 
 export function validateJobSceneDraftPayload(
-  payload: Pick<JobSceneDefinition, "id" | "name" | "pageResourceId" | "executionMode" | "nodeCount" | "manualDurationSec" | "riskConfirmed">,
+  payload: Pick<
+    JobSceneDefinition,
+    | "id"
+    | "name"
+    | "pageResourceId"
+    | "executionMode"
+    | "floatingButtonLabel"
+    | "floatingButtonEnabled"
+    | "floatingButtonX"
+    | "floatingButtonY"
+    | "nodeCount"
+    | "manualDurationSec"
+    | "riskConfirmed"
+  >,
   existingScenes: JobSceneDefinition[]
 ) {
   const fieldIssues: FieldValidationIssue[] = [];
@@ -417,13 +430,52 @@ export function validateJobSceneDraftPayload(
   if (!payload.pageResourceId) {
     fieldIssues.push(createFieldIssue({ section: "basic", field: "pageResourceId", label: "页面资源", message: "请选择页面资源" }));
   }
-  const nodeCountError = validatePositiveInteger(payload.nodeCount, 1);
-  if (nodeCountError) {
-    fieldIssues.push(createFieldIssue({ section: "basic", field: "nodeCount", label: "节点数", message: nodeCountError }));
-  }
   const durationError = validatePositiveInteger(payload.manualDurationSec, 1);
   if (durationError) {
     fieldIssues.push(createFieldIssue({ section: "basic", field: "manualDurationSec", label: "人工基准时长", message: durationError }));
+  }
+  const needsFloatingButtonConfig = payload.executionMode === "FLOATING_BUTTON" || Boolean(payload.floatingButtonEnabled);
+  if (needsFloatingButtonConfig) {
+    if (isBlank(payload.floatingButtonLabel)) {
+      fieldIssues.push(
+        createFieldIssue({
+          section: "basic",
+          field: "floatingButtonLabel",
+          label: "悬浮按钮文案",
+          message: "请输入悬浮按钮文案"
+        })
+      );
+    }
+    if (
+      typeof payload.floatingButtonX !== "number" ||
+      Number.isNaN(payload.floatingButtonX) ||
+      payload.floatingButtonX < 0 ||
+      payload.floatingButtonX > 100
+    ) {
+      fieldIssues.push(
+        createFieldIssue({
+          section: "basic",
+          field: "floatingButtonX",
+          label: "悬浮按钮坐标X",
+          message: "请输入 0 到 100 的百分比坐标"
+        })
+      );
+    }
+    if (
+      typeof payload.floatingButtonY !== "number" ||
+      Number.isNaN(payload.floatingButtonY) ||
+      payload.floatingButtonY < 0 ||
+      payload.floatingButtonY > 100
+    ) {
+      fieldIssues.push(
+        createFieldIssue({
+          section: "basic",
+          field: "floatingButtonY",
+          label: "悬浮按钮坐标Y",
+          message: "请输入 0 到 100 的百分比坐标"
+        })
+      );
+    }
   }
 
   const duplicated = existingScenes.some((item) => item.name === payload.name && item.id !== payload.id);
@@ -436,19 +488,6 @@ export function validateJobSceneDraftPayload(
         message: `已存在同名作业场景：${payload.name}`,
         objectName: payload.name,
         action: "请更换场景名称后再保存。"
-      })
-    );
-  }
-
-  if ((payload.executionMode === "AUTO_AFTER_PROMPT" || payload.executionMode === "AUTO_WITHOUT_PROMPT") && !payload.riskConfirmed) {
-    objectIssues.push(
-      createObjectIssue({
-        section: "basic",
-        objectType: "JOB_SCENE",
-        title: "自动执行风险待确认",
-        message: "当前场景已配置为自动执行，但风险责任尚未确认。",
-        level: "warning",
-        action: "可以先保存草稿，发布前需完成风险确认。"
       })
     );
   }

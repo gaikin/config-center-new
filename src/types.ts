@@ -288,6 +288,11 @@ export interface JobSceneDefinition {
   pageResourceId: number;
   pageResourceName: string;
   executionMode: ExecutionMode;
+  previewBeforeExecute?: boolean;
+  floatingButtonEnabled?: boolean;
+  floatingButtonLabel?: string;
+  floatingButtonX?: number;
+  floatingButtonY?: number;
   status: LifecycleState;
   currentVersion: number;
   nodeCount: number;

@@ -109,14 +109,13 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
   const watchedRuleScope = Form.useWatch("ruleScope", ruleForm);
   const watchedPageResourceId = Form.useWatch("pageResourceId", ruleForm);
   const [ruleSnapshot, setRuleSnapshot] = useState("");
-  const [logicOpen, setLogicOpen] = useState(false);
   const [currentRule, setCurrentRule] = useState<RuleDefinition | null>(null);
+  const [logicLoading, setLogicLoading] = useState(false);
   const [globalLogicType, setGlobalLogicType] = useState<RuleLogicType>("AND");
   const [conditionsDraft, setConditionsDraft] = useState<FlatConditionDraft[]>([buildDefaultCondition()]);
   const [listLookupDrafts, setListLookupDrafts] = useState<RuleListLookupCondition[]>([]);
   const [selectedOperand, setSelectedOperand] = useState<SelectedOperand | null>(null);
   const [savingQuery, setSavingQuery] = useState(false);
-  const [logicSnapshot, setLogicSnapshot] = useState("");
   const [saveValidationReport, setSaveValidationReport] = useState<SaveValidationReport | null>(null);
   const [logicValidationIssues, setLogicValidationIssues] = useState<FieldValidationIssue[]>([]);
   const [publishNotice, setPublishNotice] = useState<PublishNotice | null>(null);
@@ -289,20 +288,10 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       ownerOrgId: values.ownerOrgId ?? ""
     });
   }
-  function buildLogicSnapshot(
-    nextLogicType: RuleLogicType,
-    nextConditions: FlatConditionDraft[],
-    nextListLookupConditions: RuleListLookupCondition[]
-  ) {
-    return JSON.stringify({
-      globalLogicType: nextLogicType,
-      conditions: nextConditions,
-      listLookupConditions: nextListLookupConditions
-    });
-  }
   function closeRuleModalDirectly() {
     setOpen(false);
     setEditing(null);
+    setCurrentRule(null);
     setReuseSourceRule(null);
     setRuleSnapshot("");
     setSaveValidationReport(null);
@@ -321,26 +310,6 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
     }
     closeRuleModalDirectly();
   }
-  function closeLogicDrawer() {
-    const current = buildLogicSnapshot(globalLogicType, conditionsDraft, listLookupDrafts);
-    if (logicSnapshot && current !== logicSnapshot) {
-      Modal.confirm({
-        title: "条件逻辑尚未保存",
-        content: "关闭后将丢失当前条件编辑结果，是否继续？",
-        okText: "仍然关闭",
-        cancelText: "继续编辑",
-        onOk: () => {
-          setLogicOpen(false);
-          setLogicSnapshot("");
-          setLogicValidationIssues([]);
-        }
-      });
-      return;
-    }
-    setLogicOpen(false);
-    setLogicSnapshot("");
-    setLogicValidationIssues([]);
-  }
   async function loadLogic(rule: RuleDefinition) {
     const [groupData, conditionData] = await Promise.all([
       workflowService.listRuleConditionGroups(rule.id),
@@ -356,7 +325,6 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
     setConditionsDraft(safeConditions);
     setListLookupDrafts(nextListLookupConditions);
     setSelectedOperand({ conditionId: safeConditions[0].id, side: "left" });
-    setLogicSnapshot(buildLogicSnapshot(rootGroup?.logicType ?? "AND", safeConditions, nextListLookupConditions));
   }
   function openCreate() {
     const presetPageId =
@@ -393,6 +361,7 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       ownerOrgId: presetTemplate?.ownerOrgId ?? "branch-east"
     };
     setEditing(null);
+    setCurrentRule(null);
     setReuseSourceRule(presetTemplate);
     setPublishNotice(null);
     ruleForm.setFieldsValue(values);
@@ -456,12 +425,22 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       ownerOrgId: row.ownerOrgId
     };
     setEditing(row);
+    setCurrentRule(row);
     setReuseSourceRule(null);
     setPublishNotice(null);
     ruleForm.setFieldsValue(values);
     setRuleSnapshot(buildRuleSnapshot(values));
     setSaveValidationReport(null);
     setOpen(true);
+    setLogicValidationIssues([]);
+    setLogicLoading(true);
+    void loadLogic(row)
+      .catch((error) => {
+        msgApi.error(error instanceof Error ? error.message : "条件配置加载失败");
+      })
+      .finally(() => {
+        setLogicLoading(false);
+      });
   }
   const liveSaveValidationReport = useMemo(() => {
     if (!open) {
@@ -631,12 +610,14 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
   }
   async function openLogic(row: RuleDefinition) {
     setCurrentRule(row);
-    setLogicOpen(true);
     setLogicValidationIssues([]);
+    setLogicLoading(true);
     try {
       await loadLogic(row);
     } catch (error) {
       msgApi.error(error instanceof Error ? error.message : "条件配置加载失败");
+    } finally {
+      setLogicLoading(false);
     }
   }
   function updateCondition(conditionId: string, updater: (previous: FlatConditionDraft) => FlatConditionDraft) {
@@ -934,7 +915,6 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
       }
       msgApi.success("条件逻辑已保存");
       setLogicValidationIssues([]);
-      setLogicSnapshot(buildLogicSnapshot(globalLogicType, conditionsDraft, listLookupDrafts));
       await loadLogic(currentRule);
     } catch (error) {
       msgApi.error(error instanceof Error ? error.message : "条件逻辑保存失败");
@@ -1007,11 +987,11 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
     rows: mode === "TEMPLATE" ? templateRows : pageRuleRows,
     templates: templateRows,
     resources, scenes, preprocessors, interfaces, listDatas,
-    open, editing, ruleForm, logicOpen, currentRule, globalLogicType, setGlobalLogicType,
+    open, editing, ruleForm, currentRule, logicLoading, globalLogicType, setGlobalLogicType,
     pageFieldOptions,
     promptVariableOptions,
     conditionsDraft, listLookupDrafts, selectedOperand, setSelectedOperand, savingQuery,
-    closeRuleModal, closeLogicDrawer, openCreate, applyTemplate, openEdit, submitRule, switchStatus, openLogic,
+    closeRuleModal, openCreate, applyTemplate, openEdit, submitRule, switchStatus, openLogic,
     addCondition, removeCondition, addListLookupCondition, updateListLookupCondition, removeListLookupCondition,
     selectedContext, changeSelectedSourceType,
     addPreprocessorBinding, updatePreprocessorBinding, removePreprocessorBinding,
