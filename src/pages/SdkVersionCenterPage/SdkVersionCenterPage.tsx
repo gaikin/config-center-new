@@ -43,6 +43,9 @@ export function SdkVersionCenterPage() {
   const [platformConfig, setPlatformConfig] = useState<PlatformRuntimeConfig | null>(null);
   const [siteFilter, setSiteFilter] = useState<string>("ALL");
   const [regionFilter, setRegionFilter] = useState<string>("ALL");
+  const [focusedPolicyId, setFocusedPolicyId] = useState<number>();
+  const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(6);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<MenuSdkPolicy | null>(null);
   const [form] = Form.useForm<PolicyForm>();
@@ -137,13 +140,40 @@ export function SdkVersionCenterPage() {
   useEffect(() => {
     const siteId = searchParams.get("siteId");
     const regionId = searchParams.get("regionId");
+    const menuIdRaw = searchParams.get("menuId");
+    const menuId = menuIdRaw ? Number(menuIdRaw) : undefined;
+
     if (siteId) {
       setSiteFilter(siteId);
     }
     if (regionId) {
       setRegionFilter(regionId);
     }
-  }, [searchParams]);
+    if (!menuId || Number.isNaN(menuId)) {
+      setFocusedPolicyId(undefined);
+      return;
+    }
+    const matchedPolicy = policies.find((policy) => policy.menuId === menuId);
+    setFocusedPolicyId(matchedPolicy?.id);
+    if (matchedPolicy && !siteId) {
+      setSiteFilter(String(matchedPolicy.siteId));
+    }
+    if (matchedPolicy && !regionId) {
+      setRegionFilter(String(matchedPolicy.regionId));
+    }
+  }, [policies, searchParams]);
+
+  useEffect(() => {
+    if (!focusedPolicyId) {
+      setTablePage(1);
+      return;
+    }
+    const index = filteredPolicies.findIndex((item) => item.id === focusedPolicyId);
+    if (index < 0) {
+      return;
+    }
+    setTablePage(Math.floor(index / tablePageSize) + 1);
+  }, [filteredPolicies, focusedPolicyId, tablePageSize]);
 
   function openCreate() {
     const defaultMenu = filteredMenus[0] ?? menus[0];
@@ -307,12 +337,35 @@ export function SdkVersionCenterPage() {
           rowKey="id"
           loading={loading}
           dataSource={filteredPolicies}
-          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
+          onRow={(row) =>
+            row.id === focusedPolicyId
+              ? {
+                  style: { backgroundColor: "#fffbe6" }
+                }
+              : {}
+          }
+          pagination={{
+            current: tablePage,
+            pageSize: tablePageSize,
+            showSizeChanger: true,
+            pageSizeOptions: ["6", "10", "20"],
+            onChange: (page) => setTablePage(page),
+            onShowSizeChange: (_, size) => {
+              const nextPage = size > 0 ? Math.max(1, Math.ceil(((tablePage - 1) * tablePageSize + 1) / size)) : 1;
+              setTablePageSize(size);
+              setTablePage(nextPage);
+            }
+          }}
           columns={[
             {
               title: "菜单",
               width: 220,
-              render: (_, row) => menuLabelMap[row.menuId] ?? "未识别菜单"
+              render: (_, row) => (
+                <Space size={6}>
+                  <Typography.Text>{menuLabelMap[row.menuId] ?? "未识别菜单"}</Typography.Text>
+                  {row.id === focusedPolicyId ? <Tag color="gold">定位目标</Tag> : null}
+                </Space>
+              )
             },
             {
               title: "提示灰度版本",
