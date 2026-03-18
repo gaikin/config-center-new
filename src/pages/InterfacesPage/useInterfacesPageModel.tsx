@@ -1,4 +1,4 @@
-import { Button, Form, Grid, Input, Select, Switch, message } from "antd";
+import { Button, Form, Grid, Input, Select, Space, Switch, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { getOrgLabel } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
@@ -7,7 +7,6 @@ import { createFieldIssue, tryParseJson, validateInterfaceDraftPayload } from ".
 import type {
   ApiInputParam,
   ApiOutputParam,
-  ApiValueSourceType,
   ApiValueType,
   FieldValidationIssue,
   InterfaceDefinition,
@@ -19,6 +18,7 @@ import {
   buildMockResponseBody,
   DebugEnv,
   DebugResult,
+  defaultInputValidationConfig,
   defaultInputParam,
   defaultOutputParam,
   emptyInputConfig,
@@ -29,11 +29,12 @@ import {
   normalizeInputConfig,
   normalizeOutputConfig,
   parseOutputFromSampleObject,
+  regexModeOptions,
+  regexTemplateOptions,
   statusColor,
   StatusFilter,
   tabLabels,
   valueTypeOptions,
-  sourceTypeOptions,
   ApiRegisterForm
 } from "./interfacesPageShared";
 
@@ -66,9 +67,6 @@ export function useInterfacesPageModel() {
   const [debugPayload, setDebugPayload] = useState("{}");
   const [debugResult, setDebugResult] = useState<DebugResult | null>(null);
 
-  const [propertyOpen, setPropertyOpen] = useState(false);
-  const [propertyTargetId, setPropertyTargetId] = useState<string | null>(null);
-  const [propertyRows, setPropertyRows] = useState<ApiOutputParam[]>([]);
   const [saveValidationReport, setSaveValidationReport] = useState<SaveValidationReport | null>(null);
   const [inputValidationIssues, setInputValidationIssues] = useState<FieldValidationIssue[]>([]);
   const [outputValidationIssues, setOutputValidationIssues] = useState<FieldValidationIssue[]>([]);
@@ -247,6 +245,27 @@ export function useInterfacesPageModel() {
     }));
   }
 
+  function updateInputValidation(
+    tab: InputTabKey,
+    rowId: string,
+    patch: Partial<NonNullable<ApiInputParam["validationConfig"]>>
+  ) {
+    setInputConfig((prev) => ({
+      ...prev,
+      [tab]: prev[tab].map((item) =>
+        item.id === rowId
+          ? {
+              ...item,
+              validationConfig: {
+                ...defaultInputValidationConfig(item.validationConfig),
+                ...patch
+              }
+            }
+          : item
+      )
+    }));
+  }
+
   function removeInputRow(tab: InputTabKey, rowId: string) {
     setInputConfig((prev) => ({
       ...prev,
@@ -266,17 +285,14 @@ export function useInterfacesPageModel() {
       const generated = flattenBodyParams(parsed);
 
       setInputConfig((prev) => {
-        const merged = new Map(prev.body.map((item) => [item.name, item]));
-        for (const item of generated) {
-          merged.set(item.name, item);
-        }
         return {
           ...prev,
-          body: Array.from(merged.values())
+          // Body 参数结构以 JSON 为唯一来源：每次解析都全量重建。
+          body: generated
         };
       });
 
-      msgApi.success("Body JSON 解析成功（同名字段已按后者覆盖）");
+      msgApi.success(generated.length > 0 ? `已按 JSON 重建 ${generated.length} 个字段` : "JSON 解析成功，未识别到可生成字段");
       setInputValidationIssues([]);
     } catch {
       setInputValidationIssues([
@@ -304,27 +320,86 @@ export function useInterfacesPageModel() {
     setOutputConfig((prev) => prev.filter((item) => item.id !== rowId));
   }
 
-  function openOutputProperty(row: ApiOutputParam) {
-    if (row.valueType !== "OBJECT" && row.valueType !== "ARRAY") {
-      msgApi.warning("只有对象或数组类型支持细化属性");
-      return;
-    }
-    setPropertyTargetId(row.id);
-    setPropertyRows((row.children ?? []).map((item) => defaultOutputParam(item)));
-    setPropertyOpen(true);
+  function updateOutputChildrenByParent(
+    parentId: string,
+    updater: (children: ApiOutputParam[]) => ApiOutputParam[]
+  ) {
+    const walk = (rows: ApiOutputParam[]): ApiOutputParam[] =>
+      rows.map((row) => {
+        if (row.id === parentId) {
+          return {
+            ...row,
+            children: updater(row.children ?? [])
+          };
+        }
+        if (Array.isArray(row.children) && row.children.length > 0) {
+          return {
+            ...row,
+            children: walk(row.children)
+          };
+        }
+        return row;
+      });
+
+    setOutputConfig((prev) => walk(prev));
   }
 
-  function saveOutputProperty() {
-    if (!propertyTargetId) {
-      setPropertyOpen(false);
-      return;
-    }
+  function addOutputChildRow(parentId: string) {
+    updateOutputChildrenByParent(parentId, (children) => [...children, defaultOutputParam()]);
+  }
 
-    setOutputConfig((prev) =>
-      prev.map((item) => (item.id === propertyTargetId ? { ...item, children: propertyRows } : item))
+  function updateOutputChildRow(parentId: string, rowId: string, patch: Partial<ApiOutputParam>) {
+    updateOutputChildrenByParent(parentId, (children) =>
+      children.map((item) => (item.id === rowId ? { ...item, ...patch } : item))
     );
-    setPropertyOpen(false);
-    msgApi.success("出参属性已更新");
+  }
+
+  function removeOutputChildRow(parentId: string, rowId: string) {
+    updateOutputChildrenByParent(parentId, (children) => children.filter((item) => item.id !== rowId));
+  }
+
+  function collectManualOutputPathMap(
+    rows: ApiOutputParam[],
+    parentKey = "",
+    acc: Map<string, string> = new Map<string, string>()
+  ): Map<string, string> {
+    for (const row of rows) {
+      const key = parentKey ? `${parentKey}.${row.name}` : row.name;
+      if (key && row.pathMode === "MANUAL" && row.path.trim()) {
+        acc.set(key, row.path.trim());
+      }
+      if (Array.isArray(row.children) && row.children.length > 0) {
+        collectManualOutputPathMap(row.children, key, acc);
+      }
+    }
+    return acc;
+  }
+
+  function applyManualOutputPaths(
+    rows: ApiOutputParam[],
+    manualPathMap: Map<string, string>,
+    parentKey = ""
+  ): ApiOutputParam[] {
+    return rows.map((row) => {
+      const key = parentKey ? `${parentKey}.${row.name}` : row.name;
+      const children = Array.isArray(row.children) && row.children.length > 0
+        ? applyManualOutputPaths(row.children, manualPathMap, key)
+        : [];
+      const manualPath = key ? manualPathMap.get(key) : undefined;
+      if (manualPath) {
+        return {
+          ...row,
+          path: manualPath,
+          pathMode: "MANUAL",
+          children
+        };
+      }
+      return {
+        ...row,
+        pathMode: "AUTO",
+        children
+      };
+    });
   }
 
   function parseOutputSample() {
@@ -341,7 +416,10 @@ export function useInterfacesPageModel() {
           ? (parsed as Record<string, unknown>).data
           : parsed;
       const generated = parseOutputFromSampleObject(base, "$.data");
-      setOutputConfig(generated);
+      setOutputConfig((prev) => {
+        const manualPathMap = collectManualOutputPathMap(prev);
+        return applyManualOutputPaths(generated, manualPathMap);
+      });
       setOutputValidationIssues([]);
       msgApi.success("出参 JSON 解析成功");
     } catch {
@@ -525,82 +603,147 @@ export function useInterfacesPageModel() {
     msgApi.success("调试执行完成");
   }
 
-  const inputColumns = (tab: InputTabKey) => [
-    {
-      title: "参数名",
-      width: 180,
-      render: (_: unknown, row: ApiInputParam) => (
-        <Input value={row.name} onChange={(event) => updateInputRow(tab, row.id, { name: event.target.value })} />
-      )
-    },
-    {
-      title: "描述",
-      width: 160,
-      render: (_: unknown, row: ApiInputParam) => (
-        <Input
-          value={row.description}
-          onChange={(event) => updateInputRow(tab, row.id, { description: event.target.value })}
-        />
-      )
-    },
-    {
-      title: "类型",
-      width: 120,
-      render: (_: unknown, row: ApiInputParam) => (
-        <Select
-          value={row.valueType}
-          options={valueTypeOptions}
-          onChange={(value) => updateInputRow(tab, row.id, { valueType: value as ApiValueType })}
-        />
-      )
-    },
-    {
-      title: "来源",
-      width: 130,
-      render: (_: unknown, row: ApiInputParam) => (
-        <Select
-          value={row.sourceType}
-          options={sourceTypeOptions}
-          onChange={(value) => updateInputRow(tab, row.id, { sourceType: value as ApiValueSourceType })}
-        />
-      )
-    },
-    {
-      title: "值/映射",
-      width: 220,
-      render: (_: unknown, row: ApiInputParam) => (
-        <Input
-          value={row.sourceValue}
-          onChange={(event) => updateInputRow(tab, row.id, { sourceValue: event.target.value })}
-          placeholder="如 customer_id / $.data.score"
-        />
-      )
-    },
-    {
-      title: "必填",
-      width: 80,
-      render: (_: unknown, row: ApiInputParam) => (
-        <Switch checked={row.required} onChange={(checked) => updateInputRow(tab, row.id, { required: checked })} />
-      )
-    },
-    {
-      title: "操作",
-      width: 80,
-      render: (_: unknown, row: ApiInputParam) => (
-        <Button danger size="small" onClick={() => removeInputRow(tab, row.id)}>
-          删除
-        </Button>
-      )
+  const inputColumns = (tab: InputTabKey) => {
+    const renderValidationConfig = (row: ApiInputParam) => {
+      const config = defaultInputValidationConfig(row.validationConfig);
+      return (
+        <Space direction="vertical" size={6} style={{ width: "100%" }}>
+          <Space size={8} wrap>
+            <Switch
+              checked={config.required}
+              checkedChildren="必填"
+              unCheckedChildren="可选"
+              onChange={(checked) => updateInputValidation(tab, row.id, { required: checked })}
+            />
+            <Select
+              style={{ minWidth: 120 }}
+              value={config.regexMode}
+              options={regexModeOptions}
+              onChange={(value) =>
+                updateInputValidation(tab, row.id, {
+                  regexMode: value,
+                  regexTemplateKey: value === "TEMPLATE" ? config.regexTemplateKey : undefined,
+                  regexPattern: value === "CUSTOM" ? config.regexPattern : "",
+                  regexErrorMessage: value === "CUSTOM" ? config.regexErrorMessage : ""
+                })
+              }
+            />
+          </Space>
+          {config.regexMode === "TEMPLATE" ? (
+            <Select
+              value={config.regexTemplateKey}
+              placeholder="选择正则模板"
+              options={regexTemplateOptions.map((item) => ({
+                label: `${item.label} / ${item.pattern}`,
+                value: item.value
+              }))}
+              onChange={(value) => updateInputValidation(tab, row.id, { regexTemplateKey: value })}
+            />
+          ) : null}
+          {config.regexMode === "CUSTOM" ? (
+            <Input
+              value={config.regexPattern}
+              placeholder="输入正则表达式，如 ^[A-Z0-9_]+$"
+              onChange={(event) =>
+                updateInputValidation(tab, row.id, {
+                  regexPattern: event.target.value
+                })
+              }
+            />
+          ) : null}
+        </Space>
+      );
+    };
+
+    if (tab === "body") {
+      return [
+        {
+          title: "字段名",
+          width: 180,
+          render: (_: unknown, row: ApiInputParam) => row.name || "-"
+        },
+        {
+          title: "路径",
+          width: 220,
+          render: (_: unknown, row: ApiInputParam) => row.name || "-"
+        },
+        {
+          title: "类型",
+          width: 120,
+          render: (_: unknown, row: ApiInputParam) =>
+            valueTypeOptions.find((option) => option.value === row.valueType)?.label ?? row.valueType
+        },
+        {
+          title: "校验规则",
+          width: 330,
+          render: (_: unknown, row: ApiInputParam) => renderValidationConfig(row)
+        },
+        {
+          title: "说明",
+          width: 180,
+          render: (_: unknown, row: ApiInputParam) => (
+            <Input
+              value={row.description}
+              onChange={(event) => updateInputRow(tab, row.id, { description: event.target.value })}
+            />
+          )
+        }
+      ];
     }
-  ];
+
+    return [
+      {
+        title: "参数名",
+        width: 180,
+        render: (_: unknown, row: ApiInputParam) => (
+          <Input value={row.name} onChange={(event) => updateInputRow(tab, row.id, { name: event.target.value })} />
+        )
+      },
+      {
+        title: "描述",
+        width: 160,
+        render: (_: unknown, row: ApiInputParam) => (
+          <Input
+            value={row.description}
+            onChange={(event) => updateInputRow(tab, row.id, { description: event.target.value })}
+          />
+        )
+      },
+      {
+        title: "类型",
+        width: 120,
+        render: (_: unknown, row: ApiInputParam) => (
+          <Select
+            value={row.valueType}
+            options={valueTypeOptions}
+            onChange={(value) => updateInputRow(tab, row.id, { valueType: value as ApiValueType })}
+          />
+        )
+      },
+      {
+        title: "校验规则",
+        width: 330,
+        render: (_: unknown, row: ApiInputParam) => renderValidationConfig(row)
+      },
+      {
+        title: "操作",
+        width: 80,
+        render: (_: unknown, row: ApiInputParam) => (
+          <Button danger size="small" onClick={() => removeInputRow(tab, row.id)}>
+            删除
+          </Button>
+        )
+      }
+    ];
+  };
 
   return {
     drawerWidth, loading, rows, statusFilter, setStatusFilter, drawerOpen, setDrawerOpen, editing, inputTab, setInputTab,
     inputConfig, outputConfig, outputSampleJson, setOutputSampleJson, debugOpen, setDebugOpen, debugTarget, debugEnv, setDebugEnv,
-    debugPayload, setDebugPayload, debugResult, propertyOpen, setPropertyOpen, propertyRows, setPropertyRows, form, holder,
+    debugPayload, setDebugPayload, debugResult, form, holder,
     filteredRows, openCreate, openEdit, openClone, closeDrawer, addInputRow, updateInputRow, removeInputRow, parseBodyTemplate, addOutputRow,
-    updateOutputRow, removeOutputRow, openOutputProperty, saveOutputProperty, parseOutputSample, submit, switchStatus, openDebug, openDebugDraft,
-    runDebug, inputColumns, defaultOutputParam, valueTypeOptions, tabLabels, statusColor,
+    updateOutputRow, removeOutputRow, addOutputChildRow, updateOutputChildRow, removeOutputChildRow, parseOutputSample, submit, switchStatus, openDebug, openDebugDraft,
+    runDebug, inputColumns, valueTypeOptions, tabLabels, statusColor,
     saveValidationReport: activeSaveValidationReport,
     inputValidationIssues,
     outputValidationIssues: [...outputValidationIssues, ...liveOutputSampleIssues],

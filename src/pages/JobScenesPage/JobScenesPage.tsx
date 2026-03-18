@@ -2,15 +2,19 @@ import {
   Alert,
   Button,
   Card,
+  Col,
   Drawer,
+  Dropdown,
   Form,
   Input,
   InputNumber,
   Modal,
   Popconfirm,
+  Row,
   Segmented,
   Select,
   Space,
+  Statistic,
   Switch,
   Table,
   Tag,
@@ -18,16 +22,18 @@ import {
   Typography,
   message
 } from "antd";
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, EyeOutlined, InfoCircleOutlined, MoreOutlined, PartitionOutlined, PlusOutlined } from "@ant-design/icons";
+import type { MenuProps } from "antd";
 import { Background, Controls, MiniMap, ReactFlow, ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import styled from "styled-components";
 import { EffectiveConfirmModal } from "../../components/EffectiveConfirmModal";
 import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
 import { ValidationReportPanel } from "../../components/ValidationReportPanel";
 import { EffectiveScopeMode, getEffectiveActionMeta, getEffectivePermissionBlockedMessage, getPublishValidationByResource } from "../../effectiveFlow";
-import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
+import { lifecycleLabelMap } from "../../enumLabels";
 import { orgOptions } from "../../orgOptions";
 import { useMockSession } from "../../session/mockSession";
 import { useJobScenesPageModel } from "./useJobScenesPageModel";
@@ -54,8 +60,48 @@ const DEFAULT_FLOATING_BUTTON_LABEL = "重新执行";
 const DEFAULT_FLOATING_BUTTON_X = 86;
 const DEFAULT_FLOATING_BUTTON_Y = 78;
 
+const PageHeader = styled.div`
+  margin-bottom: var(--space-16);
+`;
+
+const SummaryCard = styled(Card)<{ $accent: string }>`
+  height: 100%;
+
+  &::before {
+    content: "";
+    display: block;
+    height: 4px;
+    background: ${({ $accent }) => $accent};
+  }
+
+  .ant-card-body {
+    padding-top: 14px;
+  }
+`;
+
+const SceneTypeCard = styled(Card)`
+  margin-bottom: 12px;
+`;
+
+const ScenePresetCard = styled(Card)`
+  width: 320px;
+`;
+
+const ToolbarCard = styled(Card)`
+  margin-bottom: 12px;
+`;
+
+const ActionBar = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
 export function JobScenesPage() {
   const navigate = useNavigate();
+  const [keyword, setKeyword] = useState("");
   const {
     holder,
     statusFilter,
@@ -173,12 +219,38 @@ export function JobScenesPage() {
     }
     return filteredRows.filter((item) => item.pageResourceId === pageResourceFilter);
   }, [filteredRows, hasPageFilter, pageResourceFilter]);
+  const keywordValue = keyword.trim().toLowerCase();
+  const searchedRows = useMemo(() => {
+    if (!keywordValue) {
+      return visibleRows;
+    }
+    return visibleRows.filter((item) => {
+      return item.name.toLowerCase().includes(keywordValue) || item.pageResourceName.toLowerCase().includes(keywordValue);
+    });
+  }, [keywordValue, visibleRows]);
+  const sceneSummary = useMemo(() => {
+    const total = visibleRows.length;
+    const draft = visibleRows.filter((item) => item.status === "DRAFT").length;
+    const active = visibleRows.filter((item) => item.status === "ACTIVE").length;
+    const disabled = visibleRows.filter((item) => item.status === "DISABLED").length;
+    return { total, draft, active, disabled };
+  }, [visibleRows]);
   const watchedExecutionMode = Form.useWatch("executionMode", form) as ExecutionMode | undefined;
   const watchedPreviewBeforeExecute = Form.useWatch("previewBeforeExecute", form) as boolean | undefined;
   const watchedFloatingButtonEnabled = Form.useWatch("floatingButtonEnabled", form) as boolean | undefined;
   const selectedTriggerMode: TriggerMode = watchedExecutionMode ? deriveTriggerMode(watchedExecutionMode) : "AUTO";
   const selectedPreviewBeforeExecute = Boolean(watchedPreviewBeforeExecute);
   const floatingRetriggerEnabled = selectedTriggerMode === "BUTTON" || Boolean(watchedFloatingButtonEnabled);
+  const linkedFloatingPromptRules = useMemo(() => {
+    if (!editing?.id) {
+      return [] as Array<{ id: number; name: string }>;
+    }
+    return (linkedRulesByScene.get(editing.id) ?? [])
+      .filter((rule) => rule.promptMode === "FLOATING")
+      .map((rule) => ({ id: rule.id, name: rule.name }));
+  }, [editing?.id, linkedRulesByScene]);
+  const promptPriorityConflict = watchedExecutionMode === "AUTO_WITHOUT_PROMPT" && linkedFloatingPromptRules.length > 0;
+  const currentSceneStatus: LifecycleState = editing?.status ?? "DRAFT";
 
   const sceneCards = [
     {
@@ -194,6 +266,34 @@ export function JobScenesPage() {
       mode: "FLOATING_BUTTON" as const
     }
   ];
+
+  function buildRowMenuItems(row: JobSceneDefinition): MenuProps["items"] {
+    return [
+      {
+        key: "edit",
+        label: "编辑",
+        icon: <EditOutlined />,
+        onClick: () => openEdit(row)
+      },
+      {
+        key: "builder",
+        label: "作业编排",
+        icon: <PartitionOutlined />,
+        onClick: () => void openBuilder(row)
+      },
+      {
+        key: "preview",
+        label: "预览确认",
+        icon: <EyeOutlined />,
+        onClick: () => void openPreview(row)
+      }
+    ];
+  }
+
+  function resetListFilters() {
+    setKeyword("");
+    setStatusFilter("ALL");
+  }
 
   async function openEffectiveAction(target: EffectiveTarget) {
     const action = getEffectiveActionMeta(target.status);
@@ -279,10 +379,9 @@ export function JobScenesPage() {
     <div>
       {holder}
       {msgHolder}
-      <Typography.Title level={4}>智能作业</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        从页面上下文进入场景配置，优先表达业务场景与触发方式，再进入高级编排与节点细节。保存后可直接发布当前对象。
-      </Typography.Paragraph>
+      <PageHeader>
+        <Typography.Title level={4}>智能作业</Typography.Title>
+      </PageHeader>
       {publishNotice ? (
         <PublishContinuationAlert
           objectLabel="作业场景"
@@ -308,14 +407,36 @@ export function JobScenesPage() {
           type="info"
           style={{ marginBottom: 12 }}
           message={`已切换到页面：${presetPageName ?? "当前页面"}`}
-          description="你可以直接新建该页面的作业配置，系统会自动带入页面；保存后可直接发布当前对象。"
         />
       ) : null}
 
-      <Card title="场景类型（业务视角）" style={{ marginBottom: 12 }}>
+      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Col xs={24} sm={12} xl={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #2465f2 0%, #58a2ff 100%)">
+            <Statistic title="作业场景总数" value={sceneSummary.total} />
+          </SummaryCard>
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #8f55ed 0%, #bf8bff 100%)">
+            <Statistic title="草稿场景" value={sceneSummary.draft} />
+          </SummaryCard>
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #16945f 0%, #47b983 100%)">
+            <Statistic title="已启用" value={sceneSummary.active} />
+          </SummaryCard>
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #ce7f27 0%, #e9b15b 100%)">
+            <Statistic title="已停用" value={sceneSummary.disabled} />
+          </SummaryCard>
+        </Col>
+      </Row>
+
+      <SceneTypeCard title="场景类型（业务视角）">
         <Space size={[8, 8]} wrap>
           {sceneCards.map((item) => (
-            <Card key={item.key} size="small" style={{ width: 300 }} title={item.title}>
+            <ScenePresetCard key={item.key} size="small" title={item.title}>
               <Space direction="vertical">
                 <Typography.Text type="secondary">{item.desc}</Typography.Text>
                 <Button
@@ -332,26 +453,35 @@ export function JobScenesPage() {
                   按该场景创建
                 </Button>
               </Space>
-            </Card>
+            </ScenePresetCard>
           ))}
         </Space>
-      </Card>
+      </SceneTypeCard>
 
-      <Card
-        extra={
-          <Space>
-            <Segmented
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value as StatusFilter)}
-              options={[
-                { label: "全部", value: "ALL" },
-                { label: "草稿", value: "DRAFT" },
-                { label: "启用", value: "ACTIVE" },
-                { label: "停用", value: "DISABLED" },
-                { label: "过期", value: "EXPIRED" }
-              ]}
+      <ToolbarCard>
+        <Row gutter={[10, 10]} align="middle">
+          <Col xs={24} lg={9}>
+            <Input.Search
+              allowClear
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="搜索场景名称或所属页面"
             />
-            <Tooltip title="新建场景">
+          </Col>
+          <Col xs={24} lg={15}>
+            <ActionBar>
+              <Segmented
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as StatusFilter)}
+                options={[
+                  { label: "全部", value: "ALL" },
+                  { label: "草稿", value: "DRAFT" },
+                  { label: "启用", value: "ACTIVE" },
+                  { label: "停用", value: "DISABLED" },
+                  { label: "过期", value: "EXPIRED" }
+                ]}
+              />
+              <Button onClick={resetListFilters}>重置筛选</Button>
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
@@ -363,16 +493,22 @@ export function JobScenesPage() {
                   })
                 }
                 aria-label="create-scene"
-              />
-            </Tooltip>
-          </Space>
-        }
+              >
+                新建场景
+              </Button>
+            </ActionBar>
+          </Col>
+        </Row>
+      </ToolbarCard>
+
+      <Card
+        extra={<Typography.Text type="secondary">当前展示 {searchedRows.length} 项</Typography.Text>}
       >
         <Table<JobSceneDefinition>
           rowKey="id"
           loading={loading}
-          dataSource={visibleRows}
-          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 10, 20] }}
+          dataSource={searchedRows}
+          pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }}
           columns={[
             { title: "场景名称", dataIndex: "name", width: 220 },
             { title: "所属页面", dataIndex: "pageResourceName", width: 160 },
@@ -421,32 +557,37 @@ export function JobScenesPage() {
             { title: "状态", width: 100, render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag> },
             {
               title: "操作",
-              width: 380,
+              width: 230,
               render: (_, row) => {
                 const actionMeta = getEffectiveActionMeta(row.status);
                 const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasAction);
                 return (
-                <Space wrap>
-                  <Button size="small" onClick={() => openEdit(row)}>编辑</Button>
-                  <Button size="small" onClick={() => void openBuilder(row)}>作业编排</Button>
-                  <Button size="small" onClick={() => void openPreview(row)}>预览确认</Button>
-                  <Button
-                    size="small"
-                    type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
-                    disabled={Boolean(actionBlocked)}
-                    title={actionBlocked ?? undefined}
-                    onClick={() =>
-                      void openEffectiveAction({
-                        id: row.id,
-                        name: row.name,
-                        status: row.status,
-                        source: "row"
-                      })
-                    }
-                  >
-                    {actionMeta.label}
-                  </Button>
-                </Space>
+                  <Space wrap>
+                    <Button size="small" onClick={() => openEdit(row)}>
+                      编辑
+                    </Button>
+                    <Dropdown menu={{ items: buildRowMenuItems(row) }} trigger={["click"]}>
+                      <Button size="small" icon={<MoreOutlined />}>
+                        更多
+                      </Button>
+                    </Dropdown>
+                    <Button
+                      size="small"
+                      type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
+                      disabled={Boolean(actionBlocked)}
+                      title={actionBlocked ?? undefined}
+                      onClick={() =>
+                        void openEffectiveAction({
+                          id: row.id,
+                          name: row.name,
+                          status: row.status,
+                          source: "row"
+                        })
+                      }
+                    >
+                      {actionMeta.label}
+                    </Button>
+                  </Space>
                 );
               }
             }
@@ -456,17 +597,23 @@ export function JobScenesPage() {
 
       <Modal title={editing ? "编辑场景" : "新建场景"} open={open} onCancel={closeSceneModal} onOk={() => void submitScene()} width={680}>
         <Form form={form} layout="vertical">
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            场景编号和版本由系统自动维护，你只需要关注页面与执行方式。保存后可直接发布当前对象。
-          </Typography.Paragraph>
+          <Space size={8} wrap style={{ marginBottom: 12 }}>
+            <Tag color="processing">保存即草稿</Tag>
+            <Tag color="processing">节点数自动统计</Tag>
+            <Typography.Text type="secondary">仅需配置页面与执行方式</Typography.Text>
+          </Space>
           <ValidationReportPanel report={sceneSaveValidationReport} title="保存前检查结果" />
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message="节点数由作业编排自动统计"
-            description="基础信息里不再手填节点数；进入作业编排后，系统会按当前节点数量自动更新。"
-          />
+          {promptPriorityConflict ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="提示优先：静默执行不会生效"
+              description={`当前已关联浮窗提示规则：${linkedFloatingPromptRules
+                .map((rule) => rule.name)
+                .join("、")}。运行时将按提示配置弹窗。`}
+            />
+          ) : null}
           <Form.Item name="name" label="场景名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="pageResourceId" label="页面资源" rules={[{ required: true }]}><Select options={resources.map((r) => ({ label: r.name, value: r.id }))} /></Form.Item>
           <Form.Item hidden name="executionMode">
@@ -555,9 +702,6 @@ export function JobScenesPage() {
               }
             >
               <Space direction="vertical" style={{ width: "100%" }} size={8}>
-                <Typography.Text type="secondary">
-                  当前触发方式为“按钮触发”，必须配置悬浮按钮文案与位置。
-                </Typography.Text>
                 <Form.Item
                   name="floatingButtonLabel"
                   label="按钮文案"
@@ -590,14 +734,21 @@ export function JobScenesPage() {
               </Space>
             </Card>
           ) : (
-            <Alert
-              showIcon
-              type="info"
-              style={{ marginBottom: 12 }}
-              message="当前为自动执行，无需配置悬浮按钮。"
-            />
+            <Typography.Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
+              当前为自动执行，无需配置悬浮按钮。
+            </Typography.Text>
           )}
-          <Form.Item name="status" label="状态" rules={[{ required: true }]}><Select options={lifecycleOptions} /></Form.Item>
+          <Form.Item label="状态">
+            <Space size={8} wrap>
+              <Tag color={statusColor[currentSceneStatus]}>{lifecycleLabelMap[currentSceneStatus]}</Tag>
+              <Typography.Text type="secondary">
+                {editing ? "当前线上状态仅展示，保存时会生成草稿版本。" : "新建场景默认为草稿。"}
+              </Typography.Text>
+              <Tooltip title="状态变更请使用列表中的“立即生效 / 暂停生效 / 恢复生效”操作。">
+                <InfoCircleOutlined style={{ color: "var(--text-secondary)" }} />
+              </Tooltip>
+            </Space>
+          </Form.Item>
           <Form.Item name="manualDurationSec" label="人工基准(秒)" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
         </Form>
       </Modal>

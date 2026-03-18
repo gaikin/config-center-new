@@ -23,6 +23,7 @@ import {
 } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import styled from "styled-components";
 import { OrgSelect } from "../../components/DirectoryFields";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { toOrgOption } from "../../orgOptions";
@@ -90,6 +91,54 @@ const capabilityStatusMeta: Record<CapabilityOpenStatus, { label: string; color:
   DISABLED: { label: "未开通", color: "default" },
   PENDING: { label: "申请中", color: "gold" }
 };
+
+const PageHeader = styled.div`
+  margin-bottom: var(--space-16);
+`;
+
+const SummaryCard = styled(Card)<{ $accent: string }>`
+  height: 100%;
+
+  &::before {
+    content: "";
+    display: block;
+    height: 4px;
+    background: ${({ $accent }) => $accent};
+  }
+
+  .ant-card-body {
+    padding-top: 14px;
+  }
+`;
+
+const FilterCard = styled(Card)`
+  margin-bottom: 12px;
+`;
+
+const FilterActions = styled(Space)`
+  width: 100%;
+  justify-content: flex-end;
+`;
+
+const MenuListCard = styled(Card)`
+  height: 100%;
+
+  .ant-list-pagination {
+    margin-top: 10px;
+    text-align: right;
+  }
+`;
+
+const MenuItemCard = styled(Card)<{ $active: boolean }>`
+  width: 100%;
+  cursor: pointer;
+  border-color: ${({ $active }) => ($active ? "var(--color-primary)" : "var(--color-border)")};
+  background: ${({ $active }) => ($active ? "var(--color-primary-soft)" : "var(--color-surface)")};
+`;
+
+const DetailCard = styled(Card)`
+  height: 100%;
+`;
 
 export function PageManagementPage() {
   const navigate = useNavigate();
@@ -365,6 +414,8 @@ export function PageManagementPage() {
   }, [resources]);
 
   const pendingMenus = menuRows.filter((item) => item.promptStatus === "PENDING" || item.jobStatus === "PENDING").length;
+  const readyMenus = menuRows.filter((item) => item.promptStatus === "ENABLED" && item.jobStatus === "ENABLED").length;
+  const needRequestMenus = menuRows.filter((item) => item.promptStatus === "DISABLED" || item.jobStatus === "DISABLED").length;
   const requestMenu = menuRows.find((item) => item.id === requestMenuId) ?? null;
 
   function resetFilters() {
@@ -631,10 +682,9 @@ export function PageManagementPage() {
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>菜单管理</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        以菜单为业务入口：先找到目标菜单，再定位菜单下页面，直接发起提示或作业配置。
-      </Typography.Paragraph>
+      <PageHeader>
+        <Typography.Title level={4}>菜单管理</Typography.Title>
+      </PageHeader>
 
       {pendingMenus > 0 ? (
         <Alert
@@ -642,96 +692,122 @@ export function PageManagementPage() {
           type="info"
           style={{ marginBottom: 12 }}
           message={`当前有 ${pendingMenus} 个菜单能力申请处于开通中`}
-          description="申请处理完成后，相关页面会自动开放新增提示/新增作业入口。"
         />
       ) : null}
 
-      <Card style={{ marginBottom: 12 }}>
-        <Space wrap>
-          <Select
-            value={regionFilter}
-            style={{ width: 220 }}
-            onChange={setRegionFilter}
-            options={[
-              { label: "全部专区", value: "ALL" },
-              ...regions.map((item) => ({ label: item.regionName, value: String(item.id) }))
-            ]}
-          />
-          <Input.Search
-            value={keyword}
-            allowClear
-            style={{ width: 260 }}
-            placeholder="搜索菜单 / 页面"
-            onChange={(event) => setKeyword(event.target.value)}
-            onSearch={(value) => setKeyword(value)}
-          />
-          <OrgSelect
-            includeAll
-            value={orgFilter}
-            style={{ width: 180 }}
-            onChange={setOrgFilter}
-            options={orgOptions}
-          />
-          <Select
-            value={workFilter}
-            style={{ width: 170 }}
-            onChange={(value) => setWorkFilter(value as WorkFilter)}
-            options={[
-              { label: "全部状态", value: "ALL" },
-              { label: "能力已开通", value: "READY" },
-              { label: "待开通", value: "NEED_REQUEST" },
-              { label: "开通中", value: "PENDING" }
-            ]}
-          />
-          <Button onClick={resetFilters}>重置筛选</Button>
-        </Space>
-      </Card>
+      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Col xs={24} sm={12} xl={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #1f63f0 0%, #4c8dff 100%)">
+            <Statistic title="菜单总数" value={menuRows.length} />
+          </SummaryCard>
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #169060 0%, #47b985 100%)">
+            <Statistic title="能力已开通" value={readyMenus} />
+          </SummaryCard>
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #cb7f27 0%, #efb865 100%)">
+            <Statistic title="待开通菜单" value={needRequestMenus} />
+          </SummaryCard>
+        </Col>
+        <Col xs={24} sm={12} xl={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #8f52ec 0%, #be8bff 100%)">
+            <Statistic title="筛选结果" value={filteredMenuRows.length} />
+          </SummaryCard>
+        </Col>
+      </Row>
+
+      <FilterCard>
+        <Row gutter={[10, 10]} align="middle">
+          <Col xs={24} lg={6}>
+            <Select
+              value={regionFilter}
+              style={{ width: "100%" }}
+              onChange={setRegionFilter}
+              options={[
+                { label: "全部专区", value: "ALL" },
+                ...regions.map((item) => ({ label: item.regionName, value: String(item.id) }))
+              ]}
+            />
+          </Col>
+          <Col xs={24} lg={7}>
+            <Input.Search
+              value={keyword}
+              allowClear
+              style={{ width: "100%" }}
+              placeholder="搜索菜单 / 页面"
+              onChange={(event) => setKeyword(event.target.value)}
+              onSearch={(value) => setKeyword(value)}
+            />
+          </Col>
+          <Col xs={24} lg={5}>
+            <OrgSelect
+              includeAll
+              value={orgFilter}
+              style={{ width: "100%" }}
+              onChange={setOrgFilter}
+              options={orgOptions}
+            />
+          </Col>
+          <Col xs={24} lg={4}>
+            <Select
+              value={workFilter}
+              style={{ width: "100%" }}
+              onChange={(value) => setWorkFilter(value as WorkFilter)}
+              options={[
+                { label: "全部状态", value: "ALL" },
+                { label: "能力已开通", value: "READY" },
+                { label: "待开通", value: "NEED_REQUEST" },
+                { label: "开通中", value: "PENDING" }
+              ]}
+            />
+          </Col>
+          <Col xs={24} lg={2}>
+            <FilterActions>
+              <Button onClick={resetFilters}>重置筛选</Button>
+            </FilterActions>
+          </Col>
+        </Row>
+      </FilterCard>
 
       <Row gutter={[12, 12]} align="stretch">
         <Col xs={24} xl={11}>
-          <Card title="菜单列表" style={{ height: "100%" }}>
+          <MenuListCard title="菜单列表" extra={<Typography.Text type="secondary">共 {filteredMenuRows.length} 项</Typography.Text>}>
             <List<MenuOverviewRow>
               loading={loading}
               dataSource={filteredMenuRows}
-              pagination={{ pageSize: 8, showSizeChanger: true, pageSizeOptions: ["8", "12", "20"] }}
+              pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ["10", "20", "50"] }}
               locale={{ emptyText: "暂无符合条件的菜单" }}
               renderItem={(row) => {
                 const active = row.id === selectedMenuId;
                 return (
                   <List.Item style={{ paddingInline: 0 }}>
-                    <Card
-                      hoverable
-                      size="small"
-                      onClick={() => setSelectedMenuId(row.id)}
-                      style={{
-                        width: "100%",
-                        cursor: "pointer",
-                        borderColor: active ? "#1677ff" : undefined,
-                        background: active ? "#f0f7ff" : undefined
-                      }}
-                    >
+                    <MenuItemCard hoverable size="small" onClick={() => setSelectedMenuId(row.id)} $active={active}>
                       <Space direction="vertical" size={8} style={{ width: "100%" }}>
                         <Space direction="vertical" size={0}>
                           <Typography.Text strong>{row.menuName}</Typography.Text>
-                          <Typography.Text type="secondary">{row.regionName}</Typography.Text>
+                          <Typography.Text type={active ? undefined : "secondary"}>{row.regionName}</Typography.Text>
                         </Space>
                         <Space size={[4, 4]} wrap>
+                          <Tag color={capabilityStatusMeta[row.promptStatus].color}>提示：{capabilityStatusMeta[row.promptStatus].label}</Tag>
+                          <Tag color={capabilityStatusMeta[row.jobStatus].color}>作业：{capabilityStatusMeta[row.jobStatus].label}</Tag>
+                          <Tag>页面 {row.pageCount}</Tag>
                           <Tag color={row.promptRuleTotal > 0 ? "blue" : "default"}>智能提示 {row.promptRuleTotal}</Tag>
                           <Tag color={row.jobSceneTotal > 0 ? "purple" : "default"}>作业数 {row.jobSceneTotal}</Tag>
                         </Space>
                       </Space>
-                    </Card>
+                    </MenuItemCard>
                   </List.Item>
                 );
               }}
             />
-          </Card>
+          </MenuListCard>
         </Col>
 
         <Col xs={24} xl={13}>
-          <Card
+          <DetailCard
             title={selectedMenu ? `菜单详情：${selectedMenu.menuName}` : "菜单详情"}
-            style={{ height: "100%" }}
             extra={
               selectedMenu ? (
                 <Space>
@@ -775,6 +851,28 @@ export function PageManagementPage() {
           >
             {selectedMenu ? (
               <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                <Alert
+                  showIcon
+                  type={selectedMenuPending ? "warning" : selectedMenuNeedRequest ? "info" : "success"}
+                  message={
+                    selectedMenuPending
+                      ? "当前菜单能力申请处理中"
+                      : selectedMenuNeedRequest
+                        ? "当前菜单部分能力尚未开通"
+                        : "当前菜单能力已开通，可直接配置"
+                  }
+                  description={
+                    <Space size={[6, 6]} wrap>
+                      <Tag color={capabilityStatusMeta[selectedMenu.promptStatus].color}>
+                        智能提示：{capabilityStatusMeta[selectedMenu.promptStatus].label}
+                      </Tag>
+                      <Tag color={capabilityStatusMeta[selectedMenu.jobStatus].color}>
+                        智能作业：{capabilityStatusMeta[selectedMenu.jobStatus].label}
+                      </Tag>
+                      <Tag>菜单页面 {selectedMenu.pageCount}</Tag>
+                    </Space>
+                  }
+                />
                 {selectedPage ? (
                   <Space direction="vertical" style={{ width: "100%" }} size={12}>
                     {selectedPageActionState?.needRequest ? (
@@ -869,7 +967,7 @@ export function PageManagementPage() {
             ) : (
               <Typography.Text type="secondary">请选择一个菜单查看详情。</Typography.Text>
             )}
-          </Card>
+          </DetailCard>
         </Col>
       </Row>
 
@@ -890,7 +988,6 @@ export function PageManagementPage() {
             showIcon
             type="info"
             message="先录元素，再完成字段映射"
-            description="默认自动生成页面字段；如果勾选公共字段，再从已有公共字段里选择。"
           />
 
           <Card
@@ -1010,9 +1107,6 @@ export function PageManagementPage() {
         onOk={() => void submitQuickBind()}
       >
         <Form form={quickBindForm} layout="vertical">
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            输入元素信息后，系统默认自动生成页面字段并完成绑定。
-          </Typography.Paragraph>
           <Form.Item name="elementLogicName" label="元素名" rules={[{ required: true, message: "请输入元素名" }]}>
             <Input placeholder="例如：客户号输入框" />
           </Form.Item>
@@ -1058,9 +1152,6 @@ export function PageManagementPage() {
         onOk={() => void submitField()}
       >
         <Form form={fieldForm} layout="vertical">
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            这里只维护当前页面特有字段。跨页面复用的公共字段请到高级配置统一治理。
-          </Typography.Paragraph>
           <Form.Item name="name" label="字段名称" rules={[{ required: true, message: "请输入字段名称" }]}>
             <Input />
           </Form.Item>
@@ -1086,9 +1177,6 @@ export function PageManagementPage() {
         onOk={() => void submitBinding()}
       >
         <Form form={bindingForm} layout="vertical">
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            绑定时既可以选择当前页面字段，也可以直接引用公共字段。
-          </Typography.Paragraph>
           <Form.Item name="businessFieldCode" label="字段" rules={[{ required: true, message: "请选择字段" }]}>
             <Select
               showSearch
@@ -1129,7 +1217,6 @@ export function PageManagementPage() {
             type="info"
             style={{ marginBottom: 12 }}
             message="申请会提交给菜单开通管理员审批"
-            description="请选择未开通能力并说明业务原因，审批通过后即可在页面继续配置。"
           />
           <Form.Item
             name="capabilityTypes"

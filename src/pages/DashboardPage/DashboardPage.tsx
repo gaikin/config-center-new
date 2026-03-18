@@ -33,8 +33,68 @@ const PageIntro = styled(Typography.Paragraph)`
   }
 `;
 
-const MetricCard = styled(Card)`
+const HeroCard = styled(Card)`
+  margin-bottom: var(--space-16);
+  border: 0;
+  overflow: hidden;
+  background: linear-gradient(125deg, rgba(15, 31, 77, 0.97) 0%, rgba(27, 99, 240, 0.95) 58%, rgba(16, 111, 143, 0.92) 100%);
+  box-shadow: var(--shadow-3);
+
+  .ant-card-body {
+    padding: 20px 22px;
+  }
+`;
+
+const HeroTitle = styled(Typography.Title)`
+  && {
+    margin: 0;
+    color: #f5f8ff;
+  }
+`;
+
+const HeroIntro = styled(Typography.Paragraph)`
+  && {
+    margin: 8px 0 0;
+    color: rgba(245, 248, 255, 0.96);
+  }
+`;
+
+const HeroSummaryTag = styled(Tag)`
+  border-radius: 999px;
+  padding-inline: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  color: #f5f8ff;
+  background: rgba(8, 20, 48, 0.34);
+`;
+
+const HeroActionButton = styled(Button)`
+  margin-top: 8px;
+  color: #f5f8ff;
+  border-color: rgba(255, 255, 255, 0.56);
+  background: rgba(8, 20, 48, 0.42);
+
+  &:hover,
+  &:focus {
+    color: #f5f8ff !important;
+    border-color: rgba(255, 255, 255, 0.8) !important;
+    background: rgba(8, 20, 48, 0.58) !important;
+  }
+`;
+
+const MetricCard = styled(Card)<{ $tone: string }>`
   height: 100%;
+  overflow: hidden;
+
+  &::before {
+    content: "";
+    display: block;
+    height: 4px;
+    background: ${({ $tone }) => $tone};
+  }
+
+  .ant-card-body {
+    padding-top: 14px;
+  }
 `;
 
 const SectionRow = styled(Row)`
@@ -51,6 +111,12 @@ const DashboardSpace = styled(Space)`
 
 const ListSection = styled.div`
   margin-top: var(--space-12);
+`;
+
+const QuickActionCard = styled(Card)`
+  .ant-btn {
+    justify-content: flex-start;
+  }
 `;
 
 export function DashboardPage() {
@@ -122,6 +188,10 @@ export function DashboardPage() {
 
   const triggerCount = triggerLogs.length;
   const executionCount = executionLogs.length;
+  const totalPending =
+    (pendingSummary?.draftCount ?? 0) +
+    (pendingSummary?.riskConfirmPendingCount ?? 0) +
+    (pendingSummary?.validationFailedCount ?? 0);
   const recentEdits = useMemo(
     () =>
       [...pendingItems]
@@ -145,24 +215,44 @@ export function DashboardPage() {
         </PageIntro>
       </PageHeader>
 
+      <HeroCard>
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <div>
+            <HeroTitle level={4}>今日重点</HeroTitle>
+            <HeroIntro>
+              当前有 {totalPending} 项待处理，建议先从菜单管理进入页面，优先处理待发布与待确认事项。
+            </HeroIntro>
+          </div>
+          <Space size={[8, 8]} wrap>
+            <HeroSummaryTag>待发布 {pendingSummary?.draftCount ?? 0}</HeroSummaryTag>
+            <HeroSummaryTag>待确认 {pendingSummary?.riskConfirmPendingCount ?? 0}</HeroSummaryTag>
+            <HeroSummaryTag>待补充配置 {pendingSummary?.validationFailedCount ?? 0}</HeroSummaryTag>
+            <HeroSummaryTag>下降提醒 {dropReminders.length}</HeroSummaryTag>
+          </Space>
+          <HeroActionButton icon={<ArrowRightOutlined />} onClick={() => navigate("/page-management")}>
+            前往菜单管理继续处理
+          </HeroActionButton>
+        </Space>
+      </HeroCard>
+
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
-          <MetricCard loading={loading}>
+          <MetricCard $tone="linear-gradient(90deg, #2162f3 0%, #4f8fff 100%)" loading={loading}>
             <Statistic title="待发布事项" value={pendingSummary?.draftCount ?? 0} />
           </MetricCard>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <MetricCard loading={loading}>
+          <MetricCard $tone="linear-gradient(90deg, #d48726 0%, #f2b04a 100%)" loading={loading}>
             <Statistic title="待确认事项" value={pendingSummary?.riskConfirmPendingCount ?? 0} />
           </MetricCard>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <MetricCard loading={loading}>
+          <MetricCard $tone="linear-gradient(90deg, #9050f3 0%, #bb8cff 100%)" loading={loading}>
             <Statistic title="待补充配置" value={pendingSummary?.validationFailedCount ?? 0} />
           </MetricCard>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <MetricCard loading={loading}>
+          <MetricCard $tone="linear-gradient(90deg, #d63b5f 0%, #f16f89 100%)" loading={loading}>
             <Statistic title="下降提醒" value={dropReminders.length} />
           </MetricCard>
         </Col>
@@ -237,7 +327,7 @@ export function DashboardPage() {
 
       <SectionRow gutter={[16, 16]}>
         <Col xs={24} lg={12}>
-          <Card title="常用入口">
+          <QuickActionCard title="常用入口">
             <DashboardSpace direction="vertical" size={12}>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/page-management")}>进入菜单管理</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/prompts?action=create")}>新建提示规则</Button>
@@ -245,7 +335,7 @@ export function DashboardPage() {
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/interfaces")}>注册 API</Button>
               <Button block icon={<ArrowRightOutlined />} onClick={() => navigate("/stats")}>查看运行统计</Button>
             </DashboardSpace>
-          </Card>
+          </QuickActionCard>
         </Col>
 
         <Col xs={24} lg={12}>

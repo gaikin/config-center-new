@@ -87,13 +87,6 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   const selectedRoleType = Form.useWatch("roleType", form);
   const selectedOrgScopeId = Form.useWatch("orgScopeId", form);
   const selectedActions = Form.useWatch("actions", form) as ActionType[] | undefined;
-  const defaultActions = useMemo(
-    () =>
-      selectedRoleType && selectedOrgScopeId
-        ? getRoleTypeDefaultActions(selectedRoleType, selectedOrgScopeId)
-        : [],
-    [selectedOrgScopeId, selectedRoleType]
-  );
 
   const [memberOpen, setMemberOpen] = useState(false);
   const [memberRole, setMemberRole] = useState<RoleItem | null>(null);
@@ -261,9 +254,6 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
       {!embedded ? (
         <>
           <Typography.Title level={4}>权限管理</Typography.Title>
-          <Typography.Paragraph type="secondary">
-            业务角色分为配置人员和权限管理人员；菜单启用等高权限操作仅允许总行权限管理人员分配。
-          </Typography.Paragraph>
         </>
       ) : null}
 
@@ -348,15 +338,11 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
           width={760}
       >
         <Form form={form} layout="vertical">
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            角色编号由系统自动生成；成员数量会按已绑定人员自动统计。
-          </Typography.Paragraph>
           <Alert
             showIcon
             type="info"
             style={{ marginBottom: 12 }}
             message="高权限分配规则"
-            description="菜单启用属于高权限操作，仅总行权限管理人员可分配给总行范围角色。后续新增高权限操作将沿用同一规则。"
           />
           {selectedRoleType && selectedOrgScopeId ? (
             <Alert
@@ -364,7 +350,6 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
               type="success"
               style={{ marginBottom: 12 }}
               message="默认权限"
-              description={`当前角色默认包含：${defaultActions.map((action) => actionLabelMap[action]).join("、")}。默认权限会自动带入，不建议移除。`}
             />
           ) : null}
           <Form.Item name="name" label="角色名称" rules={[{ required: true, message: "请输入角色名称" }]}>
@@ -389,7 +374,6 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
           <Form.Item
             name="actions"
             label="操作类型"
-            extra="默认权限会自动带入；可在此补充停用、延期、回滚、风险确认、审计查看等附加权限。"
             rules={[{ required: true, message: "请选择操作类型" }]}
           >
             <Select
@@ -402,9 +386,6 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
               placeholder="可多选"
             />
           </Form.Item>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            权限说明：
-          </Typography.Paragraph>
           <Space size={[8, 8]} wrap style={{ marginBottom: 12 }}>
             {allActions.map((action) => (
               <Tag key={action} color={HIGH_PRIVILEGE_ACTIONS.includes(action) ? "magenta" : undefined}>
@@ -424,9 +405,6 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
         onCancel={() => setMemberOpen(false)}
         onOk={() => void saveMembers()}
       >
-        <Typography.Paragraph type="secondary">
-          支持按人员中文名搜索选择，保存时会自动关联到统一人员档案。
-        </Typography.Paragraph>
         <PersonMultiSelect
           style={{ width: "100%" }}
           value={memberValues}

@@ -1,7 +1,31 @@
-import { Alert, Button, Card, Collapse, Form, Input, InputNumber, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from "antd";
-import { DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import {
+  Alert,
+  Button,
+  Card,
+  Col,
+  Collapse,
+  Dropdown,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Row,
+  Segmented,
+  Select,
+  Space,
+  Statistic,
+  Table,
+  Tabs,
+  Tag,
+  Tooltip,
+  Typography,
+  message
+} from "antd";
+import { DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined } from "@ant-design/icons";
+import type { MenuProps } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import styled from "styled-components";
 import { EffectiveConfirmModal } from "../../components/EffectiveConfirmModal";
 import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
 import { ValidationReportPanel } from "../../components/ValidationReportPanel";
@@ -14,9 +38,9 @@ import { useMockSession } from "../../session/mockSession";
 import { PromptRichPreview } from "./PromptRichPreview";
 import { PromptTemplateEditor } from "./PromptTemplateEditor";
 import { RulesPageMode, useRulesPageModel } from "./useRulesPageModel";
-import { buildDefaultListLookupMatcher, FlatConditionDraft, InterfaceInputParamDraft, ListLookupMatcherDraft, LOGIC_OPERATOR_WIDTH, OperandDraft, deriveMachineKeyFromOutputPath, normalizeLookupSourceType, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, listLookupSourceOptions, operatorOptions, sourceOptions, statusColor, valueTypeOptions } from "./rulesPageShared";
+import { buildDefaultListLookupMatcher, FlatConditionDraft, InterfaceInputParamDraft, ListLookupMatcherDraft, LOGIC_OPERATOR_WIDTH, OperandDraft, defaultInterfaceInputBinding, deriveMachineKeyFromOutputPath, interfaceInputSourceOptions, normalizeLookupSourceType, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, listLookupSourceOptions, operatorOptions, sourceOptions, statusColor } from "./rulesPageShared";
 import { OperandPill, InterfaceInputValueEditor } from "./rulesOperandRenderers";
-import type { LifecycleState, PublishValidationReport, RuleDefinition, RuleLogicType, RuleOperandValueType } from "../../types";
+import type { LifecycleState, PublishValidationReport, RuleDefinition, RuleLogicType } from "../../types";
 
 type RulesPageProps = {
   mode?: RulesPageMode;
@@ -33,6 +57,39 @@ type EffectiveTarget = {
   status: LifecycleState;
   source: "row" | "notice";
 };
+
+type RuleListStatusFilter = "ALL" | LifecycleState;
+
+const PageHeader = styled.div`
+  margin-bottom: var(--space-16);
+`;
+
+const SummaryCard = styled(Card)<{ $accent: string }>`
+  height: 100%;
+
+  &::before {
+    content: "";
+    display: block;
+    height: 4px;
+    background: ${({ $accent }) => $accent};
+  }
+
+  .ant-card-body {
+    padding-top: 14px;
+  }
+`;
+
+const ToolbarCard = styled(Card)`
+  margin-bottom: 12px;
+`;
+
+const ActionBar = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
 
 function CompactHint({
   tone = "warning",
@@ -100,14 +157,6 @@ function PanelField({
       <div style={{ marginTop: 6 }}>{children}</div>
     </div>
   );
-}
-
-function PanelGrid({
-  children
-}: {
-  children: React.ReactNode;
-}) {
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>{children}</div>;
 }
 
 function summarizeOperand(operand: OperandDraft) {
@@ -249,15 +298,6 @@ export function RulesPage({
     : "规则配置以页面规则为主；新建时可快速复用模板，自动带入条件与提示配置，无需先专门建立模板。保存后可直接发布当前对象。";
   const createButtonLabel = isTemplateMode ? "新建模板" : "新建规则";
   const modalTitle = editing ? (isTemplateMode ? "编辑规则模板" : "编辑规则") : isTemplateMode ? "新建规则模板" : "新建规则";
-  const modalAlert = isTemplateMode
-    ? {
-        message: "模板中心面向高复用规则沉淀。",
-        description: "模板只允许使用公共字段，不绑定具体页面；业务人员建规则时可选择模板，自动带入条件逻辑和提示配置。"
-      }
-    : {
-        message: "以页面规则为主，新建时可直接套用模板。",
-        description: "模板是快捷来源，不是业务人员的主操作对象；选择模板后会自动带入条件逻辑、提示方式和关闭策略。"
-      };
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState<{ matched: boolean; detail: string } | null>(null);
   const [activeEditorTab, setActiveEditorTab] = useState<"basic" | "logic">("basic");
@@ -271,6 +311,8 @@ export function RulesPage({
   const [effectiveScopeOrgIds, setEffectiveScopeOrgIds] = useState<string[]>([]);
   const [effectiveStartAt, setEffectiveStartAt] = useState("");
   const [effectiveEndAt, setEffectiveEndAt] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [listStatusFilter, setListStatusFilter] = useState<RuleListStatusFilter>("ALL");
   const watchedPromptMode = Form.useWatch("promptMode", ruleForm);
   const watchedTemplateRuleId = Form.useWatch("templateRuleId", ruleForm);
   const watchedTitleSuffix = Form.useWatch("titleSuffix", ruleForm);
@@ -339,6 +381,31 @@ export function RulesPage({
   }, [conditionsDraft, editing, globalLogicType, logicLoading]);
   const currentPageName =
     resources.find((item) => item.id === ruleForm.getFieldValue("pageResourceId"))?.name ?? "未绑定页面";
+  const keywordValue = keyword.trim().toLowerCase();
+  const displayedRows = useMemo(() => {
+    return rows.filter((row) => {
+      if (listStatusFilter !== "ALL" && row.status !== listStatusFilter) {
+        return false;
+      }
+      if (!keywordValue) {
+        return true;
+      }
+      const pageName = (row.pageResourceName ?? "").toLowerCase();
+      const sourceTemplate = (row.sourceRuleName ?? "").toLowerCase();
+      return (
+        row.name.toLowerCase().includes(keywordValue) ||
+        pageName.includes(keywordValue) ||
+        sourceTemplate.includes(keywordValue)
+      );
+    });
+  }, [keywordValue, listStatusFilter, rows]);
+  const rowSummary = useMemo(() => {
+    const total = rows.length;
+    const draft = rows.filter((item) => item.status === "DRAFT").length;
+    const active = rows.filter((item) => item.status === "ACTIVE").length;
+    const disabled = rows.filter((item) => item.status === "DISABLED").length;
+    return { total, draft, active, disabled };
+  }, [rows]);
 
   function updateListMatchers(
     updater:
@@ -433,6 +500,28 @@ export function RulesPage({
   function openRuleEditorTab(row: RuleDefinition, tab: "basic" | "logic") {
     setPendingOpenTab(tab);
     openEdit(row);
+  }
+
+  function buildRowMenuItems(row: RuleDefinition): MenuProps["items"] {
+    return [
+      {
+        key: "basic",
+        label: "基础配置",
+        icon: <EditOutlined />,
+        onClick: () => openRuleEditorTab(row, "basic")
+      },
+      {
+        key: "logic",
+        label: "条件配置",
+        icon: <MoreOutlined />,
+        onClick: () => openRuleEditorTab(row, "logic")
+      }
+    ];
+  }
+
+  function resetListFilters() {
+    setKeyword("");
+    setListStatusFilter("ALL");
   }
 
   function renderLogicEditorContent() {
@@ -540,29 +629,14 @@ export function RulesPage({
                   当前正在编辑：条件 {selectedContext.index + 1} - {selectedContext.side === "left" ? "左值" : "右值"}
                 </Typography.Text>
 
-                <PanelGrid>
-                  <PanelField label="来源类型">
-                    <Select
-                      style={{ width: "100%" }}
-                      value={selectedContext.operand.sourceType}
-                      options={sourceOptions}
-                      onChange={(value) => changeSelectedSourceType(normalizeSourceType(value))}
-                    />
-                  </PanelField>
-
-                  <PanelField label="值类型">
-                    {selectedContext.operand.sourceType === "INTERFACE_FIELD" ? (
-                      <Input value={selectedContext.operand.valueType} readOnly />
-                    ) : (
-                      <Select
-                        style={{ width: "100%" }}
-                        value={selectedContext.operand.valueType}
-                        options={valueTypeOptions}
-                        onChange={(value) => updateSelectedOperand({ valueType: value as RuleOperandValueType })}
-                      />
-                    )}
-                  </PanelField>
-                </PanelGrid>
+                <PanelField label="来源类型">
+                  <Select
+                    style={{ width: "100%" }}
+                    value={selectedContext.operand.sourceType}
+                    options={sourceOptions}
+                    onChange={(value) => changeSelectedSourceType(normalizeSourceType(value))}
+                  />
+                </PanelField>
 
                 {selectedContext.operand.sourceType === "CONST" ? (
                   <div>
@@ -657,13 +731,11 @@ export function RulesPage({
                         placeholder="请选择API输出路径"
                         value={selectedContext.operand.outputPath || undefined}
                         options={selectedOutputPathOptions}
-                        onChange={(value, option) => {
-                          const picked = option as { valueType?: RuleOperandValueType } | undefined;
+                        onChange={(value) => {
                           const nextPath = (value as string) ?? "";
                           updateSelectedOperand({
                             outputPath: nextPath,
-                            machineKey: deriveMachineKeyFromOutputPath(nextPath),
-                            valueType: picked?.valueType ?? selectedContext.operand.valueType
+                            machineKey: deriveMachineKeyFromOutputPath(nextPath)
                           });
                         }}
                       />
@@ -679,45 +751,65 @@ export function RulesPage({
                             selectedInterfaceInputParams.length === 0 ? (
                               <Typography.Text type="secondary">当前 API 没有配置入参，可直接继续。</Typography.Text>
                             ) : (
-                              <Table<InterfaceInputParamDraft>
-                                size="small"
-                                rowKey={(row) => `${row.tab}:${row.name}`}
-                                pagination={false}
-                                dataSource={selectedInterfaceInputParams}
-                                columns={[
-                                  {
-                                    title: "参数",
-                                    width: 220,
-                                    render: (_, row) => (
-                                      <Space size={4}>
-                                        <Typography.Text>{row.name}</Typography.Text>
-                                        {row.required ? <Tag color="error">必填</Tag> : <Tag>可选</Tag>}
-                                      </Space>
-                                    )
-                                  },
-                                  {
-                                    title: "来源",
-                                    width: 140,
-                                    render: (_, row) => <Tag>{row.sourceType}</Tag>
-                                  },
-                                  {
-                                    title: "值类型",
-                                    width: 120,
-                                    render: (_, row) => <Tag color="blue">{row.valueType}</Tag>
-                                  },
-                                  {
-                                    title: "取值",
-                                    render: (_, row) => (
-                                      <InterfaceInputValueEditor
-                                        param={row}
-                                        pageFieldOptions={pageFieldOptions}
-                                        selectedInterfaceInputConfig={selectedInterfaceInputConfig}
-                                        updateInterfaceInputValue={updateInterfaceInputValue}
-                                      />
-                                    )
-                                  }
-                                ]}
-                              />
+                              <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                                <Typography.Text type="secondary">
+                                  API注册仅定义入参契约；来源与取值映射在智能提示中按规则单独配置。
+                                </Typography.Text>
+                                <Table<InterfaceInputParamDraft>
+                                  size="small"
+                                  rowKey={(row) => `${row.tab}:${row.name}`}
+                                  pagination={false}
+                                  dataSource={selectedInterfaceInputParams}
+                                  columns={[
+                                    {
+                                      title: "参数",
+                                      width: 220,
+                                      render: (_, row) => (
+                                        <Space size={4}>
+                                          <Typography.Text>{row.name}</Typography.Text>
+                                          {row.validationConfig.required ? <Tag color="error">必填</Tag> : <Tag>可选</Tag>}
+                                        </Space>
+                                      )
+                                    },
+                                    {
+                                      title: "来源",
+                                      width: 140,
+                                      render: (_, row) => {
+                                        const binding = selectedInterfaceInputConfig[row.name] ?? defaultInterfaceInputBinding();
+                                        return (
+                                          <Select
+                                            size="small"
+                                            value={binding.sourceType}
+                                            options={interfaceInputSourceOptions}
+                                            onChange={(value) =>
+                                              updateInterfaceInputValue(row.name, {
+                                                sourceType: value,
+                                                sourceValue: ""
+                                              })
+                                            }
+                                          />
+                                        );
+                                      }
+                                    },
+                                    {
+                                      title: "值类型",
+                                      width: 120,
+                                      render: (_, row) => <Tag color="blue">{row.valueType}</Tag>
+                                    },
+                                    {
+                                      title: "取值",
+                                      render: (_, row) => (
+                                        <InterfaceInputValueEditor
+                                          param={row}
+                                          binding={selectedInterfaceInputConfig[row.name] ?? defaultInterfaceInputBinding()}
+                                          pageFieldOptions={pageFieldOptions}
+                                          updateInterfaceInputValue={updateInterfaceInputValue}
+                                        />
+                                      )
+                                    }
+                                  ]}
+                                />
+                              </Space>
                             )
                         }
                       ]}
@@ -1073,10 +1165,10 @@ export function RulesPage({
       {holder}
       {msgHolder}
       {!embedded ? (
-        <>
+        <PageHeader>
           <Typography.Title level={4}>{pageTitle}</Typography.Title>
           <Typography.Paragraph type="secondary">{pageDescription}</Typography.Paragraph>
-        </>
+        </PageHeader>
       ) : null}
 
       {publishNotice ? (
@@ -1099,18 +1191,71 @@ export function RulesPage({
         />
       ) : null}
 
+      {!embedded ? (
+        <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+          <Col xs={24} sm={12} xl={6}>
+            <SummaryCard $accent="linear-gradient(90deg, #2465f2 0%, #58a2ff 100%)">
+              <Statistic title={isTemplateMode ? "模板总数" : "规则总数"} value={rowSummary.total} />
+            </SummaryCard>
+          </Col>
+          <Col xs={24} sm={12} xl={6}>
+            <SummaryCard $accent="linear-gradient(90deg, #8f55ed 0%, #bf8bff 100%)">
+              <Statistic title="草稿" value={rowSummary.draft} />
+            </SummaryCard>
+          </Col>
+          <Col xs={24} sm={12} xl={6}>
+            <SummaryCard $accent="linear-gradient(90deg, #16945f 0%, #47b983 100%)">
+              <Statistic title="已生效" value={rowSummary.active} />
+            </SummaryCard>
+          </Col>
+          <Col xs={24} sm={12} xl={6}>
+            <SummaryCard $accent="linear-gradient(90deg, #ce7f27 0%, #e9b15b 100%)">
+              <Statistic title="已停用" value={rowSummary.disabled} />
+            </SummaryCard>
+          </Col>
+        </Row>
+      ) : null}
+
+      <ToolbarCard>
+        <Row gutter={[10, 10]} align="middle">
+          <Col xs={24} lg={10}>
+            <Input.Search
+              allowClear
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder={isTemplateMode ? "搜索模板名称" : "搜索规则名称、页面资源或来源模板"}
+            />
+          </Col>
+          <Col xs={24} lg={14}>
+            <ActionBar>
+              <Segmented
+                value={listStatusFilter}
+                onChange={(value) => setListStatusFilter(value as RuleListStatusFilter)}
+                options={[
+                  { label: "全部", value: "ALL" },
+                  { label: "草稿", value: "DRAFT" },
+                  { label: "生效", value: "ACTIVE" },
+                  { label: "停用", value: "DISABLED" },
+                  { label: "过期", value: "EXPIRED" }
+                ]}
+              />
+              <Button onClick={resetListFilters}>重置筛选</Button>
+              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} aria-label="create-rule">
+                {createButtonLabel}
+              </Button>
+            </ActionBar>
+          </Col>
+        </Row>
+      </ToolbarCard>
+
       <Card
-        extra={
-          <Tooltip title={createButtonLabel}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} aria-label="create-rule" />
-          </Tooltip>
-        }
+        extra={<Typography.Text type="secondary">当前展示 {displayedRows.length} 条</Typography.Text>}
       >
         <Table<RuleDefinition>
           rowKey="id"
           loading={loading}
-          dataSource={rows}
-          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: [6, 10, 20] }}
+          dataSource={displayedRows}
+          pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50] }}
           columns={[
             { title: isTemplateMode ? "模板名称" : "规则名称", dataIndex: "name", width: 200 },
             ...(isTemplateMode
@@ -1157,35 +1302,37 @@ export function RulesPage({
             },
             {
               title: "操作",
-              width: 360,
+              width: 250,
               render: (_, row) => {
                 const actionMeta = getEffectiveActionMeta(row.status);
                 const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasAction);
                 return (
-                <Space>
-                  <Button size="small" onClick={() => openRuleEditorTab(row, "basic")}>
-                    基础配置
-                  </Button>
-                  <Button size="small" onClick={() => openRuleEditorTab(row, "logic")}>
-                    条件配置
-                  </Button>
-                  <Button
-                    size="small"
-                    type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
-                    disabled={Boolean(actionBlocked)}
-                    title={actionBlocked ?? undefined}
-                    onClick={() =>
-                      void openEffectiveAction({
-                        id: row.id,
-                        name: row.name,
-                        status: row.status,
-                        source: "row"
-                      })
-                    }
-                  >
-                    {actionMeta.label}
-                  </Button>
-                </Space>
+                  <Space>
+                    <Button size="small" onClick={() => openRuleEditorTab(row, "basic")}>
+                      编辑
+                    </Button>
+                    <Dropdown menu={{ items: buildRowMenuItems(row) }} trigger={["click"]}>
+                      <Button size="small" icon={<MoreOutlined />}>
+                        更多
+                      </Button>
+                    </Dropdown>
+                    <Button
+                      size="small"
+                      type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
+                      disabled={Boolean(actionBlocked)}
+                      title={actionBlocked ?? undefined}
+                      onClick={() =>
+                        void openEffectiveAction({
+                          id: row.id,
+                          name: row.name,
+                          status: row.status,
+                          source: "row"
+                        })
+                      }
+                    >
+                      {actionMeta.label}
+                    </Button>
+                  </Space>
                 );
               }
             }
@@ -1225,9 +1372,6 @@ export function RulesPage({
         }
       >
         <Form form={ruleForm} layout="vertical">
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            {modalAlert.message} {modalAlert.description}
-          </Typography.Paragraph>
           <Form.Item hidden name="ruleScope">
             <Input />
           </Form.Item>
@@ -1242,14 +1386,6 @@ export function RulesPage({
                 children: (
                   <div style={{ display: "grid", gridTemplateColumns: isTemplateMode ? "minmax(0,1fr)" : "minmax(0,1.7fr) minmax(320px, 0.9fr)", gap: 16, alignItems: "start" }}>
                     <Space direction="vertical" style={{ width: "100%" }} size={16}>
-                      {!isTemplateMode ? (
-                        <CompactHint
-                          tone="info"
-                          title="基础配置放在这里统一维护"
-                          description="保存后再次进入时，会默认直接落到“条件配置”页签。"
-                        />
-                      ) : null}
-
                       {!isTemplateMode ? (
                         <Card id="rule-section-basic" size="small" title="触发对象">
                           {!editing ? (
@@ -1421,7 +1557,6 @@ export function RulesPage({
                                         type="info"
                                         showIcon
                                         message="当前仅展示浮窗样式预览"
-                                        description="若运行时选择静默提示，实际效果会弱于此处展示。"
                                       />
                                     ) : null}
                                     <div style={{ whiteSpace: "pre-wrap", color: "rgba(0,0,0,0.88)" }}>

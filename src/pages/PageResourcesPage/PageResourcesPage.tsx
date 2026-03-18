@@ -454,9 +454,6 @@ export function PageResourcesPage() {
     <div>
       {holder}
       <Typography.Title level={4}>页面字段与元素维护</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        当菜单管理中的页面需要补充高级维护时，在这里统一维护页面识别、字段字典和元素映射。这里属于高级维护区，默认不放在业务主路径首屏。
-      </Typography.Paragraph>
 
       <Card style={{ marginBottom: 12 }}>
         <Space wrap>
@@ -571,9 +568,6 @@ export function PageResourcesPage() {
         destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            页面编码、iframe 标识和版本由系统自动维护，需要时可在页面详情中查看。
-          </Typography.Paragraph>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input maxLength={128} />
           </Form.Item>
@@ -668,9 +662,6 @@ export function PageResourcesPage() {
         onOk={() => void submitElement()}
       >
         <Form form={elementForm} layout="vertical">
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            元素编号由系统自动生成，你只需要维护业务字段和定位方式。
-          </Typography.Paragraph>
           <Form.Item name="pageResourceId" hidden rules={[{ required: true, message: "请选择所属页面" }]}>
             <InputNumber style={{ width: "100%" }} disabled />
           </Form.Item>
@@ -699,10 +690,6 @@ export function PageResourcesPage() {
         open={fieldDrawerOpen}
         onClose={() => setFieldDrawerOpen(false)}
       >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          公共字段可在多个页面复用；页面字段只作用当前页面。规则和作业统一引用这里维护的字段，不直接引用页面元素。
-        </Typography.Paragraph>
-
         <Card
           size="small"
           title="页面字段字典"
@@ -812,9 +799,6 @@ export function PageResourcesPage() {
         onOk={() => void submitField()}
       >
         <Form form={fieldForm} layout="vertical">
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            字段标识由系统自动维护，你只需要维护字段名称和业务含义。
-          </Typography.Paragraph>
           <Form.Item name="scope" label="字段归属" rules={[{ required: true, message: "请选择字段归属" }]}>
             <Select
               options={[

@@ -160,49 +160,114 @@ function resolveLookupMatcherValue(
   return input.interfaceFields[sourceValue] ?? input.interfaceFields[deriveInterfaceFieldKey(sourceValue)] ?? "";
 }
 
-function compareValues(operator: RuleOperator, left: string, right: string): boolean {
+function compareValues(operator: RuleOperator, left: string, right: string): { passed: boolean; reason: string } {
   if (operator === "EXISTS") {
-    return left.trim().length > 0;
+    const passed = left.trim().length > 0;
+    return {
+      passed,
+      reason: passed ? "左值存在" : "左值为空，按不命中处理"
+    };
   }
   if (operator === "EQ") {
-    return left === right;
+    const passed = left === right;
+    return {
+      passed,
+      reason: passed ? "字符串相等" : "字符串不相等"
+    };
   }
   if (operator === "NE") {
-    return left !== right;
+    const passed = left !== right;
+    return {
+      passed,
+      reason: passed ? "字符串不相等" : "字符串相等"
+    };
   }
   if (operator === "CONTAINS") {
-    return left.includes(right);
+    const passed = left.includes(right);
+    return {
+      passed,
+      reason: passed ? "左值包含右值" : "左值不包含右值"
+    };
   }
   if (operator === "NOT_CONTAINS") {
-    return !left.includes(right);
+    const passed = !left.includes(right);
+    return {
+      passed,
+      reason: passed ? "左值不包含右值" : "左值包含右值"
+    };
   }
   if (operator === "IN") {
-    return right
+    const passed = right
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean)
       .includes(left);
+    return {
+      passed,
+      reason: passed ? "左值命中右值集合" : "左值未命中右值集合"
+    };
   }
-
-  const l = Number(left);
-  const r = Number(right);
-  const numeric = !Number.isNaN(l) && !Number.isNaN(r);
-  const lv = numeric ? l : left;
-  const rv = numeric ? r : right;
 
   if (operator === "GT") {
-    return lv > rv;
+    const l = Number(left);
+    const r = Number(right);
+    if (!Number.isFinite(l) || !Number.isFinite(r)) {
+      return {
+        passed: false,
+        reason: "操作符为数值比较，但值无法转换为数字，按不命中处理"
+      };
+    }
+    return {
+      passed: l > r,
+      reason: l > r ? "数值比较命中：左值大于右值" : "数值比较未命中：左值不大于右值"
+    };
   }
   if (operator === "GE") {
-    return lv >= rv;
+    const l = Number(left);
+    const r = Number(right);
+    if (!Number.isFinite(l) || !Number.isFinite(r)) {
+      return {
+        passed: false,
+        reason: "操作符为数值比较，但值无法转换为数字，按不命中处理"
+      };
+    }
+    return {
+      passed: l >= r,
+      reason: l >= r ? "数值比较命中：左值大于等于右值" : "数值比较未命中：左值小于右值"
+    };
   }
   if (operator === "LT") {
-    return lv < rv;
+    const l = Number(left);
+    const r = Number(right);
+    if (!Number.isFinite(l) || !Number.isFinite(r)) {
+      return {
+        passed: false,
+        reason: "操作符为数值比较，但值无法转换为数字，按不命中处理"
+      };
+    }
+    return {
+      passed: l < r,
+      reason: l < r ? "数值比较命中：左值小于右值" : "数值比较未命中：左值不小于右值"
+    };
   }
   if (operator === "LE") {
-    return lv <= rv;
+    const l = Number(left);
+    const r = Number(right);
+    if (!Number.isFinite(l) || !Number.isFinite(r)) {
+      return {
+        passed: false,
+        reason: "操作符为数值比较，但值无法转换为数字，按不命中处理"
+      };
+    }
+    return {
+      passed: l <= r,
+      reason: l <= r ? "数值比较命中：左值小于等于右值" : "数值比较未命中：左值大于右值"
+    };
   }
-  return false;
+  return {
+    passed: false,
+    reason: "不支持的比较操作符"
+  };
 }
 
 function evaluateRule(ruleId: number, input: RulePreviewInput): RulePreviewResult {
@@ -232,14 +297,15 @@ function evaluateRule(ruleId: number, input: RulePreviewInput): RulePreviewResul
     for (const condition of ownConditions) {
       const leftValue = resolveOperand(condition.left, input);
       const rightValue = resolveOperand(condition.right, input);
-      const passed = compareValues(condition.operator, leftValue, rightValue);
+      const compareResult = compareValues(condition.operator, leftValue, rightValue);
+      const passed = compareResult.passed;
       traces.push({
         conditionId: condition.id,
         expression: `${condition.left.sourceType}:${condition.left.key} ${condition.operator} ${condition.right?.sourceType ?? ""}:${condition.right?.key ?? ""}`,
         leftValue,
         rightValue,
         passed,
-        reason: passed ? "命中" : "未命中"
+        reason: compareResult.reason
       });
       results.push(passed);
     }

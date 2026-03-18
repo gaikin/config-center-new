@@ -1,9 +1,11 @@
 import {
+  AutoComplete,
   Alert,
   Button,
   Card,
   Col,
   Drawer,
+  Dropdown,
   Form,
   Input,
   InputNumber,
@@ -12,15 +14,20 @@ import {
   Segmented,
   Select,
   Space,
+  Statistic,
   Steps,
+  Switch,
   Table,
   Tabs,
   Tag,
   Typography,
   message
 } from "antd";
+import type { MenuProps } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { CopyOutlined, EditOutlined, MoreOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import styled from "styled-components";
 import { OrgSelect } from "../../components/DirectoryFields";
 import { EffectiveConfirmModal } from "../../components/EffectiveConfirmModal";
 import { PublishContinuationAlert } from "../../components/PublishContinuationAlert";
@@ -34,7 +41,6 @@ import {
   ApiRegisterForm,
   DebugEnv,
   InputTabKey,
-  defaultOutputParam,
   statusColor,
   tabLabels,
   valueTypeOptions,
@@ -51,6 +57,144 @@ type EffectiveTarget = {
   source: "row" | "notice";
 };
 
+type OutputEditorRow = ApiOutputParam & {
+  suggestedPath: string;
+};
+
+const PageHeader = styled.div`
+  margin-bottom: var(--space-16);
+`;
+
+const SummaryCard = styled(Card)<{ $accent: string }>`
+  height: 100%;
+
+  &::before {
+    content: "";
+    display: block;
+    height: 4px;
+    background: ${({ $accent }) => $accent};
+  }
+
+  .ant-card-body {
+    padding-top: 14px;
+  }
+`;
+
+const ToolbarCard = styled(Card)`
+  margin-bottom: var(--space-12);
+`;
+
+const ActionBar = styled.div`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+`;
+
+const StepHint = styled(Alert)`
+  margin-bottom: var(--space-12);
+`;
+
+const ParamWorkbenchGrid = styled.div`
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+
+  @media (max-width: 1280px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const StatStrip = styled.div`
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 12px;
+
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr 1fr;
+  }
+`;
+
+const StatTile = styled.div<{ $accent: string }>`
+  border: 1px solid var(--cc-border-subtle, rgba(27, 99, 240, 0.15));
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: ${({ $accent }) => $accent};
+
+  .ant-typography.ant-typography-secondary {
+    color: var(--color-text-secondary) !important;
+    font-weight: 500;
+  }
+`;
+
+const WorkbenchCard = styled(Card)`
+  height: 100%;
+
+  .ant-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+`;
+
+const OutputJsonPreview = styled.pre`
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(27, 99, 240, 0.12);
+  background: linear-gradient(180deg, #f7faff 0%, #fdfefe 100%);
+  color: var(--color-text-primary);
+  max-height: 420px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.55;
+`;
+
+function collectPathsFromSample(value: unknown, basePath = "$.data"): string[] {
+  if (value === null || value === undefined) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return [basePath];
+    }
+    const first = value[0];
+    if (first !== null && typeof first === "object") {
+      return [basePath, ...collectPathsFromSample(first, `${basePath}[0]`)];
+    }
+    return [basePath];
+  }
+
+  if (typeof value !== "object") {
+    return [basePath];
+  }
+
+  const paths = [basePath];
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    paths.push(...collectPathsFromSample(child, `${basePath}.${key}`));
+  }
+  return paths;
+}
+
+function collectOutputConfigPaths(rows: ApiOutputParam[]): string[] {
+  const paths: string[] = [];
+  const walk = (items: ApiOutputParam[]) => {
+    for (const row of items) {
+      if (row.path) {
+        paths.push(row.path);
+      }
+      if (row.children && row.children.length > 0) {
+        walk(row.children);
+      }
+    }
+  };
+  walk(rows);
+  return paths;
+}
+
 export function InterfacesPage() {
   const [searchParams] = useSearchParams();
   const ownerOrgFilter = searchParams.get("ownerOrgId");
@@ -58,6 +202,10 @@ export function InterfacesPage() {
   const useCase = searchParams.get("useCase");
   const autoOpenCreateRef = useRef(false);
   const [wizardStep, setWizardStep] = useState(0);
+  const [keyword, setKeyword] = useState("");
+  const [pathPreviewEnv, setPathPreviewEnv] = useState<DebugEnv>("TEST");
+  const [outputEditorMode, setOutputEditorMode] = useState<"TABLE" | "JSON">("TABLE");
+  const [outputPathAdvancedMode, setOutputPathAdvancedMode] = useState(false);
 
   const {
     holder,
@@ -89,13 +237,7 @@ export function InterfacesPage() {
     parseOutputSample,
     outputConfig,
     updateOutputRow,
-    openOutputProperty,
     removeOutputRow,
-    propertyOpen,
-    setPropertyOpen,
-    saveOutputProperty,
-    setPropertyRows,
-    propertyRows,
     debugTarget,
     debugOpen,
     setDebugOpen,
@@ -144,6 +286,82 @@ export function InterfacesPage() {
     return filteredRows.filter((item) => item.ownerOrgId === ownerOrgFilter);
   }, [filteredRows, ownerOrgFilter]);
 
+  const keywordValue = keyword.trim().toLowerCase();
+  const searchedRows = useMemo(() => {
+    if (!keywordValue) {
+      return visibleRows;
+    }
+    return visibleRows.filter((item) => {
+      return (
+        item.name.toLowerCase().includes(keywordValue) ||
+        item.description.toLowerCase().includes(keywordValue) ||
+        item.testPath.toLowerCase().includes(keywordValue) ||
+        item.prodPath.toLowerCase().includes(keywordValue)
+      );
+    });
+  }, [keywordValue, visibleRows]);
+
+  const statusSummary = useMemo(() => {
+    const total = visibleRows.length;
+    const draft = visibleRows.filter((item) => item.status === "DRAFT").length;
+    const active = visibleRows.filter((item) => item.status === "ACTIVE").length;
+    const disabled = visibleRows.filter((item) => item.status === "DISABLED").length;
+    return { total, draft, active, disabled };
+  }, [visibleRows]);
+
+  const previewPath = Form.useWatch(pathPreviewEnv === "TEST" ? "testPath" : "prodPath", form);
+
+  const pathAssistOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const path of collectOutputConfigPaths(outputConfig)) {
+      if (path.trim()) {
+        set.add(path.trim());
+      }
+    }
+
+    const raw = outputSampleJson.trim();
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        const base =
+          parsed && typeof parsed === "object" && !Array.isArray(parsed) && "data" in (parsed as Record<string, unknown>)
+            ? (parsed as Record<string, unknown>).data
+            : parsed;
+        for (const path of collectPathsFromSample(base, "$.data")) {
+          if (path.trim()) {
+            set.add(path.trim());
+          }
+        }
+      } catch {
+        // Ignore parse errors here; validation panel already reports them.
+      }
+    }
+
+    return Array.from(set)
+      .sort((a, b) => a.localeCompare(b))
+      .map((value) => ({ value }));
+  }, [outputConfig, outputSampleJson]);
+
+  const requestParamTotal = useMemo(
+    () => inputConfig.headers.length + inputConfig.query.length + inputConfig.path.length + inputConfig.body.length,
+    [inputConfig]
+  );
+
+  const buildSuggestedPath = (name: string): string => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return "$.data";
+    }
+    return `$.data.${trimmed}`;
+  };
+
+  const outputEditorRows = useMemo<OutputEditorRow[]>(() => {
+    return outputConfig.map((row) => ({
+      ...row,
+      suggestedPath: buildSuggestedPath(row.name ?? "")
+    }));
+  }, [outputConfig]);
+
   useEffect(() => {
     if (quickAction !== "create" || autoOpenCreateRef.current) {
       return;
@@ -159,6 +377,9 @@ export function InterfacesPage() {
   useEffect(() => {
     if (drawerOpen) {
       setWizardStep(0);
+      setPathPreviewEnv("TEST");
+      setOutputEditorMode("TABLE");
+      setOutputPathAdvancedMode(false);
     }
   }, [drawerOpen]);
 
@@ -181,6 +402,44 @@ export function InterfacesPage() {
       testPath: "/test/customer/profile/query",
       prodPath: "/customer/profile/query"
     });
+  }
+
+  function copyTestPathToProd() {
+    const testPath = form.getFieldValue("testPath");
+    if (!testPath || !String(testPath).trim()) {
+      msgApi.warning("请先填写测试环境路径");
+      return;
+    }
+    form.setFieldValue("prodPath", String(testPath).trim());
+    msgApi.success("已复制测试路径到生产路径");
+  }
+
+  function buildRowMenuItems(row: InterfaceDefinition): MenuProps["items"] {
+    return [
+      {
+        key: "edit",
+        label: "编辑",
+        icon: <EditOutlined />,
+        onClick: () => openEdit(row)
+      },
+      {
+        key: "clone",
+        label: "复制创建",
+        icon: <CopyOutlined />,
+        onClick: () => openClone(row)
+      },
+      {
+        key: "debug",
+        label: "在线测试",
+        icon: <PlayCircleOutlined />,
+        onClick: () => openDebug(row)
+      }
+    ];
+  }
+
+  function resetListFilters() {
+    setKeyword("");
+    setStatusFilter("ALL");
   }
 
   async function openEffectiveAction(target: EffectiveTarget) {
@@ -263,14 +522,124 @@ export function InterfacesPage() {
     }
   }
 
+  function renderOutputEditorTable(rows: OutputEditorRow[]) {
+    const patchRow = (row: OutputEditorRow, patch: Partial<ApiOutputParam>) => {
+      updateOutputRow(row.id, patch);
+    };
+
+    const removeRowById = (row: OutputEditorRow) => removeOutputRow(row.id);
+
+    return (
+      <Table<OutputEditorRow>
+        rowKey="id"
+        pagination={false}
+        size="small"
+        dataSource={rows}
+        scroll={{ x: 980 }}
+        columns={[
+          {
+            title: "字段名",
+            width: 160,
+            render: (_, row) => {
+              const isManualPath = row.pathMode === "MANUAL";
+              return (
+                <Input
+                  value={row.name}
+                  onChange={(event) => {
+                    const nextName = event.target.value;
+                    patchRow(row, {
+                      name: nextName,
+                      path: isManualPath ? row.path : buildSuggestedPath(nextName),
+                      pathMode: isManualPath ? "MANUAL" : "AUTO"
+                    });
+                  }}
+                />
+              );
+            }
+          },
+          {
+            title: "路径",
+            width: outputPathAdvancedMode ? 320 : 280,
+            render: (_, row) => {
+              const isManualPath = row.pathMode === "MANUAL";
+              const displayPath = isManualPath ? row.path : row.suggestedPath;
+              if (!outputPathAdvancedMode) {
+                return (
+                  <Space size={6} wrap>
+                    <Typography.Text code>{displayPath || "-"}</Typography.Text>
+                    <Tag color={isManualPath ? "gold" : "blue"}>{isManualPath ? "手动" : "自动"}</Tag>
+                  </Space>
+                );
+              }
+              return (
+                <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                  <AutoComplete
+                    options={pathAssistOptions}
+                    value={displayPath}
+                    onChange={(value) => patchRow(row, { path: value, pathMode: "MANUAL" })}
+                    placeholder="如 $.data.score"
+                  />
+                  <Space size={6} wrap>
+                    <Tag color={isManualPath ? "gold" : "blue"}>{isManualPath ? "手动路径" : "自动路径"}</Tag>
+                    {isManualPath ? (
+                      <Button
+                        size="small"
+                        onClick={() => patchRow(row, { path: row.suggestedPath, pathMode: "AUTO" })}
+                      >
+                        恢复自动
+                      </Button>
+                    ) : null}
+                  </Space>
+                </Space>
+              );
+            }
+          },
+          {
+            title: "描述",
+            width: 160,
+            render: (_, row) => (
+              <Input value={row.description} onChange={(event) => patchRow(row, { description: event.target.value })} />
+            )
+          },
+          {
+            title: "类型",
+            width: 120,
+            render: (_, row) => (
+              <Select
+                value={row.valueType}
+                options={valueTypeOptions}
+                onChange={(value) =>
+                  patchRow(row, {
+                    valueType: value as ApiValueType,
+                    children: value === "OBJECT" || value === "ARRAY" ? row.children ?? [] : []
+                  })
+                }
+              />
+            )
+          },
+          {
+            title: "操作",
+            width: 88,
+            render: (_, row) => (
+              <Space size={6}>
+                <Button danger size="small" onClick={() => removeRowById(row)}>
+                  删除
+                </Button>
+              </Space>
+            )
+          }
+        ]}
+      />
+    );
+  }
+
   return (
     <div>
       {holder}
       {msgHolder}
-      <Typography.Title level={4}>API注册</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        保留 API注册 术语，主流程改为五步向导：选用途 → 填基础信息 → 填参数示例 → 在线测试 → 保存。保存后可直接发布当前对象。
-      </Typography.Paragraph>
+      <PageHeader>
+        <Typography.Title level={4}>API注册</Typography.Title>
+      </PageHeader>
       {publishNotice ? (
         <PublishContinuationAlert
           objectLabel="API"
@@ -299,33 +668,72 @@ export function InterfacesPage() {
           description="该过滤来自菜单管理详情中的“新建关联 API”快捷动作。"
         />
       ) : null}
+      <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+        <Col xs={24} sm={12} lg={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #2465f2 0%, #58a2ff 100%)">
+            <Statistic title="接口总数" value={statusSummary.total} />
+          </SummaryCard>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #8f55ed 0%, #bf8bff 100%)">
+            <Statistic title="草稿接口" value={statusSummary.draft} />
+          </SummaryCard>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #16945f 0%, #47b983 100%)">
+            <Statistic title="已生效" value={statusSummary.active} />
+          </SummaryCard>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <SummaryCard $accent="linear-gradient(90deg, #ce7f27 0%, #e9b15b 100%)">
+            <Statistic title="已停用" value={statusSummary.disabled} />
+          </SummaryCard>
+        </Col>
+      </Row>
+
+      <ToolbarCard>
+        <Row gutter={[12, 12]} align="middle">
+          <Col xs={24} lg={10}>
+            <Input.Search
+              allowClear
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="搜索 API 名称、用途、测试路径或生产路径"
+            />
+          </Col>
+          <Col xs={24} lg={14}>
+            <ActionBar>
+              <Segmented
+                value={statusFilter}
+                onChange={(value) => setStatusFilter(value as StatusFilter)}
+                options={[
+                  { label: "全部", value: "ALL" },
+                  { label: "草稿", value: "DRAFT" },
+                  { label: "生效", value: "ACTIVE" },
+                  { label: "停用", value: "DISABLED" },
+                  { label: "失效", value: "EXPIRED" }
+                ]}
+              />
+              <Button onClick={resetListFilters}>重置筛选</Button>
+              <Button onClick={useTemplateCreate}>从模板创建</Button>
+              <Button type="primary" onClick={() => openCreate()}>
+                新建 API注册
+              </Button>
+            </ActionBar>
+          </Col>
+        </Row>
+      </ToolbarCard>
 
       <Card
         extra={
-          <Space>
-            <Segmented
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value as StatusFilter)}
-              options={[
-                { label: "全部", value: "ALL" },
-                { label: "草稿", value: "DRAFT" },
-                { label: "生效", value: "ACTIVE" },
-                { label: "停用", value: "DISABLED" },
-                { label: "失效", value: "EXPIRED" }
-              ]}
-            />
-            <Button onClick={useTemplateCreate}>从模板创建</Button>
-            <Button type="primary" onClick={() => openCreate()}>
-              新建 API注册
-            </Button>
-          </Space>
+          <Typography.Text type="secondary">当前展示 {searchedRows.length} 条记录</Typography.Text>
         }
       >
         <Table<InterfaceDefinition>
           rowKey="id"
           loading={loading}
-          dataSource={visibleRows}
-          pagination={{ pageSize: 6, showSizeChanger: true, pageSizeOptions: ["6", "10", "20"] }}
+          dataSource={searchedRows}
+          pagination={{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ["10", "20", "50"] }}
           columns={[
             { title: "API名称", dataIndex: "name", width: 180 },
             { title: "接口用途", dataIndex: "description", width: 220 },
@@ -365,38 +773,37 @@ export function InterfacesPage() {
             },
             {
               title: "操作",
-              width: 320,
+              width: 220,
               render: (_, row) => {
                 const actionMeta = getEffectiveActionMeta(row.status);
                 const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasAction);
                 return (
-                <Space>
-                  <Button size="small" onClick={() => openEdit(row)}>
-                    编辑
-                  </Button>
-                  <Button size="small" onClick={() => openClone(row)}>
-                    复制创建
-                  </Button>
-                  <Button size="small" onClick={() => openDebug(row)}>
-                    在线测试
-                  </Button>
-                  <Button
-                    size="small"
-                    type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
-                    disabled={Boolean(actionBlocked)}
-                    title={actionBlocked ?? undefined}
-                    onClick={() =>
-                      void openEffectiveAction({
-                        id: row.id,
-                        name: row.name,
-                        status: row.status,
-                        source: "row"
-                      })
-                    }
-                  >
-                    {actionMeta.label}
-                  </Button>
-                </Space>
+                  <Space>
+                    <Button size="small" onClick={() => openEdit(row)}>
+                      编辑
+                    </Button>
+                    <Dropdown menu={{ items: buildRowMenuItems(row) }} trigger={["click"]}>
+                      <Button size="small" icon={<MoreOutlined />}>
+                        更多
+                      </Button>
+                    </Dropdown>
+                    <Button
+                      size="small"
+                      type={actionMeta.type === "PUBLISH" ? "primary" : "default"}
+                      disabled={Boolean(actionBlocked)}
+                      title={actionBlocked ?? undefined}
+                      onClick={() =>
+                        void openEffectiveAction({
+                          id: row.id,
+                          name: row.name,
+                          status: row.status,
+                          source: "row"
+                        })
+                      }
+                    >
+                      {actionMeta.label}
+                    </Button>
+                  </Space>
                 );
               }
             }
@@ -442,9 +849,11 @@ export function InterfacesPage() {
 
           {wizardStep === 0 ? (
             <Card title="步骤 1：选用途" size="small">
-              <Typography.Paragraph type="secondary">
-                先明确接口用途和调用方式，后续再补参数和测试。可先从模板或复制已有 API 创建。
-              </Typography.Paragraph>
+              <StepHint
+                showIcon
+                type="info"
+                message="建议先写清楚用途与调用对象"
+              />
               <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
                 <Input maxLength={128} />
               </Form.Item>
@@ -466,9 +875,11 @@ export function InterfacesPage() {
 
           {wizardStep === 1 ? (
             <Card title="步骤 2：填基础信息" size="small">
-              <Typography.Paragraph type="secondary">
-                接口编号和版本由系统自动维护，你只需要填写业务信息。
-              </Typography.Paragraph>
+              <StepHint
+                showIcon
+                type="info"
+                message="测试路径和生产路径建议同时维护"
+              />
               <Row gutter={12}>
                 <Col span={24}>
                   <Form.Item name="ownerOrgId" label="机构范围" rules={[{ required: true, message: "请选择机构范围" }]}>
@@ -488,6 +899,22 @@ export function InterfacesPage() {
                   </Form.Item>
                 </Col>
               </Row>
+              <Space style={{ marginBottom: 12 }} wrap>
+                <Segmented
+                  value={pathPreviewEnv}
+                  onChange={(value) => setPathPreviewEnv(value as DebugEnv)}
+                  options={[
+                    { label: "测试路径预览", value: "TEST" },
+                    { label: "生产路径预览", value: "PROD" }
+                  ]}
+                />
+                <Button icon={<CopyOutlined />} onClick={copyTestPathToProd}>
+                  测试路径复制到生产
+                </Button>
+                <Typography.Text type="secondary">
+                  当前预览：{previewPath || "-"}
+                </Typography.Text>
+              </Space>
               <Row gutter={12}>
                 <Col span={8}>
                   <Form.Item name="timeoutMs" label="超时(ms)" rules={[{ required: true, message: "请输入超时" }]}>
@@ -504,7 +931,7 @@ export function InterfacesPage() {
                 <Select options={lifecycleOptions} />
               </Form.Item>
               <Form.Item name="maskSensitive" label="敏感字段脱敏" valuePropName="checked">
-                <Select options={[{ label: "开启", value: true }, { label: "关闭", value: false }]} />
+                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
               </Form.Item>
             </Card>
           ) : null}
@@ -518,130 +945,126 @@ export function InterfacesPage() {
               />
               <ValidationReportPanel issues={inputValidationIssues} title="请求参数还有待处理问题" />
               <ValidationReportPanel issues={outputValidationIssues} title="返回参数还有待处理问题" />
-              <Card title="步骤 3：填参数示例" size="small">
-                <Tabs
-                  activeKey={inputTab}
-                  onChange={(key) => setInputTab(key as InputTabKey)}
-                  items={(Object.keys(tabLabels) as InputTabKey[]).map((tab) => ({
-                    key: tab,
-                    label: tabLabels[tab],
-                    children: (
-                      <div>
-                        {tab === "body" ? (
-                          <>
-                            <Form.Item name="bodyTemplateJson" label="Body JSON 模板">
-                              <Input.TextArea rows={6} placeholder="支持 JSON 解析为 Body 参数" />
-                            </Form.Item>
-                            <Space style={{ marginBottom: 12 }}>
-                              <Button onClick={parseBodyTemplate}>解析 Body JSON</Button>
-                              <Button onClick={() => addInputRow("body")}>手动新增 Body 参数</Button>
-                            </Space>
-                          </>
-                        ) : (
-                          <Button style={{ marginBottom: 12 }} onClick={() => addInputRow(tab)}>
-                            新增{tabLabels[tab]}参数
-                          </Button>
-                        )}
-
-                        <Table size="small" rowKey="id" pagination={false} columns={inputColumns(tab)} dataSource={inputConfig[tab]} />
-                      </div>
-                    )
-                  }))}
-                />
-              </Card>
-
-              <Card
-                title="返回参数示例"
-                size="small"
-                extra={
-                  <Space>
-                    <Button onClick={addOutputRow}>新增出参</Button>
-                  </Space>
-                }
-              >
-                <Input.TextArea
-                  rows={5}
-                  value={outputSampleJson}
-                  onChange={(event) => setOutputSampleJson(event.target.value)}
-                  placeholder="粘贴返回 JSON 示例"
-                />
-                <Space style={{ marginTop: 8, marginBottom: 12 }}>
-                  <Button onClick={parseOutputSample}>解析返回 JSON</Button>
-                </Space>
-
-                <Table<ApiOutputParam>
-                  rowKey="id"
-                  pagination={false}
+              <ParamWorkbenchGrid>
+                <WorkbenchCard
+                  title={
+                    <Space size={8} wrap>
+                      <Typography.Text strong>步骤 3：填参数示例</Typography.Text>
+                      <Tag color="blue">请求参数 {requestParamTotal}</Tag>
+                    </Space>
+                  }
                   size="small"
-                  dataSource={outputConfig}
-                  scroll={{ x: 980 }}
-                  columns={[
-                    {
-                      title: "字段名",
-                      width: 170,
-                      render: (_, row) => (
-                        <Input value={row.name} onChange={(event) => updateOutputRow(row.id, { name: event.target.value })} />
+                >
+                  <StepHint
+                    showIcon
+                    type="info"
+                    message="Body JSON 是唯一结构来源"
+                  />
+                  <StatStrip>
+                    <StatTile $accent="linear-gradient(180deg, #F5F9FF 0%, #FFFFFF 100%)">
+                      <Typography.Text type="secondary">请求参数总数</Typography.Text>
+                      <Typography.Title level={5} style={{ margin: 0 }}>{requestParamTotal}</Typography.Title>
+                    </StatTile>
+                    <StatTile $accent="linear-gradient(180deg, #F2FBF7 0%, #FFFFFF 100%)">
+                      <Typography.Text type="secondary">Body 字段数</Typography.Text>
+                      <Typography.Title level={5} style={{ margin: 0 }}>{inputConfig.body.length}</Typography.Title>
+                    </StatTile>
+                    <StatTile $accent="linear-gradient(180deg, #FFF8F1 0%, #FFFFFF 100%)">
+                      <Typography.Text type="secondary">返回字段数</Typography.Text>
+                      <Typography.Title level={5} style={{ margin: 0 }}>{outputConfig.length}</Typography.Title>
+                    </StatTile>
+                  </StatStrip>
+                  <Tabs
+                    activeKey={inputTab}
+                    onChange={(key) => setInputTab(key as InputTabKey)}
+                    items={(Object.keys(tabLabels) as InputTabKey[]).map((tab) => ({
+                      key: tab,
+                      label: `${tabLabels[tab]} (${inputConfig[tab].length})`,
+                      children: (
+                        <div>
+                          {tab === "body" ? (
+                            <>
+                              <Form.Item name="bodyTemplateJson" label="Body JSON 模板">
+                                <Input.TextArea rows={6} placeholder="支持 JSON 解析为 Body 参数" />
+                              </Form.Item>
+                              <Alert
+                                showIcon
+                                type="info"
+                                style={{ marginBottom: 12 }}
+                                message="结构调整请修改 Body JSON 后重新解析"
+                              />
+                              <Space style={{ marginBottom: 12 }}>
+                                <Button type="primary" onClick={parseBodyTemplate}>解析并重建结构</Button>
+                                <Typography.Text type="secondary">当前 Body 参数数：{inputConfig.body.length}</Typography.Text>
+                              </Space>
+                            </>
+                          ) : (
+                            <Button style={{ marginBottom: 12 }} onClick={() => addInputRow(tab)}>
+                              新增{tabLabels[tab]}参数
+                            </Button>
+                          )}
+
+                          <Table size="small" rowKey="id" pagination={false} columns={inputColumns(tab)} dataSource={inputConfig[tab]} />
+                        </div>
                       )
-                    },
-                    {
-                      title: "路径",
-                      width: 260,
-                      render: (_, row) => (
-                        <Input value={row.path} onChange={(event) => updateOutputRow(row.id, { path: event.target.value })} />
-                      )
-                    },
-                    {
-                      title: "描述",
-                      width: 160,
-                      render: (_, row) => (
-                        <Input value={row.description} onChange={(event) => updateOutputRow(row.id, { description: event.target.value })} />
-                      )
-                    },
-                    {
-                      title: "类型",
-                      width: 120,
-                      render: (_, row) => (
-                        <Select
-                          value={row.valueType}
-                          options={valueTypeOptions}
-                          onChange={(value) =>
-                            updateOutputRow(row.id, {
-                              valueType: value as ApiValueType,
-                              children: value === "OBJECT" || value === "ARRAY" ? row.children ?? [] : []
-                            })
-                          }
-                        />
-                      )
-                    },
-                    {
-                      title: "属性",
-                      width: 120,
-                      render: (_, row) => (
-                        <Button size="small" onClick={() => openOutputProperty(row)}>
-                          细化属性
-                        </Button>
-                      )
-                    },
-                    {
-                      title: "操作",
-                      width: 80,
-                      render: (_, row) => (
-                        <Button danger size="small" onClick={() => removeOutputRow(row.id)}>
-                          删除
-                        </Button>
-                      )
-                    }
-                  ]}
-                />
-              </Card>
+                    }))}
+                  />
+                </WorkbenchCard>
+
+                <WorkbenchCard
+                  title={
+                    <Space size={8} wrap>
+                      <Typography.Text strong>返回参数示例</Typography.Text>
+                      <Tag color="cyan">根字段 {outputConfig.length}</Tag>
+                    </Space>
+                  }
+                  size="small"
+                  extra={
+                    <Space size={8}>
+                      <Segmented
+                        value={outputEditorMode}
+                        onChange={(value) => setOutputEditorMode(value as "TABLE" | "JSON")}
+                        options={[
+                          { label: "结构编辑", value: "TABLE" },
+                          { label: "JSON预览", value: "JSON" }
+                        ]}
+                      />
+                      <Button onClick={addOutputRow}>新增出参</Button>
+                    </Space>
+                  }
+                >
+                  <Alert
+                    showIcon
+                    type={outputPathAdvancedMode ? "warning" : "info"}
+                    message={outputPathAdvancedMode ? "高级模式：可手动改路径" : "默认模式：路径自动生成"}
+                  />
+                  <Space style={{ marginTop: 8 }} wrap>
+                    <Switch checked={outputPathAdvancedMode} onChange={setOutputPathAdvancedMode} />
+                    <Typography.Text type="secondary">高级路径编辑</Typography.Text>
+                  </Space>
+                  <Input.TextArea
+                    rows={5}
+                    value={outputSampleJson}
+                    onChange={(event) => setOutputSampleJson(event.target.value)}
+                    placeholder="粘贴返回 JSON 示例"
+                  />
+                  <Space style={{ marginTop: 8, marginBottom: 12 }}>
+                    <Button onClick={parseOutputSample}>解析返回 JSON</Button>
+                    <Typography.Text type="secondary">路径建议数：{pathAssistOptions.length}</Typography.Text>
+                  </Space>
+
+                  {outputEditorMode === "TABLE" ? (
+                    renderOutputEditorTable(outputEditorRows)
+                  ) : (
+                    <OutputJsonPreview>{JSON.stringify(outputConfig, null, 2)}</OutputJsonPreview>
+                  )}
+                </WorkbenchCard>
+              </ParamWorkbenchGrid>
             </Space>
           ) : null}
 
           {wizardStep === 3 ? (
             <Card title="步骤 4：在线测试" size="small">
-              <Typography.Paragraph type="secondary">
-                保存前请执行一次在线测试，确认请求路径、入参与返回结构满足当前用途。
-              </Typography.Paragraph>
               <Space>
                 <Button type="primary" onClick={openDebugDraft}>
                   使用当前草稿在线测试
@@ -662,94 +1085,6 @@ export function InterfacesPage() {
           ) : null}
         </Form>
       </Drawer>
-
-      <Modal title="细化对象属性" open={propertyOpen} width={900} onCancel={() => setPropertyOpen(false)} onOk={saveOutputProperty}>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          在这里维护对象或数组下的子字段。
-        </Typography.Paragraph>
-        <Space style={{ marginBottom: 12 }}>
-          <Button onClick={() => setPropertyRows((prev) => [...prev, defaultOutputParam()])}>新增属性</Button>
-        </Space>
-        <Table<ApiOutputParam>
-          rowKey="id"
-          pagination={false}
-          size="small"
-          dataSource={propertyRows}
-          scroll={{ x: 860 }}
-          columns={[
-            {
-              title: "字段名",
-              width: 180,
-              render: (_, row) => (
-                <Input
-                  value={row.name}
-                  onChange={(event) =>
-                    setPropertyRows((prev) => prev.map((item) => (item.id === row.id ? { ...item, name: event.target.value } : item)))
-                  }
-                />
-              )
-            },
-            {
-              title: "路径",
-              width: 260,
-              render: (_, row) => (
-                <Input
-                  value={row.path}
-                  onChange={(event) =>
-                    setPropertyRows((prev) => prev.map((item) => (item.id === row.id ? { ...item, path: event.target.value } : item)))
-                  }
-                />
-              )
-            },
-            {
-              title: "描述",
-              width: 150,
-              render: (_, row) => (
-                <Input
-                  value={row.description}
-                  onChange={(event) =>
-                    setPropertyRows((prev) =>
-                      prev.map((item) => (item.id === row.id ? { ...item, description: event.target.value } : item))
-                    )
-                  }
-                />
-              )
-            },
-            {
-              title: "类型",
-              width: 120,
-              render: (_, row) => (
-                <Select
-                  value={row.valueType}
-                  options={valueTypeOptions}
-                  onChange={(value) =>
-                    setPropertyRows((prev) =>
-                      prev.map((item) =>
-                        item.id === row.id
-                          ? {
-                              ...item,
-                              valueType: value as ApiValueType,
-                              children: value === "OBJECT" || value === "ARRAY" ? item.children ?? [] : []
-                            }
-                          : item
-                      )
-                    )
-                  }
-                />
-              )
-            },
-            {
-              title: "操作",
-              width: 80,
-              render: (_, row) => (
-                <Button danger size="small" onClick={() => setPropertyRows((prev) => prev.filter((item) => item.id !== row.id))}>
-                  删除
-                </Button>
-              )
-            }
-          ]}
-        />
-      </Modal>
 
       <Modal
         title={debugTarget ? `API在线测试：${debugTarget.name}` : "API在线测试"}
@@ -835,7 +1170,6 @@ function DescriptionsSummary({ form, outputCount, report }: { form: any; outputC
         showIcon
         type="info"
         message="确认后保存"
-        description="保存后会在列表中展示引用关系，并可在本页直接发布。"
       />
       <Space wrap>
         <Tag color="blue">{values.name || "未命名接口"}</Tag>

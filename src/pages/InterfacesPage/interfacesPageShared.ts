@@ -1,8 +1,11 @@
 import type {
+  ApiOutputPathMode,
+  ApiInputRegexMode,
+  ApiInputRegexTemplateKey,
+  ApiInputValidationConfig,
   ApiInputParam,
   ApiOutputParam,
   ApiValueType,
-  ApiValueSourceType,
   InterfaceDefinition,
   LifecycleState
 } from "../../types";
@@ -49,11 +52,16 @@ export const valueTypeOptions: Array<{ label: string; value: ApiValueType }> = [
   { label: "数组", value: "ARRAY" }
 ];
 
-export const sourceTypeOptions: Array<{ label: string; value: ApiValueSourceType }> = [
-  { label: "固定值", value: "CONST" },
-  { label: "页面元素", value: "PAGE_ELEMENT" },
-  { label: "API输出", value: "API_OUTPUT" },
-  { label: "上下文", value: "CONTEXT" }
+export const regexModeOptions: Array<{ label: string; value: ApiInputRegexMode }> = [
+  { label: "不校验", value: "NONE" },
+  { label: "模板", value: "TEMPLATE" },
+  { label: "自定义", value: "CUSTOM" }
+];
+
+export const regexTemplateOptions: Array<{ label: string; value: ApiInputRegexTemplateKey; pattern: string }> = [
+  { label: "手机号(11位)", value: "MOBILE_CN", pattern: "^1\\d{10}$" },
+  { label: "身份证号(18位)", value: "ID_CARD_CN", pattern: "^\\d{17}[\\dXx]$" },
+  { label: "邮箱", value: "EMAIL", pattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" }
 ];
 
 export const tabLabels: Record<InputTabKey, string> = {
@@ -67,15 +75,29 @@ export function buildId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
 
+export function defaultInputValidationConfig(
+  patch?: Partial<ApiInputValidationConfig> | null
+): ApiInputValidationConfig {
+  return {
+    required: patch?.required ?? false,
+    regexMode: patch?.regexMode ?? "NONE",
+    regexTemplateKey: patch?.regexTemplateKey,
+    regexPattern: patch?.regexPattern ?? "",
+    regexErrorMessage: patch?.regexErrorMessage ?? ""
+  };
+}
+
 export function defaultInputParam(patch?: Partial<ApiInputParam>): ApiInputParam {
+  const legacyPatch = patch as Partial<ApiInputParam> & { required?: boolean };
   return {
     id: patch?.id ?? buildId("param"),
     name: patch?.name ?? "",
     description: patch?.description ?? "",
     valueType: patch?.valueType ?? "STRING",
-    required: patch?.required ?? false,
-    sourceType: patch?.sourceType ?? "CONST",
-    sourceValue: patch?.sourceValue ?? ""
+    validationConfig: defaultInputValidationConfig({
+      ...patch?.validationConfig,
+      required: patch?.validationConfig?.required ?? legacyPatch.required
+    })
   };
 }
 
@@ -84,6 +106,7 @@ export function defaultOutputParam(patch?: Partial<ApiOutputParam>): ApiOutputPa
     id: patch?.id ?? buildId("output"),
     name: patch?.name ?? "",
     path: patch?.path ?? "",
+    pathMode: patch?.pathMode ?? "AUTO",
     description: patch?.description ?? "",
     valueType: patch?.valueType ?? "STRING",
     children: patch?.children ?? []
@@ -116,7 +139,7 @@ export function normalizeInputConfig(jsonText: string): InputConfigDraft {
     }
 
     return row.map((item) => {
-      const next = typeof item === "object" && item ? (item as Partial<ApiInputParam>) : {};
+      const next = typeof item === "object" && item ? (item as Partial<ApiInputParam> & { required?: boolean }) : {};
       return defaultInputParam(next);
     });
   };
@@ -138,8 +161,10 @@ export function normalizeOutputConfig(jsonText: string): ApiOutputParam[] {
   const normalize = (item: unknown): ApiOutputParam => {
     const raw = typeof item === "object" && item ? (item as Partial<ApiOutputParam>) : {};
     const children = Array.isArray(raw.children) ? raw.children.map((child) => normalize(child)) : [];
+    const pathMode: ApiOutputPathMode = raw.pathMode === "MANUAL" ? "MANUAL" : "AUTO";
     return defaultOutputParam({
       ...raw,
+      pathMode,
       children
     });
   };
@@ -168,8 +193,6 @@ export function flattenBodyParams(value: unknown, prefix = ""): ApiInputParam[] 
       defaultInputParam({
         name: prefix || "array_field",
         valueType: "ARRAY",
-        sourceType: "CONST",
-        sourceValue: JSON.stringify(value),
         description: "由 Body JSON 解析"
       })
     ];
@@ -187,8 +210,6 @@ export function flattenBodyParams(value: unknown, prefix = ""): ApiInputParam[] 
           defaultInputParam({
             name,
             valueType: childType,
-            sourceType: "CONST",
-            sourceValue: typeof child === "string" ? child : JSON.stringify(child),
             description: "由 Body JSON 解析"
           })
         );
@@ -201,8 +222,6 @@ export function flattenBodyParams(value: unknown, prefix = ""): ApiInputParam[] 
     defaultInputParam({
       name: prefix || "value",
       valueType: inferValueType(value),
-      sourceType: "CONST",
-      sourceValue: typeof value === "string" ? value : JSON.stringify(value),
       description: "由 Body JSON 解析"
     })
   ];
@@ -223,6 +242,7 @@ export function parseOutputFromSampleObject(value: unknown, basePath = "$.data")
         defaultOutputParam({
           name: key,
           path,
+          pathMode: "AUTO",
           valueType: "OBJECT",
           description: "由返回 JSON 解析",
           children: parseOutputFromSampleObject(child, path)
@@ -238,6 +258,7 @@ export function parseOutputFromSampleObject(value: unknown, basePath = "$.data")
         defaultOutputParam({
           name: key,
           path,
+          pathMode: "AUTO",
           valueType: "ARRAY",
           description: "由返回 JSON 解析",
           children:
@@ -253,6 +274,7 @@ export function parseOutputFromSampleObject(value: unknown, basePath = "$.data")
       defaultOutputParam({
         name: key,
         path,
+        pathMode: "AUTO",
         valueType: childType,
         description: "由返回 JSON 解析"
       })

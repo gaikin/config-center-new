@@ -1224,7 +1224,8 @@ export const configCenterService = {
     payload: Omit<JobSceneDefinition, "updatedAt"> & { updatedAt?: string }
   ): Promise<SaveDraftResult<JobSceneDefinition>> {
     await sleep(120);
-    const report = validateJobSceneDraftPayload(payload, store.scenes);
+    const linkedRules = store.rules.filter((rule) => rule.sceneId === payload.id);
+    const report = validateJobSceneDraftPayload(payload, store.scenes, { linkedRules });
     if (!report.canSaveDraft) {
       return { success: false, report };
     }

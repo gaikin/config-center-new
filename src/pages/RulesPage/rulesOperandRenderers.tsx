@@ -1,6 +1,13 @@
 import { Input, Select } from "antd";
 import { OPERAND_PILL_WIDTH, contextOptions, resolveOperandSummary } from "./rulesPageShared";
-import type { InterfaceInputParamDraft, OperandDraft, OperandSide, RulePageFieldOption, SelectedOperand } from "./rulesPageShared";
+import type {
+  InterfaceInputBindingDraft,
+  InterfaceInputParamDraft,
+  OperandDraft,
+  OperandSide,
+  RulePageFieldOption,
+  SelectedOperand
+} from "./rulesPageShared";
 
 type OperandPillProps = {
   conditionId: string;
@@ -23,19 +30,19 @@ export function OperandPill({ conditionId, side, operand, selectedOperand, onSel
 
 type InterfaceInputValueEditorProps = {
   param: InterfaceInputParamDraft;
+  binding: InterfaceInputBindingDraft;
   pageFieldOptions: RulePageFieldOption[];
-  selectedInterfaceInputConfig: Record<string, string>;
-  updateInterfaceInputValue: (paramName: string, value: string) => void;
+  updateInterfaceInputValue: (paramName: string, patch: Partial<InterfaceInputBindingDraft>) => void;
 };
 
 export function InterfaceInputValueEditor({
   param,
+  binding,
   pageFieldOptions,
-  selectedInterfaceInputConfig,
   updateInterfaceInputValue
 }: InterfaceInputValueEditorProps) {
-  const value = selectedInterfaceInputConfig[param.name] ?? param.sourceValue ?? "";
-  if (param.sourceType === "PAGE_ELEMENT") return <Select showSearch allowClear placeholder="选择页面字段" value={value || undefined} options={pageFieldOptions} optionFilterProp="label" onChange={(next) => updateInterfaceInputValue(param.name, (next as string) ?? "")} />;
-  if (param.sourceType === "CONTEXT") return <Select showSearch allowClear placeholder="选择上下文变量" value={value || undefined} options={contextOptions.map((item) => ({ label: item, value: item }))} onChange={(next) => updateInterfaceInputValue(param.name, (next as string) ?? "")} />;
-  return <Input value={value} placeholder={param.sourceType === "API_OUTPUT" ? "输入API输出路径" : "输入固定值"} onChange={(event) => updateInterfaceInputValue(param.name, event.target.value)} />;
+  const value = binding.sourceValue;
+  if (binding.sourceType === "PAGE_FIELD") return <Select showSearch allowClear placeholder="选择页面字段" value={value || undefined} options={pageFieldOptions} optionFilterProp="label" onChange={(next) => updateInterfaceInputValue(param.name, { sourceValue: (next as string) ?? "" })} />;
+  if (binding.sourceType === "CONTEXT") return <Select showSearch allowClear placeholder="选择上下文变量" value={value || undefined} options={contextOptions.map((item) => ({ label: item, value: item }))} onChange={(next) => updateInterfaceInputValue(param.name, { sourceValue: (next as string) ?? "" })} />;
+  return <Input value={value} placeholder={binding.sourceType === "INTERFACE_FIELD" ? "输入接口输出标识" : "输入固定值"} onChange={(event) => updateInterfaceInputValue(param.name, { sourceValue: event.target.value })} />;
 }

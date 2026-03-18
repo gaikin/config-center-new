@@ -91,22 +91,31 @@ export interface PageFieldBinding {
 }
 
 export type ApiValueType = "STRING" | "NUMBER" | "BOOLEAN" | "OBJECT" | "ARRAY";
-export type ApiValueSourceType = "CONST" | "PAGE_ELEMENT" | "API_OUTPUT" | "CONTEXT";
+export type ApiOutputPathMode = "AUTO" | "MANUAL";
+export type ApiInputRegexMode = "NONE" | "TEMPLATE" | "CUSTOM";
+export type ApiInputRegexTemplateKey = "MOBILE_CN" | "ID_CARD_CN" | "EMAIL";
+
+export interface ApiInputValidationConfig {
+  required: boolean;
+  regexMode?: ApiInputRegexMode;
+  regexTemplateKey?: ApiInputRegexTemplateKey;
+  regexPattern?: string;
+  regexErrorMessage?: string;
+}
 
 export interface ApiInputParam {
   id: string;
   name: string;
   description: string;
   valueType: ApiValueType;
-  required: boolean;
-  sourceType: ApiValueSourceType;
-  sourceValue: string;
+  validationConfig?: ApiInputValidationConfig;
 }
 
 export interface ApiOutputParam {
   id: string;
   name: string;
   path: string;
+  pathMode?: ApiOutputPathMode;
   description: string;
   valueType: ApiValueType;
   children?: ApiOutputParam[];

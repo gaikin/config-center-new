@@ -295,9 +295,12 @@ export function useJobScenesPageModel() {
         manualDurationSec: values.manualDurationSec ?? 0,
         riskConfirmed: editing?.riskConfirmed ?? false
       },
-      rows
+      rows,
+      {
+        linkedRules: editing?.id ? linkedRulesByScene.get(editing.id) ?? [] : []
+      }
     );
-  }, [editing?.id, editing?.riskConfirmed, open, rows, watchedSceneValues]);
+  }, [editing?.id, editing?.riskConfirmed, linkedRulesByScene, open, rows, watchedSceneValues]);
 
   const activeSceneSaveValidationReport = liveSceneSaveValidationReport ?? sceneSaveValidationReport;
 
@@ -317,6 +320,7 @@ export function useJobScenesPageModel() {
     const result = await configCenterService.saveJobSceneDraft({
       id: sceneId,
       ...values,
+      status: "DRAFT",
       executionMode: nextExecutionMode,
       previewBeforeExecute: Boolean(values.previewBeforeExecute),
       floatingButtonEnabled:

@@ -1,4 +1,5 @@
 import type {
+  ApiInputValidationConfig,
   InterfaceDefinition,
   LifecycleState,
   PromptCloseMode,
@@ -86,10 +87,15 @@ export type InterfaceInputParamDraft = {
   tab: "headers" | "query" | "path" | "body";
   name: string;
   description: string;
-  required: boolean;
-  sourceType: "CONST" | "PAGE_ELEMENT" | "API_OUTPUT" | "CONTEXT";
-  sourceValue: string;
+  validationConfig: ApiInputValidationConfig;
   valueType: RuleOperandValueType;
+};
+
+export type InterfaceInputSourceType = "PAGE_FIELD" | "CONTEXT" | "INTERFACE_FIELD" | "CONST";
+
+export type InterfaceInputBindingDraft = {
+  sourceType: InterfaceInputSourceType;
+  sourceValue: string;
 };
 
 export const OPERAND_PILL_WIDTH = 320;
@@ -120,6 +126,13 @@ export const listLookupSourceOptions: Array<{ label: string; value: RuleLookupSo
   { label: "页面字段", value: "PAGE_FIELD" },
   { label: "API字段", value: "INTERFACE_FIELD" },
   { label: "上下文变量", value: "CONTEXT" },
+  { label: "固定值", value: "CONST" }
+];
+
+export const interfaceInputSourceOptions: Array<{ label: string; value: InterfaceInputSourceType }> = [
+  { label: "页面字段", value: "PAGE_FIELD" },
+  { label: "上下文变量", value: "CONTEXT" },
+  { label: "接口输出", value: "INTERFACE_FIELD" },
   { label: "固定值", value: "CONST" }
 ];
 
@@ -200,15 +213,60 @@ export function normalizeOperandValueType(value: unknown): RuleOperandValueType 
   return "STRING";
 }
 
-export function parseInterfaceInputConfig(raw: string) {
-  return parseJsonSafe<Record<string, string>>(raw, {});
+export function defaultInterfaceInputBinding(
+  patch?: Partial<InterfaceInputBindingDraft> | null
+): InterfaceInputBindingDraft {
+  return {
+    sourceType:
+      patch?.sourceType === "CONTEXT" ||
+      patch?.sourceType === "INTERFACE_FIELD" ||
+      patch?.sourceType === "CONST"
+        ? patch.sourceType
+        : "PAGE_FIELD",
+    sourceValue: patch?.sourceValue ?? ""
+  };
 }
 
-export function stringifyInterfaceInputConfig(config: Record<string, string>) {
+export function parseInterfaceInputConfig(raw: string): Record<string, InterfaceInputBindingDraft> {
+  const parsed = parseJsonSafe<Record<string, unknown>>(raw, {});
+  const result: Record<string, InterfaceInputBindingDraft> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) {
+      continue;
+    }
+
+    if (typeof value === "string") {
+      const sourceValue = value.trim();
+      if (!sourceValue) {
+        continue;
+      }
+      result[normalizedKey] = {
+        sourceType: "PAGE_FIELD",
+        sourceValue
+      };
+      continue;
+    }
+
+    if (!value || typeof value !== "object") {
+      continue;
+    }
+
+    const row = value as Partial<InterfaceInputBindingDraft>;
+    const normalized = defaultInterfaceInputBinding(row);
+    if (!normalized.sourceValue.trim()) {
+      continue;
+    }
+    result[normalizedKey] = normalized;
+  }
+  return result;
+}
+
+export function stringifyInterfaceInputConfig(config: Record<string, InterfaceInputBindingDraft>) {
   const normalized = Object.entries(config)
-    .map(([key, value]) => [key.trim(), value.trim()] as const)
-    .filter(([key, value]) => key && value)
-    .reduce<Record<string, string>>((acc, [key, value]) => {
+    .map(([key, value]) => [key.trim(), defaultInterfaceInputBinding(value)] as const)
+    .filter(([key, value]) => key && value.sourceValue.trim())
+    .reduce<Record<string, InterfaceInputBindingDraft>>((acc, [key, value]) => {
       acc[key] = value;
       return acc;
     }, {});
@@ -256,17 +314,26 @@ export function collectInterfaceInputParams(target: InterfaceDefinition | undefi
         continue;
       }
       const row = item as Record<string, unknown>;
-      const sourceType = row.sourceType;
+      const legacyRequired = typeof row.required === "boolean" ? row.required : false;
+      const rawValidation = row.validationConfig;
+      const validationConfig = rawValidation && typeof rawValidation === "object"
+        ? (rawValidation as Partial<ApiInputValidationConfig>)
+        : {};
+
       rows.push({
         tab,
         name: typeof row.name === "string" ? row.name : "",
         description: typeof row.description === "string" ? row.description : "",
-        required: Boolean(row.required),
-        sourceType:
-          sourceType === "PAGE_ELEMENT" || sourceType === "API_OUTPUT" || sourceType === "CONTEXT"
-            ? sourceType
-            : "CONST",
-        sourceValue: typeof row.sourceValue === "string" ? row.sourceValue : "",
+        validationConfig: {
+          required: Boolean(validationConfig.required ?? legacyRequired),
+          regexMode:
+            validationConfig.regexMode === "TEMPLATE" || validationConfig.regexMode === "CUSTOM"
+              ? validationConfig.regexMode
+              : "NONE",
+          regexTemplateKey: validationConfig.regexTemplateKey,
+          regexPattern: validationConfig.regexPattern ?? "",
+          regexErrorMessage: validationConfig.regexErrorMessage ?? ""
+        },
         valueType: normalizeOperandValueType(row.valueType)
       });
     }

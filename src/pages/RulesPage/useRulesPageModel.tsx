@@ -23,13 +23,14 @@ import type {
   RuleListLookupCondition,
   SaveValidationReport
 } from "../../types";
-import type { OperandDraft, OperandSide, PromptVariableOption } from "./rulesPageShared";
+import type { InterfaceInputBindingDraft, OperandDraft, OperandSide, PromptVariableOption } from "./rulesPageShared";
 import {
   buildDefaultCondition,
   buildPreprocessorId,
   collectInterfaceInputParams,
   collectOutputPathMeta,
   contextOptions,
+  defaultInterfaceInputBinding,
   deriveMachineKeyFromOutputPath,
   FlatConditionDraft,
   hasDirtyOperandConfig,
@@ -753,10 +754,10 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
         );
       }
       const target = interfaces.find((item) => item.id === draft.interfaceId);
-      const requiredInputs = collectInterfaceInputParams(target).filter((item) => item.required);
+      const requiredInputs = collectInterfaceInputParams(target).filter((item) => item.validationConfig.required);
       const inputConfig = parseInterfaceInputConfig(draft.interfaceInputConfig);
       for (const input of requiredInputs) {
-        const value = (inputConfig[input.name] ?? input.sourceValue ?? "").trim();
+        const value = (inputConfig[input.name]?.sourceValue ?? "").trim();
         if (!value) {
           issues.push(
             createFieldIssue({
@@ -952,12 +953,17 @@ export function useRulesPageModel(mode: RulesPageMode = "PAGE_RULE", options: Ru
     () => parseInterfaceInputConfig(selectedContext?.operand.interfaceInputConfig ?? ""),
     [selectedContext?.operand.interfaceInputConfig]
   );
-  function updateInterfaceInputValue(paramName: string, value: string) {
+  function updateInterfaceInputValue(paramName: string, patch: Partial<InterfaceInputBindingDraft>) {
+    const current = selectedInterfaceInputConfig[paramName] ?? defaultInterfaceInputBinding();
+    const nextValue = {
+      ...current,
+      ...patch
+    };
     const nextConfig = {
       ...selectedInterfaceInputConfig,
-      [paramName]: value
+      [paramName]: nextValue
     };
-    if (!value.trim()) {
+    if (!nextValue.sourceValue.trim()) {
       delete nextConfig[paramName];
     }
     updateSelectedOperand({

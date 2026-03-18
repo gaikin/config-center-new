@@ -330,9 +330,6 @@ export function PublishPage() {
     <div>
       {holder}
       <Typography.Title level={4}>发布与灰度</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        业务侧统一看两件事：一是配置对象如何正式生效，二是菜单是否启用智能提示 / 智能作业以及试点范围。所有菜单默认已预注入 JSSDK。
-      </Typography.Paragraph>
 
       <Card style={{ marginBottom: 12 }}>
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
@@ -349,14 +346,12 @@ export function PublishPage() {
                 showIcon
                 type="success"
                 message="当前是配置人员发布视角"
-                description="你可以对 API、名单、智能提示、作业四类对象执行检查与正式发布；附加操作按当前权限开放。"
               />
             ) : (
               <Alert
                 showIcon
                 type="info"
                 message="当前是只读发布视角"
-                description="你可以查看待发布对象和检查结果；正式发布由具备发布权限的配置人员处理。"
               />
             )
           ) : canManageMenuCapability ? (
@@ -364,14 +359,12 @@ export function PublishPage() {
               showIcon
               type="success"
               message="当前是菜单能力管理视角"
-              description="你可以只管理菜单是否启用智能提示 / 智能作业、菜单槽位、机构范围和 IP 试点；这不等同于内容发布。"
             />
           ) : (
             <Alert
               showIcon
               type="info"
               message="当前是只读菜单能力视角"
-              description="普通配置人员和非总行权限管理人员默认只读查看菜单能力状态，不具备直接修改权限。"
             />
           )}
         </Space>
@@ -576,14 +569,6 @@ export function PublishPage() {
           </Card>
         </Col>
       </Row>
-
-      <Card title="菜单能力说明" style={{ marginTop: 12 }}>
-        <Space direction="vertical" size={8} style={{ width: "100%" }}>
-          <Typography.Text>1. 所有菜单默认已预注入 JSSDK，不在这里控制注入。</Typography.Text>
-          <Typography.Text>2. 这里真正管理的是菜单是否启用智能提示 / 智能作业，以及对应菜单命中的能力槽位。</Typography.Text>
-          <Typography.Text>3. 机构是正式灰度主维度，IP 仅用于小范围试点验证。</Typography.Text>
-        </Space>
-      </Card>
 
       <Card title="菜单能力与试点范围" style={{ marginTop: 12 }}>
         <Table<MenuSdkPolicy>
@@ -881,9 +866,6 @@ export function PublishPage() {
 
         {releaseStep === 0 ? (
           <Card size="small" title="选择待发布对象">
-            <Typography.Paragraph type="secondary">
-              当前主发布路径只承载 API、名单、智能提示、作业四类对象。菜单能力、页面开通设置等不在本次发布内。
-            </Typography.Paragraph>
             <Select
               mode="multiple"
               style={{ width: "100%" }}

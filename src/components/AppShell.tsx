@@ -1,4 +1,13 @@
-import { MenuOutlined } from "@ant-design/icons";
+import {
+  ApiOutlined,
+  AppstoreOutlined,
+  BarChartOutlined,
+  BulbOutlined,
+  HomeOutlined,
+  MenuOutlined,
+  RobotOutlined,
+  SettingOutlined
+} from "@ant-design/icons";
 import { Button, Drawer, Layout, Menu, Select, Space, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -18,17 +27,18 @@ const activePersonas: MockUserPersona[] = [
 type NavItem = {
   key: string;
   label: string;
+  icon: React.ReactNode;
   personas: MockUserPersona[];
 };
 
 const navItems: NavItem[] = [
-  { key: "/", label: "我的工作台", personas: activePersonas },
-  { key: "/page-management", label: "菜单管理", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
-  { key: "/prompts", label: "智能提示", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
-  { key: "/jobs", label: "智能作业", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
-  { key: "/interfaces", label: "API注册", personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
-  { key: "/stats", label: "运行统计", personas: activePersonas },
-  { key: "/advanced", label: "高级配置", personas: activePersonas }
+  { key: "/", label: "我的工作台", icon: <HomeOutlined />, personas: activePersonas },
+  { key: "/page-management", label: "菜单管理", icon: <AppstoreOutlined />, personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
+  { key: "/prompts", label: "智能提示", icon: <BulbOutlined />, personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
+  { key: "/jobs", label: "智能作业", icon: <RobotOutlined />, personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
+  { key: "/interfaces", label: "API注册", icon: <ApiOutlined />, personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
+  { key: "/stats", label: "运行统计", icon: <BarChartOutlined />, personas: activePersonas },
+  { key: "/advanced", label: "高级配置", icon: <SettingOutlined />, personas: activePersonas }
 ];
 
 const compatiblePathToBizPath: Array<{ from: string; to: string }> = [
@@ -48,15 +58,17 @@ const compatiblePathToBizPath: Array<{ from: string; to: string }> = [
 const HeaderBar = styled(Header)`
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--color-top-region-bg);
+  background: linear-gradient(120deg, var(--color-top-region-bg) 0%, var(--color-top-region-bg-end) 100%);
   color: var(--color-top-region-text);
-  padding: var(--space-12) var(--space-24);
+  padding: var(--space-12) var(--space-24) var(--space-16);
+  min-height: 88px;
   border-bottom: 1px solid var(--color-top-region-border);
   box-shadow: var(--shadow-1);
+  backdrop-filter: blur(8px);
 `;
 
 const LogoBlock = styled.div`
@@ -65,21 +77,45 @@ const LogoBlock = styled.div`
   gap: var(--space-4);
 `;
 
+const LogoPill = styled.span`
+  width: fit-content;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: var(--font-12);
+  line-height: var(--lh-12);
+  color: var(--color-top-region-text);
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+`;
+
 const LogoTitle = styled(Typography.Text)`
   color: var(--color-top-region-text);
 `;
 
 const LogoSubtitle = styled(Typography.Text)`
   color: var(--color-top-region-text-muted);
+  font-weight: 600;
 `;
 
 const ContentWrap = styled(Content)`
-  margin: var(--space-24);
+  margin: var(--space-24) var(--space-24) var(--space-24) var(--space-16);
   padding: var(--space-24);
-  border-radius: var(--radius-16);
+  border-radius: var(--radius-20);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-1);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-2);
+  animation: shell-content-in 280ms ease-out;
+
+  @keyframes shell-content-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 
   @media (max-width: 1024px) {
     margin: var(--space-16);
@@ -89,6 +125,11 @@ const ContentWrap = styled(Content)`
 
 const StyledSider = styled(Sider)`
   border-inline-end: 1px solid var(--color-border);
+  background: var(--color-surface) !important;
+  margin: var(--space-16) 0 var(--space-16) var(--space-16);
+  border-radius: var(--radius-20);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
 
   @media (max-width: 1024px) {
     display: none;
@@ -96,7 +137,41 @@ const StyledSider = styled(Sider)`
 `;
 
 const MainLayout = styled(Layout)`
-  background: var(--color-bg);
+  background: transparent;
+`;
+
+const ShellBody = styled(Layout)`
+  background: transparent;
+`;
+
+const SiderInner = styled.div`
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-16) var(--space-8);
+`;
+
+const SideTitle = styled(Typography.Text)`
+  color: var(--color-text-secondary);
+  margin: 0 var(--space-8) var(--space-8);
+`;
+
+const SideMenu = styled(Menu)`
+  border-inline-end: 0 !important;
+  background: transparent !important;
+`;
+
+const HeaderActionButton = styled(Button)`
+  color: var(--color-top-region-text);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.26);
+
+  &:hover,
+  &:focus {
+    color: var(--color-top-region-text) !important;
+    border-color: rgba(255, 255, 255, 0.44) !important;
+    background: rgba(255, 255, 255, 0.2) !important;
+  }
 `;
 
 const MobileNavButton = styled(Button)`
@@ -118,9 +193,15 @@ const MobileNavButton = styled(Button)`
 `;
 
 const HeaderActions = styled(Space)`
+  .ant-btn-default {
+    color: var(--color-top-region-text);
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.24);
+  }
+
   .ant-select-selector {
-    background: rgba(255, 255, 255, 0.08) !important;
-    border-color: rgba(255, 255, 255, 0.2) !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    border-color: rgba(255, 255, 255, 0.24) !important;
     color: var(--color-top-region-text) !important;
   }
 
@@ -130,7 +211,7 @@ const HeaderActions = styled(Space)`
   }
 
   .ant-select-arrow {
-    color: var(--color-top-region-text-muted);
+    color: var(--color-top-region-text);
   }
 `;
 
@@ -153,6 +234,7 @@ function getSelectedKey(pathname: string) {
 function renderMenuItems(items: NavItem[]) {
   return items.map((item) => ({
     key: item.key,
+    icon: item.icon,
     label: <Link to={item.key}>{item.label}</Link>
   }));
 }
@@ -208,15 +290,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <MainLayout style={{ minHeight: "100vh" }}>
         <HeaderBar>
           <LogoBlock>
+            <LogoPill>CONFIG CENTER</LogoPill>
             <LogoTitle className="type-20">营小助配置中心（新版）</LogoTitle>
             <LogoSubtitle className="type-12">
               模拟登录：{currentMeta.label} · {currentMeta.description}
             </LogoSubtitle>
           </LogoBlock>
           <HeaderActions size={8}>
-            <Button size="small" onClick={() => navigate("/login-test")}>
+            <HeaderActionButton size="small" onClick={() => navigate("/login-test")}>
               登录测试
-            </Button>
+            </HeaderActionButton>
             <Select
               value={persona}
               size="small"
@@ -229,24 +312,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </MobileNavButton>
           </HeaderActions>
         </HeaderBar>
-        <Layout>
+        <ShellBody>
           <StyledSider width={248} theme="light">
-            <Menu
-              mode="inline"
-              selectedKeys={[selected]}
-              items={renderMenuItems(visibleNavItems)}
-              style={{ height: "100%", borderInlineEnd: 0 }}
-            />
+            <SiderInner>
+              <SideTitle className="type-12">业务导航</SideTitle>
+              <SideMenu mode="inline" selectedKeys={[selected]} items={renderMenuItems(visibleNavItems)} style={{ height: "100%" }} />
+            </SiderInner>
           </StyledSider>
           <ContentWrap>{children}</ContentWrap>
-        </Layout>
+        </ShellBody>
         <Drawer title="业务导航" placement="left" width={248} onClose={() => setDrawerOpen(false)} open={drawerOpen}>
-          <Menu
+          <SideMenu
             mode="inline"
             selectedKeys={[selected]}
             items={renderMenuItems(visibleNavItems)}
             onClick={() => setDrawerOpen(false)}
-            style={{ borderInlineEnd: 0 }}
           />
         </Drawer>
       </MainLayout>

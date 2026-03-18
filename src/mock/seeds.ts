@@ -469,7 +469,7 @@ export const seedInterfaces: InterfaceDefinition[] = [
     retryTimes: 1,
     bodyTemplateJson: "{\"customerId\":\"{{customer_id}}\"}",
     inputConfigJson:
-      "{\"headers\":[],\"query\":[],\"path\":[],\"body\":[{\"id\":\"body-1\",\"name\":\"customerId\",\"description\":\"客户号\",\"valueType\":\"STRING\",\"required\":true,\"sourceType\":\"PAGE_ELEMENT\",\"sourceValue\":\"customer_id\"}]}",
+      "{\"headers\":[],\"query\":[],\"path\":[],\"body\":[{\"id\":\"body-1\",\"name\":\"customerId\",\"description\":\"客户号\",\"valueType\":\"STRING\",\"validationConfig\":{\"required\":true,\"regexMode\":\"NONE\"}}]}",
     outputConfigJson:
       "[{\"id\":\"out-1\",\"name\":\"score\",\"path\":\"$.data.score\",\"description\":\"风险评分\",\"valueType\":\"NUMBER\"},{\"id\":\"out-2\",\"name\":\"riskLevel\",\"path\":\"$.data.riskLevel\",\"description\":\"风险等级\",\"valueType\":\"STRING\"}]",
     paramSourceSummary: "客户号来自页面元素 customer_id",
@@ -492,7 +492,7 @@ export const seedInterfaces: InterfaceDefinition[] = [
     retryTimes: 0,
     bodyTemplateJson: "{\"idNo\":\"{{id_no}}\"}",
     inputConfigJson:
-      "{\"headers\":[],\"query\":[],\"path\":[],\"body\":[{\"id\":\"body-2\",\"name\":\"idNo\",\"description\":\"证件号\",\"valueType\":\"STRING\",\"required\":true,\"sourceType\":\"PAGE_ELEMENT\",\"sourceValue\":\"id_no\"}]}",
+      "{\"headers\":[],\"query\":[],\"path\":[],\"body\":[{\"id\":\"body-2\",\"name\":\"idNo\",\"description\":\"证件号\",\"valueType\":\"STRING\",\"validationConfig\":{\"required\":true,\"regexMode\":\"NONE\"}}]}",
     outputConfigJson:
       "[{\"id\":\"out-3\",\"name\":\"profile\",\"path\":\"$.data.profile\",\"description\":\"客户档案\",\"valueType\":\"OBJECT\",\"children\":[{\"id\":\"out-3-1\",\"name\":\"name\",\"path\":\"$.data.profile.name\",\"description\":\"姓名\",\"valueType\":\"STRING\"},{\"id\":\"out-3-2\",\"name\":\"mobile\",\"path\":\"$.data.profile.mobile\",\"description\":\"手机号\",\"valueType\":\"STRING\"}]}]",
     paramSourceSummary: "身份证号来自页面元素 id_no",

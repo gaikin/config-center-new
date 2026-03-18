@@ -1,5 +1,6 @@
 import type {
   ApiInputParam,
+  ApiInputRegexTemplateKey,
   ApiOutputParam,
   FieldValidationIssue,
   InterfaceDefinition,
@@ -84,6 +85,12 @@ export function createObjectIssue(params: {
 export function isBlank(value: string | undefined | null) {
   return !value || !value.trim();
 }
+
+const regexTemplatePatternMap: Record<ApiInputRegexTemplateKey, string> = {
+  MOBILE_CN: "^1\\d{10}$",
+  ID_CARD_CN: "^\\d{17}[\\dXx]$",
+  EMAIL: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
+};
 
 export function validateUrlPath(path: string | undefined) {
   if (isBlank(path)) {
@@ -331,6 +338,13 @@ export function validateInterfaceDraftPayload(
   for (const [tab, rows] of inputEntries) {
     const seenNames = new Set<string>();
     for (const row of rows) {
+      const legacyRow = row as ApiInputParam & { required?: boolean };
+      const validationConfig = row.validationConfig;
+      const required = Boolean(validationConfig?.required ?? legacyRow.required);
+      const regexMode = validationConfig?.regexMode ?? "NONE";
+      const regexTemplateKey = validationConfig?.regexTemplateKey;
+      const regexPattern = validationConfig?.regexPattern?.trim() ?? "";
+
       if (isBlank(row.name)) {
         fieldIssues.push(createFieldIssue({ section: "params", field: `input:${row.id}:name`, label: `${tab} 参数名`, message: "参数名不能为空" }));
       } else if (seenNames.has(row.name.trim())) {
@@ -338,8 +352,54 @@ export function validateInterfaceDraftPayload(
       } else {
         seenNames.add(row.name.trim());
       }
-      if (row.required && isBlank(row.sourceValue)) {
-        fieldIssues.push(createFieldIssue({ section: "params", field: `input:${row.id}:sourceValue`, label: `${row.name || tab} 映射值`, message: "必填参数需要提供映射值" }));
+
+      if (required && isBlank(row.name)) {
+        fieldIssues.push(
+          createFieldIssue({
+            section: "params",
+            field: `input:${row.id}:required`,
+            label: `${tab} 参数校验`,
+            message: "必填参数必须具备有效参数名"
+          })
+        );
+      }
+
+      if (regexMode === "TEMPLATE") {
+        if (!regexTemplateKey || !regexTemplatePatternMap[regexTemplateKey]) {
+          fieldIssues.push(
+            createFieldIssue({
+              section: "params",
+              field: `input:${row.id}:validationConfig.regexTemplateKey`,
+              label: `${row.name || tab} 正则模板`,
+              message: "请选择正则模板"
+            })
+          );
+        }
+      } else if (regexMode === "CUSTOM") {
+        if (!regexPattern) {
+          fieldIssues.push(
+            createFieldIssue({
+              section: "params",
+              field: `input:${row.id}:validationConfig.regexPattern`,
+              label: `${row.name || tab} 正则表达式`,
+              message: "请输入自定义正则"
+            })
+          );
+        } else {
+          try {
+            // Validate custom regex format to avoid saving invalid patterns.
+            void new RegExp(regexPattern);
+          } catch {
+            fieldIssues.push(
+              createFieldIssue({
+                section: "params",
+                field: `input:${row.id}:validationConfig.regexPattern`,
+                label: `${row.name || tab} 正则表达式`,
+                message: "自定义正则格式不合法"
+              })
+            );
+          }
+        }
       }
     }
   }
@@ -419,7 +479,10 @@ export function validateJobSceneDraftPayload(
     | "manualDurationSec"
     | "riskConfirmed"
   >,
-  existingScenes: JobSceneDefinition[]
+  existingScenes: JobSceneDefinition[],
+  options?: {
+    linkedRules?: Array<Pick<RuleDefinition, "id" | "name" | "promptMode">>;
+  }
 ) {
   const fieldIssues: FieldValidationIssue[] = [];
   const objectIssues: ObjectValidationIssue[] = [];
@@ -488,6 +551,23 @@ export function validateJobSceneDraftPayload(
         message: `已存在同名作业场景：${payload.name}`,
         objectName: payload.name,
         action: "请更换场景名称后再保存。"
+      })
+    );
+  }
+
+  const linkedFloatingRules = (options?.linkedRules ?? []).filter((rule) => rule.promptMode === "FLOATING");
+  if (payload.executionMode === "AUTO_WITHOUT_PROMPT" && linkedFloatingRules.length > 0) {
+    objectIssues.push(
+      createObjectIssue({
+        section: "basic",
+        objectType: "JOB_SCENE",
+        title: "提示优先：静默不会生效",
+        message: `当前场景已关联 ${linkedFloatingRules.length} 条浮窗提示规则（${linkedFloatingRules
+          .slice(0, 2)
+          .map((rule) => rule.name)
+          .join("、")}${linkedFloatingRules.length > 2 ? "等" : ""}），运行时将按提示配置弹窗。`,
+        level: "warning",
+        action: "如需静默执行，请先将关联规则的提示模式改为“静默提示”。"
       })
     );
   }
