@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "dev:jssdk": "vite --config packages/jssdk/vite.config.ts",
     "build:jssdk": "tsc -p packages/jssdk/tsconfig.json && vite build --config packages/jssdk/vite.config.ts",
     "check:jssdk-demo": "tsc -p packages/jssdk/tsconfig.demo.json --noEmit",
@@ -34,6 +35,7 @@
     "@types/styled-components": "^5.1.34",
     "@vitejs/plugin-react": "^4.7.0",
     "typescript": "^5.9.2",
+    "vitest": "^3.2.4",
     "vite": "^7.1.7"
   },
   "optionalDependencies": {
