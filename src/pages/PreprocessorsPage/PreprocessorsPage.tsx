@@ -216,7 +216,7 @@ export function PreprocessorsPage({ embedded = false }: { embedded?: boolean }) 
               />
             </Form.Item>
           ) : (
-            <Alert type="success" showIcon message="内置类型无需脚本内容" description="当前将使用平台内置实现。" />
+            <Alert type="info" showIcon message="内置类型无需脚本内容" description="当前将使用平台内置实现。" />
           )}
         </Form>
       </Modal>

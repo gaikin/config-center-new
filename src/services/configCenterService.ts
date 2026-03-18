@@ -19,15 +19,21 @@ import {
   seedPendingItems,
   seedPendingSummary,
   seedPreprocessors,
-  seedRoleMembers,
+  seedPermissionResources,
+  seedRoleResourceGrants,
   seedRoles,
+  seedUserRoleBindings,
   seedRules,
   seedSdkArtifactVersions,
-  seedSdkReleaseLanes,
+  seedPlatformRuntimeConfig,
   seedTriggerLogs
 } from "../mock/seeds";
 import { getOrgLabel } from "../orgOptions";
 import { notifyRolePermissionsChanged } from "../session/sessionEvents";
+import {
+  validateMenuSdkPolicy,
+  validatePlatformRuntimeConfig
+} from "../sdkGovernance";
 import type {
   ApiInputParam,
   ApiOutputParam,
@@ -46,6 +52,7 @@ import type {
   MenuCapabilityRequest,
   MenuSdkPolicy,
   LifecycleState,
+  PlatformRuntimeConfig,
   PageElement,
   PageFieldBinding,
   PageMenu,
@@ -53,16 +60,18 @@ import type {
   PageResource,
   PageSite,
   PageActivationPolicy,
+  PermissionResource,
   PreprocessorDefinition,
   PublishPendingResult,
   PublishValidationReport,
   RoleItem,
   RolePermissionOperator,
+  RoleResourceGrant,
   RuleDefinition,
   SaveDraftResult,
   SdkArtifactVersion,
-  SdkReleaseLane,
   TriggerLogItem,
+  UserRoleBinding,
   ValidationItem,
   ValidationReport
 } from "../types";
@@ -74,8 +83,8 @@ import {
 } from "../validation/formRules";
 import {
   HEAD_OFFICE_ORG_ID,
-  normalizeRoleActions,
-  hasHighPrivilegeAction,
+  hasHighPrivilegeResource,
+  normalizeRoleResourcePaths,
   isHeadOfficeOnlyRole,
   isHeadOfficePermissionAdmin
 } from "../permissionPolicy";
@@ -108,7 +117,7 @@ const store = {
   businessFields: structuredClone(seedBusinessFields),
   pageFieldBindings: structuredClone(seedPageFieldBindings),
   sdkArtifactVersions: structuredClone(seedSdkArtifactVersions),
-  sdkReleaseLanes: structuredClone(seedSdkReleaseLanes),
+  platformRuntimeConfig: structuredClone(seedPlatformRuntimeConfig),
   menuSdkPolicies: structuredClone(seedMenuSdkPolicies),
   menuCapabilityPolicies: structuredClone(seedMenuCapabilityPolicies),
   menuCapabilityRequests: structuredClone(seedMenuCapabilityRequests),
@@ -124,7 +133,9 @@ const store = {
   triggerLogs: structuredClone(seedTriggerLogs),
   executionLogs: structuredClone(seedExecutionLogs),
   roles: structuredClone(seedRoles),
-  roleMembers: structuredClone(seedRoleMembers)
+  permissionResources: structuredClone(seedPermissionResources),
+  roleResourceGrants: structuredClone(seedRoleResourceGrants),
+  userRoleBindings: structuredClone(seedUserRoleBindings)
 };
 
 function nowIso() {
@@ -151,6 +162,11 @@ function normalizeStringList(values: string[] | undefined) {
         .filter(Boolean)
     )
   );
+}
+
+function normalizeOptionalVersion(value: string | undefined) {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
 }
 
 function normalizePublishEffectiveOptions(
@@ -252,6 +268,44 @@ function nextId(items: Array<{ id: number }>) {
     return 1;
   }
   return Math.max(...items.map((item) => item.id)) + 1;
+}
+
+function isValidResourcePathForType(resourceType: PermissionResource["resourceType"], resourcePath: string) {
+  if (resourceType === "MENU") {
+    return resourcePath.startsWith("/menu/");
+  }
+  if (resourceType === "PAGE") {
+    return resourcePath.startsWith("/page/");
+  }
+  return resourcePath.startsWith("/action/");
+}
+
+function getRoleMemberUserIds(roleId: number): string[] {
+  return normalizeStringList(
+    store.userRoleBindings
+      .filter((binding) => binding.roleId === roleId && binding.status === "ACTIVE")
+      .map((binding) => binding.userId)
+  );
+}
+
+function syncRoleMemberCount(roleId: number) {
+  const memberCount = getRoleMemberUserIds(roleId).length;
+  store.roles = store.roles.map((role) => (role.id === roleId ? { ...role, memberCount } : role));
+}
+
+function getRoleResourceCodes(roleId: number): string[] {
+  return normalizeStringList(
+    store.roleResourceGrants.filter((grant) => grant.roleId === roleId).map((grant) => grant.resourceCode)
+  );
+}
+
+function getResourcePathsByCodes(resourceCodes: string[]): string[] {
+  return normalizeStringList(
+    resourceCodes
+      .map((resourceCode) => store.permissionResources.find((resource) => resource.resourceCode === resourceCode))
+      .filter((resource): resource is PermissionResource => Boolean(resource && resource.status === "ACTIVE"))
+      .map((resource) => resource.resourcePath)
+  );
 }
 
 function appendAuditLog(
@@ -467,23 +521,32 @@ function createValidationReport(pending: PublishPendingItem): ValidationReport {
 
   if (pending.resourceType === "MENU_SDK_POLICY") {
     const policy = resource as MenuSdkPolicy;
-    const stableLanePass = store.sdkReleaseLanes.some((lane) => lane.id === policy.stableLaneId);
-    items.push({
-      key: "stable_lane",
-      label: "正式版本通道",
-      passed: stableLanePass,
-      detail: stableLanePass ? "已绑定正式版本通道" : "尚未绑定正式版本通道"
+    const capability = store.menuCapabilityPolicies.find((item) => item.menuId === policy.menuId);
+    const ruleValidation = validateMenuSdkPolicy({
+      policy,
+      platformConfig: store.platformRuntimeConfig,
+      capabilityStatus: capability
+        ? {
+            promptStatus: capability.promptStatus,
+            jobStatus: capability.jobStatus
+          }
+        : undefined
     });
-
-    const grayLanePass = policy.grayOrgIds.length === 0 || Boolean(policy.grayLaneId);
-    items.push({
-      key: "gray_lane",
-      label: "试点版本通道",
-      passed: grayLanePass,
-      detail: grayLanePass ? "试点发布配置完整" : "已选择试点机构，但还未配置试点版本通道"
-    });
-
     const timePass = policy.effectiveStart <= policy.effectiveEnd;
+    items.push({
+      key: "gray_policy",
+      label: "灰度策略规则",
+      passed: ruleValidation.ok,
+      detail: ruleValidation.ok ? "灰度策略校验通过" : ruleValidation.errors.join("；")
+    });
+    items.push({
+      key: "runtime_baseline",
+      label: "平台正式版本",
+      passed:
+        Boolean(store.platformRuntimeConfig.promptStableVersion.trim()) &&
+        Boolean(store.platformRuntimeConfig.jobStableVersion.trim()),
+      detail: `提示:${store.platformRuntimeConfig.promptStableVersion} / 作业:${store.platformRuntimeConfig.jobStableVersion}`
+    });
     items.push({
       key: "effective_time",
       label: "生效时间窗",
@@ -618,9 +681,33 @@ export const configCenterService = {
     return clone(store.sdkArtifactVersions);
   },
 
-  async listSdkReleaseLanes(): Promise<SdkReleaseLane[]> {
+  async getPlatformRuntimeConfig(): Promise<PlatformRuntimeConfig> {
     await sleep(120);
-    return clone(store.sdkReleaseLanes);
+    return clone(store.platformRuntimeConfig);
+  },
+
+  async updatePlatformRuntimeConfig(
+    payload: Omit<PlatformRuntimeConfig, "updatedAt"> & { updatedAt?: string }
+  ): Promise<PlatformRuntimeConfig> {
+    await sleep(160);
+    const validation = validatePlatformRuntimeConfig({
+      promptStableVersion: payload.promptStableVersion,
+      jobStableVersion: payload.jobStableVersion
+    });
+    if (!validation.ok) {
+      throw new Error(validation.errors[0] ?? "平台版本参数不合法");
+    }
+
+    const next: PlatformRuntimeConfig = {
+      promptStableVersion: payload.promptStableVersion.trim(),
+      promptGrayDefaultVersion: normalizeOptionalVersion(payload.promptGrayDefaultVersion),
+      jobStableVersion: payload.jobStableVersion.trim(),
+      jobGrayDefaultVersion: normalizeOptionalVersion(payload.jobGrayDefaultVersion),
+      updatedAt: payload.updatedAt ?? nowIso(),
+      updatedBy: payload.updatedBy
+    };
+    store.platformRuntimeConfig = next;
+    return clone(next);
   },
 
   async listMenuSdkPolicies(): Promise<MenuSdkPolicy[]> {
@@ -629,20 +716,31 @@ export const configCenterService = {
   },
 
   async upsertMenuSdkPolicy(
-    payload: Omit<MenuSdkPolicy, "updatedAt" | "resolutionSummary"> & {
-      updatedAt?: string;
-      resolutionSummary?: string;
-    }
+    payload: Omit<MenuSdkPolicy, "updatedAt"> & { updatedAt?: string }
   ): Promise<MenuSdkPolicy> {
     await sleep(180);
+    const capability = store.menuCapabilityPolicies.find((item) => item.menuId === payload.menuId);
+    const validation = validateMenuSdkPolicy({
+      policy: payload,
+      platformConfig: store.platformRuntimeConfig,
+      capabilityStatus: capability
+        ? {
+            promptStatus: capability.promptStatus,
+            jobStatus: capability.jobStatus
+          }
+        : undefined
+    });
+    if (!validation.ok) {
+      throw new Error(validation.errors[0] ?? "菜单灰度策略校验失败");
+    }
+
     const next: MenuSdkPolicy = {
       ...payload,
-      updatedAt: payload.updatedAt ?? nowIso(),
-      resolutionSummary:
-        payload.resolutionSummary ??
-        `${payload.grayOrgIds.length > 0 ? payload.grayOrgIds.join("、") : "全部机构"} -> ${
-          payload.grayLaneId ? "gray lane" : "stable"
-        }`
+      promptGrayVersion: payload.promptGrayEnabled ? normalizeOptionalVersion(payload.promptGrayVersion) : undefined,
+      promptGrayOrgIds: payload.promptGrayEnabled ? normalizeStringList(payload.promptGrayOrgIds) : [],
+      jobGrayVersion: payload.jobGrayEnabled ? normalizeOptionalVersion(payload.jobGrayVersion) : undefined,
+      jobGrayOrgIds: payload.jobGrayEnabled ? normalizeStringList(payload.jobGrayOrgIds) : [],
+      updatedAt: payload.updatedAt ?? nowIso()
     };
     const exists = store.menuSdkPolicies.find((item) => item.id === payload.id);
     store.menuSdkPolicies = exists
@@ -1608,7 +1706,159 @@ export const configCenterService = {
 
   async listRoles(): Promise<RoleItem[]> {
     await sleep(120);
-    return clone(store.roles);
+    const roleRows = store.roles.map((role) => ({
+      ...role,
+      memberCount: getRoleMemberUserIds(role.id).length
+    }));
+    return clone(roleRows);
+  },
+
+  async listPermissionResources(): Promise<PermissionResource[]> {
+    await sleep(120);
+    return clone(store.permissionResources).sort((a, b) => a.orderNo - b.orderNo || a.id - b.id);
+  },
+
+  async upsertPermissionResource(
+    payload: Omit<PermissionResource, "updatedAt"> & { updatedAt?: string }
+  ): Promise<PermissionResource> {
+    await sleep(140);
+    const normalizedCode = payload.resourceCode.trim();
+    const normalizedName = payload.resourceName.trim();
+    const normalizedPath = payload.resourcePath.trim();
+    const normalizedPagePath = payload.pagePath?.trim() || undefined;
+    if (!normalizedCode) {
+      throw new Error("资源编码不能为空。");
+    }
+    if (!normalizedName) {
+      throw new Error("资源名称不能为空。");
+    }
+    if (!normalizedPath) {
+      throw new Error("资源路径不能为空。");
+    }
+    if (!isValidResourcePathForType(payload.resourceType, normalizedPath)) {
+      throw new Error("资源类型与路径前缀不一致。");
+    }
+    const pathDuplicated = store.permissionResources.some(
+      (item) => item.resourcePath === normalizedPath && item.id !== payload.id
+    );
+    if (pathDuplicated) {
+      throw new Error("资源路径已存在，请修改后重试。");
+    }
+    const codeDuplicated = store.permissionResources.some(
+      (item) => item.resourceCode === normalizedCode && item.id !== payload.id
+    );
+    if (codeDuplicated) {
+      throw new Error("资源编码已存在，请修改后重试。");
+    }
+    const exists = store.permissionResources.find((item) => item.id === payload.id);
+    const next: PermissionResource = {
+      ...payload,
+      id: exists ? payload.id : nextId(store.permissionResources),
+      resourceCode: normalizedCode,
+      resourceName: normalizedName,
+      resourcePath: normalizedPath,
+      pagePath: payload.resourceType === "PAGE" ? normalizedPagePath : undefined,
+      updatedAt: payload.updatedAt ?? nowIso()
+    };
+    store.permissionResources = exists
+      ? store.permissionResources.map((item) => (item.id === next.id ? next : item))
+      : [next, ...store.permissionResources];
+    notifyRolePermissionsChanged();
+    return clone(next);
+  },
+
+  async listRoleResourceGrants(roleId: number): Promise<RoleResourceGrant[]> {
+    await sleep(120);
+    return clone(store.roleResourceGrants.filter((grant) => grant.roleId === roleId));
+  },
+
+  async saveRoleResourceGrants(
+    roleId: number,
+    resourceCodes: string[],
+    operator?: RolePermissionOperator
+  ): Promise<RoleResourceGrant[]> {
+    await sleep(140);
+    const role = store.roles.find((item) => item.id === roleId);
+    if (!role) {
+      throw new Error("角色不存在，无法保存授权。");
+    }
+    const effectiveOperator: RolePermissionOperator = operator ?? {
+      operatorId: "person-head-office-permission-admin",
+      roleType: "PERMISSION_ADMIN",
+      orgScopeId: HEAD_OFFICE_ORG_ID
+    };
+    const requestedCodes = normalizeStringList(resourceCodes);
+    const invalidCodes = requestedCodes.filter(
+      (resourceCode) => !store.permissionResources.some((resource) => resource.resourceCode === resourceCode)
+    );
+    if (invalidCodes.length > 0) {
+      throw new Error(`存在未定义资源编码：${invalidCodes.join("、")}`);
+    }
+    const requestedPaths = getResourcePathsByCodes(requestedCodes);
+    const normalizedPaths = normalizeRoleResourcePaths(role.roleType, role.orgScopeId, requestedPaths);
+    const normalizedCodes = normalizeStringList(
+      normalizedPaths
+        .map((resourcePath) =>
+          store.permissionResources.find((resource) => resource.resourcePath === resourcePath)?.resourceCode
+        )
+        .filter((resourceCode): resourceCode is string => Boolean(resourceCode))
+    );
+    const hasHighPrivilege = hasHighPrivilegeResource(normalizedPaths);
+    if (hasHighPrivilege && role.orgScopeId !== HEAD_OFFICE_ORG_ID) {
+      throw new Error("高权限操作仅允许分配到总行范围角色。");
+    }
+    if (hasHighPrivilege && !isHeadOfficePermissionAdmin(effectiveOperator)) {
+      throw new Error("仅总行权限管理人员可分配高权限操作。");
+    }
+    store.roleResourceGrants = store.roleResourceGrants.filter((grant) => grant.roleId !== roleId);
+    const grantBaseId = nextId(store.roleResourceGrants);
+    const createdAt = nowIso();
+    const nextGrants: RoleResourceGrant[] = normalizedCodes.map((resourceCode, index) => ({
+      id: grantBaseId + index,
+      roleId,
+      resourceCode,
+      createdAt
+    }));
+    store.roleResourceGrants = [...nextGrants, ...store.roleResourceGrants];
+    appendAuditLog("ROLE_UPDATE", "ROLE", role.name, effectiveOperator.operatorId, role.id, {
+      approvalTicketId: operator?.approvalTicketId ?? "APPR-DEFAULT-PENDING-INTEGRATION",
+      approvalSource: operator?.approvalSource ?? "EXTERNAL_APPROVAL_FLOW",
+      approvalStatus: operator?.approvalStatus ?? "PRE_APPROVED"
+    });
+    notifyRolePermissionsChanged();
+    return clone(nextGrants);
+  },
+
+  async listUserRoleBindings(roleId?: number): Promise<UserRoleBinding[]> {
+    await sleep(100);
+    if (typeof roleId === "number") {
+      return clone(store.userRoleBindings.filter((binding) => binding.roleId === roleId));
+    }
+    return clone(store.userRoleBindings);
+  },
+
+  async saveUserRoleBindings(roleId: number, userIds: string[]): Promise<UserRoleBinding[]> {
+    await sleep(140);
+    const role = store.roles.find((item) => item.id === roleId);
+    if (!role) {
+      throw new Error("角色不存在，无法保存成员。");
+    }
+    const normalizedUserIds = normalizeStringList(userIds);
+    store.userRoleBindings = store.userRoleBindings.filter((binding) => binding.roleId !== roleId);
+    const bindingBaseId = nextId(store.userRoleBindings);
+    const createdAt = nowIso();
+    const nextBindings: UserRoleBinding[] = normalizedUserIds.map((userId, index) => ({
+      id: bindingBaseId + index,
+      userId,
+      roleId,
+      status: "ACTIVE",
+      createdAt
+    }));
+    store.userRoleBindings = [...nextBindings, ...store.userRoleBindings];
+    syncRoleMemberCount(roleId);
+    appendAuditLog("ROLE_UPDATE", "ROLE", role.name, "person-business-admin", role.id);
+    notifyRolePermissionsChanged();
+    return clone(nextBindings);
   },
 
   async upsertRole(
@@ -1626,11 +1876,11 @@ export const configCenterService = {
       approvalSource: operator?.approvalSource ?? "EXTERNAL_APPROVAL_FLOW",
       approvalStatus: operator?.approvalStatus ?? "PRE_APPROVED"
     };
-    const normalizedActions = normalizeRoleActions(payload.roleType, payload.orgScopeId, payload.actions);
-    const hasHighPrivilege = hasHighPrivilegeAction(normalizedActions);
     if (isHeadOfficeOnlyRole(payload.roleType) && payload.orgScopeId !== HEAD_OFFICE_ORG_ID) {
       throw new Error("技术支持角色仅允许配置为总行范围。");
     }
+    const existingResourcePaths = getResourcePathsByCodes(getRoleResourceCodes(payload.id));
+    const hasHighPrivilege = hasHighPrivilegeResource(existingResourcePaths);
     if (hasHighPrivilege && payload.orgScopeId !== HEAD_OFFICE_ORG_ID) {
       throw new Error("高权限操作仅允许分配到总行范围角色。");
     }
@@ -1638,17 +1888,32 @@ export const configCenterService = {
       throw new Error("仅总行权限管理人员可分配高权限操作。");
     }
     const exists = store.roles.find((item) => item.id === payload.id);
-    if (!store.roleMembers[payload.id]) {
-      store.roleMembers[payload.id] = [];
-    }
-    const memberCount = store.roleMembers[payload.id]?.length ?? payload.memberCount ?? 0;
+    const memberCount = getRoleMemberUserIds(payload.id).length || payload.memberCount || 0;
     const next: RoleItem = {
       ...payload,
-      actions: normalizedActions,
       memberCount,
       updatedAt: payload.updatedAt ?? nowIso()
     };
     store.roles = exists ? store.roles.map((item) => (item.id === next.id ? next : item)) : [next, ...store.roles];
+    if (!exists) {
+      const defaultResourcePaths = normalizeRoleResourcePaths(next.roleType, next.orgScopeId, []);
+      const defaultResourceCodes = normalizeStringList(
+        defaultResourcePaths
+          .map((resourcePath) =>
+            store.permissionResources.find((resource) => resource.resourcePath === resourcePath)?.resourceCode
+          )
+          .filter((resourceCode): resourceCode is string => Boolean(resourceCode))
+      );
+      const grantBaseId = nextId(store.roleResourceGrants);
+      const createdAt = nowIso();
+      const defaultGrants = defaultResourceCodes.map((resourceCode, index) => ({
+        id: grantBaseId + index,
+        roleId: next.id,
+        resourceCode,
+        createdAt
+      }));
+      store.roleResourceGrants = [...defaultGrants, ...store.roleResourceGrants];
+    }
     appendAuditLog("ROLE_UPDATE", "ROLE", next.name, effectiveOperator.operatorId, next.id, approvalMeta);
     notifyRolePermissionsChanged();
     return clone(next);
@@ -1668,7 +1933,15 @@ export const configCenterService = {
       updatedAt: nowIso()
     };
     store.roles = [cloned, ...store.roles];
-    store.roleMembers[cloned.id] = [];
+    const sourceGrants = store.roleResourceGrants.filter((grant) => grant.roleId === source.id);
+    const grantBaseId = nextId(store.roleResourceGrants);
+    const clonedGrants = sourceGrants.map((grant, index) => ({
+      id: grantBaseId + index,
+      roleId: cloned.id,
+      resourceCode: grant.resourceCode,
+      createdAt: nowIso()
+    }));
+    store.roleResourceGrants = [...clonedGrants, ...store.roleResourceGrants];
     appendAuditLog("ROLE_UPDATE", "ROLE", cloned.name, "person-business-admin", cloned.id);
     notifyRolePermissionsChanged();
     return clone(cloned);
@@ -1691,21 +1964,29 @@ export const configCenterService = {
 
   async listRoleMembers(roleId: number): Promise<string[]> {
     await sleep(100);
-    return clone(store.roleMembers[roleId] ?? []);
+    return clone(getRoleMemberUserIds(roleId));
   },
 
   async assignRoleMembers(roleId: number, members: string[]): Promise<void> {
     await sleep(140);
-    const normalized = Array.from(new Set(members.map((name) => name.trim()).filter(Boolean)));
-    store.roleMembers[roleId] = normalized;
-    store.roles = store.roles.map((role) =>
-      role.id === roleId ? { ...role, memberCount: normalized.length, updatedAt: nowIso() } : role
-    );
-
     const role = store.roles.find((item) => item.id === roleId);
-    if (role) {
-      appendAuditLog("ROLE_UPDATE", "ROLE", role.name, "person-business-admin", role.id);
+    if (!role) {
+      throw new Error("角色不存在，无法保存成员。");
     }
+    const normalizedUserIds = normalizeStringList(members);
+    store.userRoleBindings = store.userRoleBindings.filter((binding) => binding.roleId !== roleId);
+    const bindingBaseId = nextId(store.userRoleBindings);
+    const createdAt = nowIso();
+    const nextBindings: UserRoleBinding[] = normalizedUserIds.map((userId, index) => ({
+      id: bindingBaseId + index,
+      userId,
+      roleId,
+      status: "ACTIVE",
+      createdAt
+    }));
+    store.userRoleBindings = [...nextBindings, ...store.userRoleBindings];
+    syncRoleMemberCount(roleId);
+    appendAuditLog("ROLE_UPDATE", "ROLE", role.name, "person-business-admin", role.id);
     notifyRolePermissionsChanged();
   }
 };

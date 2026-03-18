@@ -367,14 +367,13 @@ export interface SdkArtifactVersion {
   notes: string;
 }
 
-export interface SdkReleaseLane {
-  id: number;
-  laneCode: string;
-  laneName: string;
-  sdkArtifactVersionId: number;
-  sdkVersion: string;
-  status: LifecycleState;
+export interface PlatformRuntimeConfig {
+  promptStableVersion: string;
+  promptGrayDefaultVersion?: string;
+  jobStableVersion: string;
+  jobGrayDefaultVersion?: string;
   updatedAt: string;
+  updatedBy: string;
 }
 
 export type JobPreloadPolicy = "immediate" | "idle" | "intent" | "none";
@@ -386,15 +385,17 @@ export interface MenuSdkPolicy {
   regionId: number;
   menuId: number;
   menuCode: string;
-  stableLaneId: number;
-  grayLaneId?: number;
-  grayOrgIds: string[];
+  promptGrayEnabled: boolean;
+  promptGrayVersion?: string;
+  promptGrayOrgIds: string[];
+  jobGrayEnabled: boolean;
+  jobGrayVersion?: string;
+  jobGrayOrgIds: string[];
   effectiveStart: string;
   effectiveEnd: string;
   status: LifecycleState;
   ownerOrgId: string;
   updatedAt: string;
-  resolutionSummary: string;
 }
 
 export interface MenuCapabilityPolicy {

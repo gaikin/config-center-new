@@ -23,13 +23,13 @@ import { getOrgLabel } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
 import { mockUserPersonaMetaMap, useMockSession } from "../../session/mockSession";
 import type {
-  PublishAuditLog,
-  PublishPendingItem,
   MenuSdkPolicy,
   PageMenu,
   PageRegion,
+  PlatformRuntimeConfig,
+  PublishAuditLog,
+  PublishPendingItem,
   PublishValidationReport,
-  SdkReleaseLane,
   ValidationReport
 } from "../../types";
 
@@ -45,31 +45,7 @@ const pendingColor: Record<PublishPendingItem["pendingType"], string> = {
 };
 
 const publishResourceTypes: PublishPendingItem["resourceType"][] = ["INTERFACE", "LIST_DATA", "RULE", "JOB_SCENE"];
-
-function getMenuCapabilityMeta(menuCode: string) {
-  if (menuCode === "loan_apply") {
-    return {
-      promptEnabled: true,
-      jobEnabled: true,
-      grayIps: ["10.8.1.15", "10.8.1.16"],
-      summary: "贷款专区先放开智能提示与自动查数能力"
-    };
-  }
-  if (menuCode === "open_account") {
-    return {
-      promptEnabled: true,
-      jobEnabled: false,
-      grayIps: [],
-      summary: "开户菜单仅开放智能提示，作业能力仍关闭"
-    };
-  }
-  return {
-    promptEnabled: false,
-    jobEnabled: false,
-    grayIps: [],
-    summary: "当前菜单尚未开通智能提示 / 智能作业"
-  };
-}
+const subtlePositiveTagStyle = { borderColor: "#D0D5DD", background: "#F9FAFB", color: "#344054" } as const;
 
 function splitIpDraft(raw: string) {
   return Array.from(
@@ -83,14 +59,14 @@ function splitIpDraft(raw: string) {
 }
 
 export function PublishPage() {
-  const { persona, meta, hasAction } = useMockSession();
+  const { persona, meta, hasResource } = useMockSession();
   const [loading, setLoading] = useState(true);
   const [pendingItems, setPendingItems] = useState<PublishPendingItem[]>([]);
   const [logs, setLogs] = useState<PublishAuditLog[]>([]);
   const [policies, setPolicies] = useState<MenuSdkPolicy[]>([]);
   const [regions, setRegions] = useState<PageRegion[]>([]);
   const [menus, setMenus] = useState<PageMenu[]>([]);
-  const [lanes, setLanes] = useState<SdkReleaseLane[]>([]);
+  const [platformConfig, setPlatformConfig] = useState<PlatformRuntimeConfig | null>(null);
   const [filter, setFilter] = useState<PendingFilter>("ALL");
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [releaseStep, setReleaseStep] = useState(0);
@@ -115,30 +91,31 @@ export function PublishPage() {
   }>({ open: false, item: null, report: null });
   const [msgApi, holder] = message.useMessage();
   const personaMeta = mockUserPersonaMetaMap[persona];
-  const canPublishConfig = hasAction("PUBLISH");
-  const canDeferPending = hasAction("DEFER");
-  const canConfirmRisk = hasAction("RISK_CONFIRM");
-  const canManageMenuCapability = hasAction("MENU_ENABLE_MANAGE") && meta.roleType === "PERMISSION_ADMIN";
+  const canPublishConfig = hasResource("/action/common/base/publish");
+  const canDeferPending = hasResource("/action/common/base/publish");
+  const canConfirmRisk = hasResource("/action/common/base/publish");
+  const canManageMenuCapability =
+    hasResource("/action/page-management/capability/manage") && meta.roleType === "PERMISSION_ADMIN";
   const activeTab: PublishTab = canManageMenuCapability && !canPublishConfig ? "MENU_CAPABILITY" : "CONFIG_RELEASE";
   const roleTone = canManageMenuCapability ? "purple" : canPublishConfig ? "blue" : "green";
 
   async function loadData() {
     setLoading(true);
     try {
-      const [pendingData, logData, policyData, regionData, menuData, laneData] = await Promise.all([
+      const [pendingData, logData, policyData, regionData, menuData, runtimeConfig] = await Promise.all([
         configCenterService.listPendingItems(),
         configCenterService.listAuditLogs(),
         configCenterService.listMenuSdkPolicies(),
         configCenterService.listPageRegions(),
         configCenterService.listPageMenus(),
-        configCenterService.listSdkReleaseLanes()
+        configCenterService.getPlatformRuntimeConfig()
       ]);
       setPendingItems(pendingData);
       setLogs(logData);
       setPolicies(policyData);
       setRegions(regionData);
       setMenus(menuData);
-      setLanes(laneData);
+      setPlatformConfig(runtimeConfig);
     } finally {
       setLoading(false);
     }
@@ -178,9 +155,7 @@ export function PublishPage() {
 
   const regionMap = useMemo(() => Object.fromEntries(regions.map((item) => [item.id, item.regionName])), [regions]);
   const menuMap = useMemo(() => Object.fromEntries(menus.map((item) => [item.id, item])), [menus]);
-  const laneSlotMap = useMemo(() => Object.fromEntries(lanes.map((item) => [item.id, item.laneName])), [lanes]);
-
-  const pilotPolicies = policies.filter((item) => item.grayOrgIds.length > 0);
+  const pilotPolicies = policies.filter((item) => item.promptGrayOrgIds.length > 0 || item.jobGrayOrgIds.length > 0);
   const publishLogs = logs.filter((item) => item.action === "PUBLISH" && publishResourceTypes.includes(item.resourceType as PublishPendingItem["resourceType"]));
   const menuCapabilityLogs = logs.filter((item) => item.resourceType === "MENU_SDK_POLICY" || item.resourceType === "PAGE_ACTIVATION_POLICY");
   const draftPendingItems = publishPendingItems.filter((item) => item.pendingType === "DRAFT");
@@ -198,9 +173,8 @@ export function PublishPage() {
     [draftPendingItems, selectedPendingIds]
   );
   const selectedTrialIps = useMemo(() => splitIpDraft(trialIpDraft), [trialIpDraft]);
-  const promptEnabledMenus = useMemo(() => policies.filter((item) => getMenuCapabilityMeta(item.menuCode).promptEnabled).length, [policies]);
-  const jobEnabledMenus = useMemo(() => policies.filter((item) => getMenuCapabilityMeta(item.menuCode).jobEnabled).length, [policies]);
-  const ipPilotMenus = useMemo(() => policies.filter((item) => getMenuCapabilityMeta(item.menuCode).grayIps.length > 0).length, [policies]);
+  const promptGrayMenus = useMemo(() => policies.filter((item) => item.promptGrayEnabled).length, [policies]);
+  const jobGrayMenus = useMemo(() => policies.filter((item) => item.jobGrayEnabled).length, [policies]);
 
   function openReleaseFlow() {
     setSelectedPendingIds(draftPendingItems.map((item) => item.id));
@@ -344,7 +318,7 @@ export function PublishPage() {
             canPublishConfig ? (
               <Alert
                 showIcon
-                type="success"
+                type="info"
                 message="当前是配置人员发布视角"
               />
             ) : (
@@ -357,7 +331,7 @@ export function PublishPage() {
           ) : canManageMenuCapability ? (
             <Alert
               showIcon
-              type="success"
+              type="info"
               message="当前是菜单能力管理视角"
             />
           ) : (
@@ -550,22 +524,28 @@ export function PublishPage() {
       <Row gutter={[12, 12]}>
         <Col xs={24} sm={12} lg={6}>
           <Card loading={loading}>
-            <Statistic title="启用智能提示菜单" value={promptEnabledMenus} />
+            <Statistic title="提示灰度策略" value={promptGrayMenus} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card loading={loading}>
-            <Statistic title="启用智能作业菜单" value={jobEnabledMenus} />
+            <Statistic title="作业灰度策略" value={jobGrayMenus} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card loading={loading}>
-            <Statistic title="机构试点策略" value={pilotPolicies.length} />
+            <Statistic title="机构灰度策略" value={pilotPolicies.length} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card loading={loading}>
-            <Statistic title="IP 试点菜单" value={ipPilotMenus} />
+            <Typography.Text type="secondary">平台正式版本</Typography.Text>
+            <div>
+              <Typography.Text>提示: {platformConfig?.promptStableVersion ?? "-"}</Typography.Text>
+            </div>
+            <div>
+              <Typography.Text>作业: {platformConfig?.jobStableVersion ?? "-"}</Typography.Text>
+            </div>
           </Card>
         </Col>
       </Row>
@@ -588,57 +568,57 @@ export function PublishPage() {
             {
               title: "智能提示",
               width: 100,
-              render: (_, row) => (getMenuCapabilityMeta(row.menuCode).promptEnabled ? <Tag color="green">已启用</Tag> : <Tag>未启用</Tag>)
+              render: (_, row) => (row.promptGrayEnabled ? <Tag color="orange">灰度中</Tag> : <Tag>走正式</Tag>)
             },
             {
               title: "智能作业",
               width: 100,
-              render: (_, row) => (getMenuCapabilityMeta(row.menuCode).jobEnabled ? <Tag color="green">已启用</Tag> : <Tag>未启用</Tag>)
+              render: (_, row) => (row.jobGrayEnabled ? <Tag color="purple">灰度中</Tag> : <Tag>走正式</Tag>)
             },
             {
-              title: "正式槽位",
+              title: "提示灰度版本",
               width: 120,
-              render: (_, row) => laneSlotMap[row.stableLaneId] ?? "-"
+              render: (_, row) =>
+                row.promptGrayEnabled ? row.promptGrayVersion ?? <Typography.Text type="secondary">未配置</Typography.Text> : "未启用"
             },
             {
-              title: "试点槽位",
+              title: "作业灰度版本",
               width: 120,
-              render: (_, row) => (row.grayLaneId ? laneSlotMap[row.grayLaneId] ?? "-" : <Typography.Text type="secondary">未配置</Typography.Text>)
+              render: (_, row) =>
+                row.jobGrayEnabled ? row.jobGrayVersion ?? <Typography.Text type="secondary">未配置</Typography.Text> : "未启用"
             },
             {
               title: "机构范围",
               width: 200,
-              render: (_, row) =>
-                row.grayOrgIds.length > 0 ? (
-                  <Space wrap>
-                    {row.grayOrgIds.map((org) => (
-                      <Tag key={org}>{getOrgLabel(org)}</Tag>
-                    ))}
-                  </Space>
-                ) : (
-                  <Tag color="green">全部机构</Tag>
-                )
-            },
-            {
-              title: "IP 试点",
-              width: 180,
               render: (_, row) => {
-                const ips = getMenuCapabilityMeta(row.menuCode).grayIps;
-                return ips.length > 0 ? (
+                const promptOrgTags = row.promptGrayOrgIds.map((orgId) => ({ key: `prompt-${orgId}`, label: `提示:${getOrgLabel(orgId)}` }));
+                const jobOrgTags = row.jobGrayOrgIds.map((orgId) => ({ key: `job-${orgId}`, label: `作业:${getOrgLabel(orgId)}` }));
+                const orgTags = [...promptOrgTags, ...jobOrgTags];
+                if (orgTags.length === 0) {
+                  return <Tag>全部机构</Tag>;
+                }
+                return (
                   <Space wrap>
-                    {ips.map((ip) => (
-                      <Tag key={ip}>{ip}</Tag>
+                    {orgTags.map((tag) => (
+                      <Tag key={tag.key}>{tag.label}</Tag>
                     ))}
                   </Space>
-                ) : (
-                  <Typography.Text type="secondary">未配置</Typography.Text>
                 );
               }
             },
             {
+              title: "IP 试点",
+              width: 180,
+              render: () => <Typography.Text type="secondary">未配置</Typography.Text>
+            },
+            {
               title: "能力说明",
               width: 220,
-              render: (_, row) => <Typography.Text type="secondary">{getMenuCapabilityMeta(row.menuCode).summary}</Typography.Text>
+              render: (_, row) => (
+                <Typography.Text type="secondary">
+                  {row.promptGrayEnabled || row.jobGrayEnabled ? "存在菜单能力灰度覆盖" : "按平台正式版本生效"}
+                </Typography.Text>
+              )
             }
           ]}
         />
@@ -726,9 +706,9 @@ export function PublishPage() {
         {validationModal.report ? (
           <Space direction="vertical" style={{ width: "100%" }}>
             <Alert
-              type={validationModal.report.pass ? "success" : "error"}
+              type={validationModal.report.pass ? "info" : "error"}
               showIcon
-              message={validationModal.report.pass ? "检查通过，可继续正式发布" : "存在阻断项，请先修复"}
+              message={validationModal.report.pass ? "检查已完成，可继续正式发布" : "存在阻断项，请先修复"}
               description={validationModal.report.impactSummary}
             />
             {validationModal.report.riskItems && validationModal.report.riskItems.length > 0 ? (
@@ -753,7 +733,7 @@ export function PublishPage() {
                   title: "结果",
                   width: 90,
                   render: (_, row: ValidationReport["items"][number]) =>
-                    row.passed ? <Tag color="green">通过</Tag> : <Tag color="red">阻断</Tag>
+                    row.passed ? <Tag style={subtlePositiveTagStyle}>通过</Tag> : <Tag color="red">阻断</Tag>
                 },
                 { title: "说明", dataIndex: "detail" }
               ]}
@@ -771,7 +751,7 @@ export function PublishPage() {
         <Space direction="vertical" style={{ width: "100%" }}>
           <Alert
             showIcon
-            type={batchPublishResult.blocked.length > 0 ? "warning" : "success"}
+            type={batchPublishResult.blocked.length > 0 ? "warning" : "info"}
             message={
               batchPublishResult.blocked.length > 0
                 ? `已发布 ${batchPublishResult.published.length} 个对象，另有 ${batchPublishResult.blocked.length} 个对象被阻断`
@@ -787,7 +767,7 @@ export function PublishPage() {
             {batchPublishResult.published.length > 0 ? (
               <Space size={[8, 8]} wrap>
                 {batchPublishResult.published.map((name) => (
-                  <Tag color="green" key={name}>
+                  <Tag style={subtlePositiveTagStyle} key={name}>
                     {name}
                   </Tag>
                 ))}

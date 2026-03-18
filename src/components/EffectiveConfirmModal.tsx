@@ -152,7 +152,7 @@ export function EffectiveConfirmModal({
                       ]}
                     />
                   ) : (
-                    <Alert showIcon type="success" message="当前没有阻断项，已通过核心检查。" />
+                    <Alert showIcon type="info" message="当前没有阻断项，可继续生效。" />
                   )}
                 </>
               ) : action.type === "RESTORE" ? (

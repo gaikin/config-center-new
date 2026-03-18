@@ -1,37 +1,104 @@
-import { Alert, Card, Tabs, Typography } from "antd";
+import { Alert, Button, Card, Form, Select, Space, Tabs, Typography, message } from "antd";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ListDataPage } from "../ListDataPage/ListDataPage";
 import { PreprocessorsPage } from "../PreprocessorsPage/PreprocessorsPage";
 import { PublicFieldsPage } from "../PublicFieldsPage/PublicFieldsPage";
-import { RolesPage } from "../RolesPage/RolesPage";
 import { useMockSession } from "../../session/mockSession";
+import { configCenterService } from "../../services/configCenterService";
+import type { PlatformRuntimeConfig, SdkArtifactVersion } from "../../types";
+
+type RuntimeConfigForm = Pick<
+  PlatformRuntimeConfig,
+  "promptStableVersion" | "promptGrayDefaultVersion" | "jobStableVersion" | "jobGrayDefaultVersion"
+>;
+
+function PlatformRuntimeConfigPanel() {
+  const [loading, setLoading] = useState(true);
+  const [artifacts, setArtifacts] = useState<SdkArtifactVersion[]>([]);
+  const [form] = Form.useForm<RuntimeConfigForm>();
+  const [msgApi, holder] = message.useMessage();
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [artifactRows, runtimeConfig] = await Promise.all([
+        configCenterService.listSdkArtifactVersions(),
+        configCenterService.getPlatformRuntimeConfig()
+      ]);
+      setArtifacts(artifactRows);
+      form.setFieldsValue({
+        promptStableVersion: runtimeConfig.promptStableVersion,
+        promptGrayDefaultVersion: runtimeConfig.promptGrayDefaultVersion,
+        jobStableVersion: runtimeConfig.jobStableVersion,
+        jobGrayDefaultVersion: runtimeConfig.jobGrayDefaultVersion
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  async function handleSubmit() {
+    const values = await form.validateFields();
+    await configCenterService.updatePlatformRuntimeConfig({
+      ...values,
+      updatedBy: "person-platform-admin"
+    });
+    msgApi.success("平台参数已保存");
+    await loadData();
+  }
+
+  const versionOptions = artifacts.map((artifact) => ({
+    label: `${artifact.sdkVersion} (${artifact.notes})`,
+    value: artifact.sdkVersion
+  }));
+
+  return (
+    <Card size="small" title="平台级运行参数">
+      {holder}
+      <Form form={form} layout="vertical" disabled={loading}>
+        <Card size="small" title="智能提示" style={{ marginBottom: 12 }}>
+          <Form.Item name="promptStableVersion" label="正式版本" rules={[{ required: true, message: "请选择提示正式版本" }]}>
+            <Select showSearch optionFilterProp="label" options={versionOptions} />
+          </Form.Item>
+          <Form.Item name="promptGrayDefaultVersion" label="默认灰度版本">
+            <Select allowClear showSearch optionFilterProp="label" options={versionOptions} />
+          </Form.Item>
+        </Card>
+
+        <Card size="small" title="智能作业" style={{ marginBottom: 12 }}>
+          <Form.Item name="jobStableVersion" label="正式版本" rules={[{ required: true, message: "请选择作业正式版本" }]}>
+            <Select showSearch optionFilterProp="label" options={versionOptions} />
+          </Form.Item>
+          <Form.Item name="jobGrayDefaultVersion" label="默认灰度版本">
+            <Select allowClear showSearch optionFilterProp="label" options={versionOptions} />
+          </Form.Item>
+        </Card>
+      </Form>
+
+      <Space>
+        <Button type="primary" loading={loading} onClick={() => void handleSubmit()}>
+          保存平台参数
+        </Button>
+      </Space>
+    </Card>
+  );
+}
 
 export function AdvancedConfigPage() {
-  const { hasAction } = useMockSession();
+  const { hasResource } = useMockSession();
   const [searchParams, setSearchParams] = useSearchParams();
-  const canConfig = hasAction("CONFIG");
-  const canManageRoles = hasAction("ROLE_MANAGE");
+  const canConfig = hasResource("/action/common/base/config");
 
   const tabItems = [
     ...(canConfig ? [{ key: "preprocessors", label: "数据转换", children: <PreprocessorsPage embedded /> }] : []),
     ...(canConfig ? [{ key: "list-data", label: "名单数据", children: <ListDataPage embedded /> }] : []),
     ...(canConfig ? [{ key: "public-fields", label: "公共字段", children: <PublicFieldsPage embedded /> }] : []),
-    ...(canManageRoles ? [{ key: "roles", label: "权限管理", children: <RolesPage embedded /> }] : []),
-    ...(canConfig
-      ? [
-          {
-            key: "platform",
-            label: "平台参数",
-            children: (
-              <Card size="small" title="平台级运行参数（示意）">
-                <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                  当前原型阶段先收口到统一入口，后续可按角色拆分为「高级识别参数」「接口高级配置」「底层运行参数」等分区。
-                </Typography.Paragraph>
-              </Card>
-            )
-          }
-        ]
-      : [])
+    ...(canConfig ? [{ key: "platform", label: "平台参数", children: <PlatformRuntimeConfigPanel /> }] : [])
   ];
 
   const activeTab = (() => {

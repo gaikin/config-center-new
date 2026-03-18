@@ -149,7 +149,7 @@ export function PageActivationPoliciesPage() {
       </Typography.Paragraph>
 
       <Space size={12} style={{ marginBottom: 16 }} wrap>
-        <Tag color="green">启用页面：{enabledCount}</Tag>
+        <Tag color="processing">启用页面：{enabledCount}</Tag>
         <Tag color="blue">带作业页面：{withJobCount}</Tag>
         <Tag color="orange">待发布策略：{policies.filter((policy) => policy.status === "DRAFT").length}</Tag>
       </Space>

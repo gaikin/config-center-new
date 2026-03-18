@@ -1,21 +1,24 @@
-import { Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
+import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { OrgSelect } from "../../components/DirectoryFields";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { getOrgLabel } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
+import { validateMenuSdkPolicy } from "../../sdkGovernance";
 import type {
   LifecycleState,
+  MenuCapabilityPolicy,
   MenuSdkPolicy,
   PageMenu,
   PageRegion,
   PageSite,
-  SdkArtifactVersion,
-  SdkReleaseLane
+  PlatformRuntimeConfig,
+  SdkArtifactVersion
 } from "../../types";
 
-type PolicyForm = Omit<MenuSdkPolicy, "id" | "updatedAt" | "resolutionSummary">;
+type PolicyForm = Omit<MenuSdkPolicy, "id" | "updatedAt">;
 
 const statusColor: Record<LifecycleState, string> = {
   DRAFT: "default",
@@ -24,14 +27,20 @@ const statusColor: Record<LifecycleState, string> = {
   EXPIRED: "red"
 };
 
+function formatVersion(version: string | undefined) {
+  return version?.trim() ? version : "-";
+}
+
 export function SdkVersionCenterPage() {
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState<PageSite[]>([]);
   const [regions, setRegions] = useState<PageRegion[]>([]);
   const [menus, setMenus] = useState<PageMenu[]>([]);
   const [artifacts, setArtifacts] = useState<SdkArtifactVersion[]>([]);
-  const [lanes, setLanes] = useState<SdkReleaseLane[]>([]);
   const [policies, setPolicies] = useState<MenuSdkPolicy[]>([]);
+  const [menuCapabilities, setMenuCapabilities] = useState<MenuCapabilityPolicy[]>([]);
+  const [platformConfig, setPlatformConfig] = useState<PlatformRuntimeConfig | null>(null);
   const [siteFilter, setSiteFilter] = useState<string>("ALL");
   const [regionFilter, setRegionFilter] = useState<string>("ALL");
   const [open, setOpen] = useState(false);
@@ -46,16 +55,24 @@ export function SdkVersionCenterPage() {
     () => Object.fromEntries(regions.map((region) => [region.id, region.regionName])),
     [regions]
   );
-  const laneLabelMap = useMemo(
-    () => Object.fromEntries(lanes.map((lane) => [lane.id, `${lane.laneName} (${lane.sdkVersion})`])),
-    [lanes]
-  );
   const menuLabelMap = useMemo(
     () =>
       Object.fromEntries(
         menus.map((menu) => [menu.id, `${regionLabelMap[menu.regionId] ?? "-"} / ${menu.menuName}`])
       ),
     [menus, regionLabelMap]
+  );
+  const menuCapabilityMap = useMemo(
+    () => Object.fromEntries(menuCapabilities.map((item) => [item.menuId, item])),
+    [menuCapabilities]
+  );
+  const artifactVersionOptions = useMemo(
+    () =>
+      artifacts.map((artifact) => ({
+        label: `${artifact.sdkVersion} (${lifecycleLabelMap[artifact.status]})`,
+        value: artifact.sdkVersion
+      })),
+    [artifacts]
   );
 
   const filteredRegions = useMemo(() => {
@@ -92,20 +109,22 @@ export function SdkVersionCenterPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const [siteData, regionData, menuData, artifactData, laneData, policyData] = await Promise.all([
+      const [siteData, regionData, menuData, artifactData, policyData, capabilityData, runtimeConfig] = await Promise.all([
         configCenterService.listPageSites(),
         configCenterService.listPageRegions(),
         configCenterService.listPageMenus(),
         configCenterService.listSdkArtifactVersions(),
-        configCenterService.listSdkReleaseLanes(),
-        configCenterService.listMenuSdkPolicies()
+        configCenterService.listMenuSdkPolicies(),
+        configCenterService.listMenuCapabilityPolicies(),
+        configCenterService.getPlatformRuntimeConfig()
       ]);
       setSites(siteData);
       setRegions(regionData);
       setMenus(menuData);
       setArtifacts(artifactData);
-      setLanes(laneData);
       setPolicies(policyData);
+      setMenuCapabilities(capabilityData);
+      setPlatformConfig(runtimeConfig);
     } finally {
       setLoading(false);
     }
@@ -115,6 +134,17 @@ export function SdkVersionCenterPage() {
     void loadData();
   }, []);
 
+  useEffect(() => {
+    const siteId = searchParams.get("siteId");
+    const regionId = searchParams.get("regionId");
+    if (siteId) {
+      setSiteFilter(siteId);
+    }
+    if (regionId) {
+      setRegionFilter(regionId);
+    }
+  }, [searchParams]);
+
   function openCreate() {
     const defaultMenu = filteredMenus[0] ?? menus[0];
     setEditing(null);
@@ -123,9 +153,12 @@ export function SdkVersionCenterPage() {
       regionId: defaultMenu?.regionId ?? regions[0]?.id ?? 0,
       menuId: defaultMenu?.id ?? 0,
       menuCode: defaultMenu?.menuCode ?? "",
-      stableLaneId: lanes.find((lane) => lane.laneCode === "stable")?.id ?? lanes[0]?.id ?? 0,
-      grayLaneId: lanes.find((lane) => lane.laneCode === "gray-a")?.id,
-      grayOrgIds: [],
+      promptGrayEnabled: false,
+      promptGrayVersion: platformConfig?.promptGrayDefaultVersion,
+      promptGrayOrgIds: [],
+      jobGrayEnabled: false,
+      jobGrayVersion: platformConfig?.jobGrayDefaultVersion,
+      jobGrayOrgIds: [],
       effectiveStart: "2026-03-14 09:00",
       effectiveEnd: "2026-12-31 23:59",
       status: "DRAFT",
@@ -141,9 +174,12 @@ export function SdkVersionCenterPage() {
       regionId: row.regionId,
       menuId: row.menuId,
       menuCode: row.menuCode,
-      stableLaneId: row.stableLaneId,
-      grayLaneId: row.grayLaneId,
-      grayOrgIds: row.grayOrgIds,
+      promptGrayEnabled: row.promptGrayEnabled,
+      promptGrayVersion: row.promptGrayVersion,
+      promptGrayOrgIds: row.promptGrayOrgIds,
+      jobGrayEnabled: row.jobGrayEnabled,
+      jobGrayVersion: row.jobGrayVersion,
+      jobGrayOrgIds: row.jobGrayOrgIds,
       effectiveStart: row.effectiveStart,
       effectiveEnd: row.effectiveEnd,
       status: row.status,
@@ -153,8 +189,28 @@ export function SdkVersionCenterPage() {
   }
 
   async function submit() {
+    if (!platformConfig) {
+      msgApi.error("平台参数未加载完成，请稍后再试");
+      return;
+    }
     const values = await form.validateFields();
     const matchedMenu = menus.find((item) => item.id === values.menuId);
+    const capability = menuCapabilityMap[values.menuId];
+    const validation = validateMenuSdkPolicy({
+      policy: values,
+      platformConfig,
+      capabilityStatus: capability
+        ? {
+            promptStatus: capability.promptStatus,
+            jobStatus: capability.jobStatus
+          }
+        : undefined
+    });
+    if (!validation.ok) {
+      msgApi.error(validation.errors[0] ?? "菜单灰度策略校验失败");
+      return;
+    }
+
     await configCenterService.upsertMenuSdkPolicy({
       ...values,
       menuCode: matchedMenu?.menuCode ?? editing?.menuCode ?? "",
@@ -165,28 +221,32 @@ export function SdkVersionCenterPage() {
     await loadData();
   }
 
-  const draftArtifacts = artifacts.filter((item) => item.status === "DRAFT").length;
-  const grayPolicies = policies.filter((item) => item.grayOrgIds.length > 0).length;
+  const promptGrayPolicies = policies.filter((item) => item.promptGrayEnabled).length;
+  const jobGrayPolicies = policies.filter((item) => item.jobGrayEnabled).length;
 
   return (
     <div>
       {holder}
-      <Typography.Title level={4}>版本灰度策略（高级）</Typography.Title>
+      <Typography.Title level={4}>SDK版本中心</Typography.Title>
       <Typography.Paragraph type="secondary">
-        这是高级维护区，用来维护菜单层级的版本灰度范围。业务侧通常在各业务页面完成发布，不需要单独进入发布页。
-      </Typography.Paragraph>
-
-      <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        当前原型只保留三个业务可理解的信息：当前线上版本、试点版本、影响机构范围。
+        维护平台默认版本与菜单能力灰度策略。平台参数负责默认值，菜单灰度只做按菜单与机构的覆盖。
       </Typography.Paragraph>
 
       <Space size={12} style={{ marginBottom: 16 }} wrap>
         <Tag color="blue">制品版本：{artifacts.length}</Tag>
-        <Tag color="purple">发布通道：{lanes.length}</Tag>
-        <Tag color="geekblue">版本策略：{policies.length}</Tag>
-        <Tag color="orange">待灰度菜单：{grayPolicies}</Tag>
-        <Tag color="red">待发布制品：{draftArtifacts}</Tag>
+        <Tag color="geekblue">策略总数：{policies.length}</Tag>
+        <Tag color="orange">提示灰度菜单：{promptGrayPolicies}</Tag>
+        <Tag color="purple">作业灰度菜单：{jobGrayPolicies}</Tag>
       </Space>
+
+      <Card title="平台默认版本摘要" style={{ marginBottom: 16 }}>
+        <Space direction="vertical" size={4}>
+          <Typography.Text>提示正式版本：{formatVersion(platformConfig?.promptStableVersion)}</Typography.Text>
+          <Typography.Text type="secondary">提示默认灰度：{formatVersion(platformConfig?.promptGrayDefaultVersion)}</Typography.Text>
+          <Typography.Text>作业正式版本：{formatVersion(platformConfig?.jobStableVersion)}</Typography.Text>
+          <Typography.Text type="secondary">作业默认灰度：{formatVersion(platformConfig?.jobGrayDefaultVersion)}</Typography.Text>
+        </Space>
+      </Card>
 
       <Card title="版本清单" style={{ marginBottom: 16 }}>
         <Table<SdkArtifactVersion>
@@ -195,9 +255,13 @@ export function SdkVersionCenterPage() {
           dataSource={artifacts}
           pagination={false}
           columns={[
-            { title: "版本号", dataIndex: "sdkVersion", width: 120 },
+            { title: "版本号", dataIndex: "sdkVersion", width: 140 },
             { title: "Loader", dataIndex: "loaderVersion", width: 100 },
-            { title: "Manifest", dataIndex: "artifactManifestUrl", render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
+            {
+              title: "Manifest",
+              dataIndex: "artifactManifestUrl",
+              render: (value: string) => <Typography.Text code>{value}</Typography.Text>
+            },
             { title: "兼容说明", dataIndex: "compatibility" },
             {
               title: "状态",
@@ -208,27 +272,8 @@ export function SdkVersionCenterPage() {
         />
       </Card>
 
-      <Card title="发布通道" style={{ marginBottom: 16 }}>
-        <Table<SdkReleaseLane>
-          rowKey="id"
-          loading={loading}
-          dataSource={lanes}
-          pagination={false}
-          columns={[
-            { title: "通道", dataIndex: "laneName", width: 140 },
-            { title: "指向版本", dataIndex: "sdkVersion", width: 160 },
-            {
-              title: "状态",
-              width: 100,
-              render: (_, row) => <Tag color={statusColor[row.status]}>{lifecycleLabelMap[row.status]}</Tag>
-            },
-            { title: "更新时间", dataIndex: "updatedAt", width: 180 }
-          ]}
-        />
-      </Card>
-
       <Card
-        title="菜单版本灰度策略"
+        title="菜单灰度策略"
         extra={
           <Space wrap>
             <Select
@@ -253,7 +298,7 @@ export function SdkVersionCenterPage() {
               onChange={(value) => setRegionFilter(value)}
             />
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-              新建版本策略
+              新建灰度策略
             </Button>
           </Space>
         }
@@ -270,28 +315,47 @@ export function SdkVersionCenterPage() {
               render: (_, row) => menuLabelMap[row.menuId] ?? "未识别菜单"
             },
             {
-              title: "线上版本",
-              width: 160,
-              render: (_, row) => laneLabelMap[row.stableLaneId] ?? row.stableLaneId
-            },
-            {
-              title: "试点版本",
+              title: "提示灰度版本",
               width: 160,
               render: (_, row) =>
-                row.grayLaneId ? laneLabelMap[row.grayLaneId] ?? row.grayLaneId : <Typography.Text type="secondary">-</Typography.Text>
+                row.promptGrayEnabled ? (
+                  row.promptGrayVersion ?? "-"
+                ) : (
+                  <Typography.Text type="secondary">未开启</Typography.Text>
+                )
             },
             {
-              title: "灰度机构",
+              title: "提示灰度机构",
               width: 220,
               render: (_, row) =>
-                row.grayOrgIds.length > 0 ? (
+                row.promptGrayEnabled && row.promptGrayOrgIds.length > 0 ? (
                   <Space wrap>
-                    {row.grayOrgIds.map((orgId) => (
+                    {row.promptGrayOrgIds.map((orgId) => (
                       <Tag key={orgId}>{getOrgLabel(orgId)}</Tag>
                     ))}
                   </Space>
                 ) : (
-                  <Typography.Text type="secondary">全部机构走线上版本</Typography.Text>
+                  <Typography.Text type="secondary">-</Typography.Text>
+                )
+            },
+            {
+              title: "作业灰度版本",
+              width: 160,
+              render: (_, row) =>
+                row.jobGrayEnabled ? row.jobGrayVersion ?? "-" : <Typography.Text type="secondary">未开启</Typography.Text>
+            },
+            {
+              title: "作业灰度机构",
+              width: 220,
+              render: (_, row) =>
+                row.jobGrayEnabled && row.jobGrayOrgIds.length > 0 ? (
+                  <Space wrap>
+                    {row.jobGrayOrgIds.map((orgId) => (
+                      <Tag key={orgId}>{getOrgLabel(orgId)}</Tag>
+                    ))}
+                  </Space>
+                ) : (
+                  <Typography.Text type="secondary">-</Typography.Text>
                 )
             },
             { title: "生效时间", width: 220, render: (_, row) => `${row.effectiveStart} ~ ${row.effectiveEnd}` },
@@ -314,7 +378,7 @@ export function SdkVersionCenterPage() {
       </Card>
 
       <Modal
-        title={editing ? "编辑版本灰度策略" : "新建版本灰度策略"}
+        title={editing ? "编辑菜单灰度策略" : "新建菜单灰度策略"}
         open={open}
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
@@ -363,19 +427,88 @@ export function SdkVersionCenterPage() {
           <Form.Item name="menuCode" hidden>
             <Input />
           </Form.Item>
-          <Form.Item name="stableLaneId" label="线上版本" rules={[{ required: true, message: "请选择线上版本" }]}>
-            <Select options={lanes.map((lane) => ({ label: `${lane.laneName} (${lane.sdkVersion})`, value: lane.id }))} />
-          </Form.Item>
-          <Form.Item name="grayLaneId" label="试点版本">
-            <Select allowClear options={lanes.map((lane) => ({ label: `${lane.laneName} (${lane.sdkVersion})`, value: lane.id }))} />
-          </Form.Item>
-          <Form.Item name="grayOrgIds" label="灰度机构">
-            <OrgSelect mode="multiple" placeholder="未选择则全部机构走线上版本" />
-          </Form.Item>
+
+          <Card size="small" title="智能提示灰度" style={{ marginBottom: 12 }}>
+            <Form.Item name="promptGrayEnabled" label="开启提示灰度" valuePropName="checked">
+              <Switch
+                onChange={(checked) => {
+                  if (checked && !form.getFieldValue("promptGrayVersion")) {
+                    form.setFieldValue("promptGrayVersion", platformConfig?.promptGrayDefaultVersion);
+                  }
+                  if (!checked) {
+                    form.setFieldValue("promptGrayVersion", undefined);
+                    form.setFieldValue("promptGrayOrgIds", []);
+                  }
+                }}
+              />
+            </Form.Item>
+            <Form.Item noStyle shouldUpdate>
+              {() => {
+                const enabled = Boolean(form.getFieldValue("promptGrayEnabled"));
+                return (
+                  <>
+                    <Form.Item name="promptGrayVersion" label="提示灰度版本" rules={enabled ? [{ required: true, message: "请选择提示灰度版本" }] : []}>
+                      <Select allowClear disabled={!enabled} options={artifactVersionOptions} />
+                    </Form.Item>
+                    <Form.Item name="promptGrayOrgIds" label="提示灰度机构" rules={enabled ? [{ required: true, type: "array", min: 1, message: "请选择灰度机构" }] : []}>
+                      <OrgSelect mode="multiple" disabled={!enabled} placeholder="请选择提示灰度机构" />
+                    </Form.Item>
+                  </>
+                );
+              }}
+            </Form.Item>
+          </Card>
+
+          <Card size="small" title="智能作业灰度" style={{ marginBottom: 12 }}>
+            <Form.Item name="jobGrayEnabled" label="开启作业灰度" valuePropName="checked">
+              <Switch
+                onChange={(checked) => {
+                  if (checked && !form.getFieldValue("jobGrayVersion")) {
+                    form.setFieldValue("jobGrayVersion", platformConfig?.jobGrayDefaultVersion);
+                  }
+                  if (!checked) {
+                    form.setFieldValue("jobGrayVersion", undefined);
+                    form.setFieldValue("jobGrayOrgIds", []);
+                  }
+                }}
+              />
+            </Form.Item>
+            <Form.Item noStyle shouldUpdate>
+              {() => {
+                const enabled = Boolean(form.getFieldValue("jobGrayEnabled"));
+                return (
+                  <>
+                    <Form.Item name="jobGrayVersion" label="作业灰度版本" rules={enabled ? [{ required: true, message: "请选择作业灰度版本" }] : []}>
+                      <Select allowClear disabled={!enabled} options={artifactVersionOptions} />
+                    </Form.Item>
+                    <Form.Item name="jobGrayOrgIds" label="作业灰度机构" rules={enabled ? [{ required: true, type: "array", min: 1, message: "请选择灰度机构" }] : []}>
+                      <OrgSelect mode="multiple" disabled={!enabled} placeholder="请选择作业灰度机构" />
+                    </Form.Item>
+                  </>
+                );
+              }}
+            </Form.Item>
+          </Card>
+
           <Form.Item name="effectiveStart" label="生效开始" rules={[{ required: true, message: "请输入开始时间" }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="effectiveEnd" label="生效结束" rules={[{ required: true, message: "请输入结束时间" }]}>
+          <Form.Item
+            name="effectiveEnd"
+            label="生效结束"
+            rules={[
+              { required: true, message: "请输入结束时间" },
+              () => ({
+                validator(_, value) {
+                  const start = form.getFieldValue("effectiveStart");
+                  if (!start || !value || start <= value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error("生效结束时间不能早于开始时间"));
+                }
+              })
+            ]}
+          >
             <Input />
           </Form.Item>
           <Form.Item name="ownerOrgId" label="归属组织" rules={[{ required: true, message: "请选择归属组织" }]}>
@@ -389,4 +522,3 @@ export function SdkVersionCenterPage() {
     </div>
   );
 }
-

@@ -40,7 +40,7 @@ import { PromptTemplateEditor } from "./PromptTemplateEditor";
 import { RulesPageMode, useRulesPageModel } from "./useRulesPageModel";
 import { buildDefaultListLookupMatcher, FlatConditionDraft, InterfaceInputParamDraft, ListLookupMatcherDraft, LOGIC_OPERATOR_WIDTH, OperandDraft, defaultInterfaceInputBinding, deriveMachineKeyFromOutputPath, interfaceInputSourceOptions, normalizeLookupSourceType, normalizeOperator, normalizeSourceType, closeModeLabel, contextOptions, listLookupSourceOptions, operatorOptions, sourceOptions, statusColor } from "./rulesPageShared";
 import { OperandPill, InterfaceInputValueEditor } from "./rulesOperandRenderers";
-import type { LifecycleState, PublishValidationReport, RuleDefinition, RuleLogicType } from "../../types";
+import type { LifecycleState, PublishValidationReport, RuleDefinition, RuleLogicType, ValidationIssue } from "../../types";
 
 type RulesPageProps = {
   mode?: RulesPageMode;
@@ -91,6 +91,25 @@ const ActionBar = styled.div`
   gap: 8px;
 `;
 
+const EditorStatusBar = styled(Card)`
+  margin-bottom: 12px;
+
+  .ant-card-body {
+    padding: 10px 12px;
+  }
+`;
+
+const StickyEditorFooter = styled.div`
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
+  margin: 12px -24px -24px;
+  padding: 10px 24px 14px;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
+  box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.08);
+`;
+
 function CompactHint({
   tone = "warning",
   title,
@@ -105,19 +124,19 @@ function CompactHint({
   const palette =
     tone === "success"
       ? {
-          border: "#B7E0C0",
-          background: "#F6FFED",
-          text: "#237804"
+          border: "#D0D5DD",
+          background: "#F8FAFC",
+          text: "#344054"
         }
       : tone === "info"
         ? {
-            border: "#91CAFF",
-            background: "#EFF8FF",
+            border: "#7CB2F8",
+            background: "#EAF4FF",
             text: "#175CD3"
           }
         : {
-            border: "#FEC84B",
-            background: "#FFFAEB",
+            border: "#F3C969",
+            background: "#FFF7E6",
             text: "#B54708"
           };
 
@@ -132,11 +151,18 @@ function CompactHint({
     >
       <Space size={[8, 4]} wrap style={{ width: "100%", justifyContent: "space-between" }}>
         <Space size={[8, 4]} wrap>
-          <Tag color={tone === "success" ? "success" : tone === "info" ? "processing" : "warning"} style={{ marginInlineEnd: 0 }}>
+          <Tag
+            color={tone === "info" ? "processing" : tone === "warning" ? "warning" : undefined}
+            style={
+              tone === "success"
+                ? { marginInlineEnd: 0, borderColor: "#D0D5DD", background: "#F9FAFB", color: "#344054" }
+                : { marginInlineEnd: 0 }
+            }
+          >
             {tone === "success" ? "已配置" : tone === "info" ? "说明" : "待处理"}
           </Tag>
           <Typography.Text style={{ color: palette.text }}>{title}</Typography.Text>
-          {description ? <Typography.Text type="secondary">{description}</Typography.Text> : null}
+          {description ? <Typography.Text style={{ color: "#344054" }}>{description}</Typography.Text> : null}
         </Space>
         {extra}
       </Space>
@@ -289,7 +315,7 @@ export function RulesPage({
     restoreRuleNow
   } = useRulesPageModel(mode, { initialPageResourceId, initialTemplateRuleId, initialSceneId, autoOpenCreate });
   const navigate = useNavigate();
-  const { hasAction } = useMockSession();
+  const { hasResource } = useMockSession();
   const [msgApi, msgHolder] = message.useMessage();
   const isTemplateMode = mode === "TEMPLATE";
   const pageTitle = isTemplateMode ? "模板复用" : "智能提示";
@@ -324,7 +350,7 @@ export function RulesPage({
     []
   );
   const effectivePermissionBlockedMessage = effectiveMeta
-    ? getEffectivePermissionBlockedMessage(effectiveMeta.type, hasAction)
+    ? getEffectivePermissionBlockedMessage(effectiveMeta.type, hasResource)
     : null;
   const modalBlockedMessage = effectiveBlockedMessage ?? effectivePermissionBlockedMessage;
   const canEffectiveConfirm =
@@ -406,6 +432,45 @@ export function RulesPage({
     const disabled = rows.filter((item) => item.status === "DISABLED").length;
     return { total, draft, active, disabled };
   }, [rows]);
+  Form.useWatch([], ruleForm);
+  const hasUnsavedEdits = open && ruleForm.isFieldsTouched(true);
+  const editorIssues = useMemo<ValidationIssue[]>(
+    () => [
+      ...(saveValidationReport?.fieldIssues ?? []),
+      ...(saveValidationReport?.sectionIssues ?? []),
+      ...(saveValidationReport?.objectIssues ?? []),
+      ...logicValidationIssues
+    ],
+    [logicValidationIssues, saveValidationReport?.fieldIssues, saveValidationReport?.objectIssues, saveValidationReport?.sectionIssues]
+  );
+  const editorBlockingCount = useMemo(
+    () => editorIssues.filter((issue) => issue.level === "blocking").length,
+    [editorIssues]
+  );
+  const editorWarningCount = useMemo(
+    () => editorIssues.filter((issue) => issue.level === "warning").length,
+    [editorIssues]
+  );
+  const editorIssueShortcuts = useMemo(
+    () =>
+      editorIssues.slice(0, 6).map((issue) => ({
+        key: issue.key,
+        issue,
+        label: issue.kind === "field" ? issue.label : issue.title
+      })),
+    [editorIssues]
+  );
+  const logicBlockingCount = useMemo(
+    () => logicValidationIssues.filter((issue) => issue.level === "blocking").length,
+    [logicValidationIssues]
+  );
+  const logicWarningCount = useMemo(
+    () => logicValidationIssues.filter((issue) => issue.level === "warning").length,
+    [logicValidationIssues]
+  );
+  const saveBlockingCount = saveValidationReport?.blockingCount ?? 0;
+  const saveWarningCount = saveValidationReport?.warningCount ?? 0;
+  const hasSaveIssues = saveBlockingCount + saveWarningCount > 0;
 
   function updateListMatchers(
     updater:
@@ -497,6 +562,52 @@ export function RulesPage({
     }, 60);
   }
 
+  function focusLogicIssue(field?: string) {
+    setActiveEditorTab("logic");
+    const matched = field?.match(/^(\d+):(left|right):/);
+    if (!matched) {
+      window.setTimeout(() => {
+        document.getElementById("rule-section-logic")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 60);
+      return;
+    }
+    const conditionIndex = Number(matched[1]);
+    const side = matched[2] as "left" | "right";
+    const condition = conditionsDraft[conditionIndex];
+    if (!condition) {
+      return;
+    }
+    setSelectedOperand({ conditionId: condition.id, side });
+    window.setTimeout(() => {
+      document.getElementById(`logic-condition-${condition.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 60);
+  }
+
+  function jumpToIssue(issue: ValidationIssue) {
+    if (issue.section === "logic") {
+      focusLogicIssue(issue.kind === "field" ? issue.field : undefined);
+      return;
+    }
+
+    const sectionToTab: Record<string, string> = {
+      page: "basic",
+      basic: "basic",
+      content: "prompt",
+      confirm: "summary"
+    };
+    const targetSection = sectionToTab[issue.section] ?? issue.section;
+    jumpToRuleSection(targetSection);
+
+    if (issue.kind === "field") {
+      const fieldName = issue.field as string;
+      if (fieldName && !fieldName.includes(":")) {
+        window.setTimeout(() => {
+          ruleForm.scrollToField(fieldName, { block: "center" });
+        }, 120);
+      }
+    }
+  }
+
   function openRuleEditorTab(row: RuleDefinition, tab: "basic" | "logic") {
     setPendingOpenTab(tab);
     openEdit(row);
@@ -541,11 +652,26 @@ export function RulesPage({
 
     return (
       <>
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          用自然语言方式整理命中逻辑，左侧按条件链路排布，右侧就近修改字段来源与取值。
-        </Typography.Paragraph>
-
-        <ValidationReportPanel issues={logicValidationIssues} title="条件配置还有待处理问题" compact maxPreviewItems={4} />
+        <Space direction="vertical" size={10} style={{ width: "100%", marginBottom: 12 }}>
+          <Typography.Text style={{ color: "#475467" }}>
+            左侧维护条件链路，右侧编辑当前选中值的来源与取值。
+          </Typography.Text>
+          {logicValidationIssues.length > 0 ? (
+            <Collapse
+              size="small"
+              defaultActiveKey={logicBlockingCount > 0 ? ["logic-validation"] : []}
+              items={[
+                {
+                  key: "logic-validation",
+                  label: `条件检查：阻塞 ${logicBlockingCount} / 警告 ${logicWarningCount}`,
+                  children: <ValidationReportPanel issues={logicValidationIssues} title="条件配置检查结果" />
+                }
+              ]}
+            />
+          ) : (
+            <CompactHint tone="success" title="条件检查通过" description="当前条件配置无待处理问题。" />
+          )}
+        </Space>
 
         <Space style={{ marginBottom: 12 }}>
           <Typography.Text strong>整体逻辑</Typography.Text>
@@ -564,13 +690,17 @@ export function RulesPage({
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 420px", gap: 12, alignItems: "start" }}>
           <Card size="small" title="条件链路">
             <Space direction="vertical" style={{ width: "100%" }} size={12}>
-              {conditionsDraft.map((condition, index) => (
+              {conditionsDraft.map((condition, index) => {
+                const issueCount = logicValidationIssues.filter((issue) => issue.field.startsWith(`${index}:`)).length;
+                const isSelected = selectedOperand?.conditionId === condition.id;
+                return (
                 <Card
                   key={condition.id}
+                  id={`logic-condition-${condition.id}`}
                   size="small"
                   style={{
-                    borderColor:
-                      selectedOperand?.conditionId === condition.id ? "var(--cc-source-selected, #84CAFF)" : "#f0f0f0"
+                    borderColor: issueCount > 0 ? "#ffccc7" : isSelected ? "var(--cc-source-selected, #84CAFF)" : "#f0f0f0",
+                    background: isSelected ? "#f7fbff" : "#fff"
                   }}
                   bodyStyle={{ padding: 12 }}
                 >
@@ -578,6 +708,7 @@ export function RulesPage({
                     <Space size={[8, 4]} wrap style={{ width: "100%", justifyContent: "space-between" }}>
                       <Space size={[8, 4]} wrap>
                         <Tag color="blue">条件 {index + 1}</Tag>
+                        {issueCount > 0 ? <Tag color="error">问题 {issueCount}</Tag> : null}
                         <Typography.Text type="secondary">{summarizeCondition(condition)}</Typography.Text>
                       </Space>
                       <Button
@@ -589,8 +720,19 @@ export function RulesPage({
                         onClick={() => removeCondition(condition.id)}
                       />
                     </Space>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", width: "100%", minWidth: 0, overflow: "hidden" }}>
-                      <OperandPill conditionId={condition.id} side="left" operand={condition.left} selectedOperand={selectedOperand} onSelect={setSelectedOperand} />
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)",
+                        alignItems: "center",
+                        gap: 8,
+                        width: "100%"
+                      }}
+                    >
+                      <div style={{ minWidth: 0, border: "1px solid #d9e8ff", borderRadius: 8, padding: "6px 8px", background: "#fff" }}>
+                        <Tag color="processing" style={{ marginInlineEnd: 8 }}>左值</Tag>
+                        <OperandPill conditionId={condition.id} side="left" operand={condition.left} selectedOperand={selectedOperand} onSelect={setSelectedOperand} />
+                      </div>
                       <Select
                         style={{ width: LOGIC_OPERATOR_WIDTH, minWidth: LOGIC_OPERATOR_WIDTH, maxWidth: LOGIC_OPERATOR_WIDTH }}
                         value={condition.operator}
@@ -599,15 +741,19 @@ export function RulesPage({
                           updateCondition(condition.id, (previous) => ({ ...previous, operator: normalizeOperator(value) }))
                         }
                       />
-                      {condition.operator === "EXISTS" ? (
-                        <Tag>无需右值</Tag>
-                      ) : (
-                        <OperandPill conditionId={condition.id} side="right" operand={condition.right} selectedOperand={selectedOperand} onSelect={setSelectedOperand} />
-                      )}
+                      <div style={{ minWidth: 0, border: "1px solid #d9e8ff", borderRadius: 8, padding: "6px 8px", background: "#fff" }}>
+                        <Tag color="processing" style={{ marginInlineEnd: 8 }}>右值</Tag>
+                        {condition.operator === "EXISTS" ? (
+                          <Tag>无需右值</Tag>
+                        ) : (
+                          <OperandPill conditionId={condition.id} side="right" operand={condition.right} selectedOperand={selectedOperand} onSelect={setSelectedOperand} />
+                        )}
+                      </div>
                     </div>
                   </Space>
                 </Card>
-              ))}
+                );
+              })}
             </Space>
           </Card>
 
@@ -1069,7 +1215,7 @@ export function RulesPage({
 
   async function openEffectiveAction(target: EffectiveTarget) {
     const action = getEffectiveActionMeta(target.status);
-    const permissionBlocked = getEffectivePermissionBlockedMessage(action.type, hasAction);
+    const permissionBlocked = getEffectivePermissionBlockedMessage(action.type, hasResource);
     if (permissionBlocked) {
       msgApi.warning(permissionBlocked);
       return;
@@ -1177,8 +1323,8 @@ export function RulesPage({
           objectName={publishNotice.objectName}
           warningCount={publishNotice.warningCount}
           actionLabel={getEffectiveActionMeta("DRAFT").label}
-          actionDisabled={Boolean(getEffectivePermissionBlockedMessage("PUBLISH", hasAction))}
-          actionDisabledReason={getEffectivePermissionBlockedMessage("PUBLISH", hasAction) ?? undefined}
+          actionDisabled={Boolean(getEffectivePermissionBlockedMessage("PUBLISH", hasResource))}
+          actionDisabledReason={getEffectivePermissionBlockedMessage("PUBLISH", hasResource) ?? undefined}
           onGoPublish={() =>
             void openEffectiveAction({
               id: publishNotice.resourceId,
@@ -1305,7 +1451,7 @@ export function RulesPage({
               width: 250,
               render: (_, row) => {
                 const actionMeta = getEffectiveActionMeta(row.status);
-                const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasAction);
+                const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasResource);
                 return (
                   <Space>
                     <Button size="small" onClick={() => openRuleEditorTab(row, "basic")}>
@@ -1345,36 +1491,40 @@ export function RulesPage({
         open={open}
         onCancel={closeRuleModal}
         width={isTemplateMode ? 720 : 1240}
-        footer={
-          isTemplateMode
-            ? [
-                <Button key="cancel" onClick={closeRuleModal}>
-                  取消
-                </Button>,
-                <Button key="save" type="primary" onClick={() => void submitRule()}>
-                  保存
-                </Button>
-              ]
-            : [
-                <Button
-                  key="cancel"
-                  onClick={closeRuleModal}
-                >
-                  取消
-                </Button>,
-                <Button key="preview" loading={previewLoading} onClick={() => void runWizardPreview()}>
-                  执行预览
-                </Button>,
-                <Button key="save" type="primary" onClick={() => void submitRule()}>
-                  保存规则
-                </Button>
-              ]
-        }
+        footer={null}
       >
         <Form form={ruleForm} layout="vertical">
           <Form.Item hidden name="ruleScope">
             <Input />
           </Form.Item>
+
+          <EditorStatusBar size="small">
+            <Space align="center" size={[8, 8]} wrap style={{ width: "100%", justifyContent: "space-between" }}>
+              <Space size={[8, 4]} wrap>
+                {hasUnsavedEdits ? (
+                  <Tag color="warning">未保存更改</Tag>
+                ) : (
+                  <Tag style={{ borderColor: "#D0D5DD", background: "#F9FAFB", color: "#344054" }}>内容已保存</Tag>
+                )}
+                <Tag color={editorBlockingCount > 0 ? "error" : "default"}>阻塞 {editorBlockingCount}</Tag>
+                <Tag color={editorWarningCount > 0 ? "warning" : "default"}>警告 {editorWarningCount}</Tag>
+                <Typography.Text type="secondary">
+                  {editorBlockingCount > 0 ? "请先处理阻塞问题后再保存。" : "可直接保存；建议同步处理提示项。"}
+                </Typography.Text>
+              </Space>
+              {editorIssueShortcuts.length > 0 ? (
+                <Space size={[6, 6]} wrap>
+                  {editorIssueShortcuts.map((item) => (
+                    <Button key={item.key} size="small" onClick={() => jumpToIssue(item.issue)}>
+                      {item.label}
+                    </Button>
+                  ))}
+                </Space>
+              ) : (
+                <Typography.Text type="secondary">暂无待定位问题</Typography.Text>
+              )}
+            </Space>
+          </EditorStatusBar>
 
           <Tabs
             activeKey={activeEditorTab}
@@ -1456,7 +1606,7 @@ export function RulesPage({
                           <Form.Item name="closeMode" label="关闭方式" rules={[{ required: true }]}>
                             <Select options={Object.entries(closeModeLabel).map(([value, label]) => ({ label, value }))} />
                           </Form.Item>
-                          <Form.Item name="sceneId" label="关联作业场景（可选）" extra="点击“确定”时可选联动作业场景；未配置时仅关闭提示。">
+                          <Form.Item name="sceneId" label="关联作业场景（可选）" extra="可联动作业；不配置时仅关闭提示。">
                             <Select allowClear options={scenes.map((scene) => ({ label: scene.name, value: scene.id }))} />
                           </Form.Item>
                           <Form.Item label="状态">
@@ -1536,17 +1686,17 @@ export function RulesPage({
                             <Card id="rule-section-summary" size="small" title="实时摘要">
                               <Space direction="vertical" style={{ width: "100%" }} size={10}>
                                 <Tag color="blue">{ruleForm.getFieldValue("name") || "未命名规则"}</Tag>
-                                <Typography.Text type="secondary">页面：{currentPageName}</Typography.Text>
-                                <Typography.Text type="secondary">
+                                <Typography.Text style={{ color: "#475467" }}>页面：{currentPageName}</Typography.Text>
+                                <Typography.Text style={{ color: "#475467" }}>
                                   提示模式：{watchedPromptMode ? promptModeLabelMap[watchedPromptMode] : "-"} / 关闭方式：
                                   {ruleForm.getFieldValue("closeMode") ? closeModeLabel[ruleForm.getFieldValue("closeMode") as RuleDefinition["closeMode"]] : "-"}
                                 </Typography.Text>
-                                <Typography.Text type="secondary">条件摘要：{conditionSummary}</Typography.Text>
+                                <Typography.Text style={{ color: "#475467" }}>条件摘要：{conditionSummary}</Typography.Text>
                                 <Typography.Text strong>{promptPreviewTitle}</Typography.Text>
                                 <div
                                   style={{
-                                    border: "1px solid #B2DDFF",
-                                    background: "#F8FBFF",
+                                    border: "1px solid #B8D7FF",
+                                    background: "#F4F9FF",
                                     borderRadius: 12,
                                     padding: 16
                                   }}
@@ -1584,7 +1734,21 @@ export function RulesPage({
                               </Space>
                             </Card>
 
-                            <ValidationReportPanel report={saveValidationReport} title="保存前检查结果" />
+                            {hasSaveIssues ? (
+                              <Collapse
+                                size="small"
+                                defaultActiveKey={saveBlockingCount > 0 ? ["save-validation"] : []}
+                                items={[
+                                  {
+                                    key: "save-validation",
+                                    label: `保存检查：阻塞 ${saveBlockingCount} / 警告 ${saveWarningCount}`,
+                                    children: <ValidationReportPanel report={saveValidationReport} title="保存前检查结果" />
+                                  }
+                                ]}
+                              />
+                            ) : (
+                              <CompactHint tone="success" title="保存检查通过" description="当前无阻塞项，可直接保存。" />
+                            )}
 
                             {previewResult ? (
                               <Alert
@@ -1594,7 +1758,9 @@ export function RulesPage({
                                 description={previewResult.detail}
                               />
                             ) : (
-                              <CompactHint tone="info" title="建议先执行一次预览" description="保存前先检查提示展示效果与规则表达是否符合预期。" />
+                              <Typography.Text style={{ color: "#475467" }}>
+                                建议执行一次预览，确认提示展示效果与规则表达。
+                              </Typography.Text>
                             )}
                           </Space>
                         </div>
@@ -1608,13 +1774,6 @@ export function RulesPage({
                 label: isTemplateMode ? "模板条件" : "条件配置",
                 children: (
                   <Space direction="vertical" style={{ width: "100%" }} size={16}>
-                    {!isTemplateMode ? (
-                      <CompactHint
-                        tone="info"
-                        title="条件配置是高频操作区"
-                        description="后续修改规则时，可直接进入此页签调整命中逻辑。"
-                      />
-                    ) : null}
                     <Card
                       id="rule-section-logic"
                       size="small"
@@ -1639,6 +1798,30 @@ export function RulesPage({
               }
             ]}
           />
+
+          <StickyEditorFooter>
+            <Space align="center" size={[8, 8]} wrap style={{ width: "100%", justifyContent: "space-between" }}>
+              <Space size={[8, 4]} wrap>
+                {editorBlockingCount > 0 ? (
+                  <Tag color="error">存在 {editorBlockingCount} 个阻塞问题</Tag>
+                ) : (
+                  <Tag style={{ borderColor: "#D0D5DD", background: "#F9FAFB", color: "#344054" }}>保存校验通过</Tag>
+                )}
+                {editorWarningCount > 0 ? <Tag color="warning">提示 {editorWarningCount}</Tag> : null}
+              </Space>
+              <Space>
+                <Button onClick={closeRuleModal}>取消</Button>
+                {!isTemplateMode ? (
+                  <Button loading={previewLoading} onClick={() => void runWizardPreview()}>
+                    执行预览
+                  </Button>
+                ) : null}
+                <Button type="primary" onClick={() => void submitRule()}>
+                  {isTemplateMode ? "保存" : "保存规则"}
+                </Button>
+              </Space>
+            </Space>
+          </StickyEditorFooter>
         </Form>
       </Modal>
 

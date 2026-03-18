@@ -2,18 +2,21 @@ import { Button, Card, Col, Row, Space, Tag, Typography } from "antd";
 import { useNavigate } from "react-router-dom";
 import { mockUserPersonaMetaMap, mockUserPersonaOptions, type MockUserPersona, useMockSession } from "../../session/mockSession";
 
-const actionLabelMap: Record<string, string> = {
-  VIEW: "查看",
-  CONFIG: "配置",
-  VALIDATE: "校验",
-  PUBLISH: "发布",
-  DISABLE: "停用",
-  DEFER: "延期",
-  ROLLBACK: "回滚",
-  AUDIT_VIEW: "审计查看",
-  RISK_CONFIRM: "风险确认",
-  ROLE_MANAGE: "角色授权管理",
-  MENU_ENABLE_MANAGE: "菜单启用管理"
+const resourceLabelMap: Record<string, string> = {
+  "/menu/dashboard": "菜单: 工作台",
+  "/menu/page-management": "菜单: 菜单管理",
+  "/menu/prompts": "菜单: 智能提示",
+  "/menu/jobs": "菜单: 智能作业",
+  "/menu/interfaces": "菜单: API注册",
+  "/menu/stats": "菜单: 运行统计",
+  "/menu/advanced": "菜单: 高级配置",
+  "/action/common/base/view": "动作: 查看",
+  "/action/common/base/config": "动作: 配置",
+  "/action/common/base/validate": "动作: 校验",
+  "/action/common/base/publish": "动作: 发布",
+  "/action/common/base/audit-view": "动作: 审计查看",
+  "/action/roles/list/manage": "动作: 角色授权管理",
+  "/action/page-management/capability/manage": "动作: 菜单启用管理"
 };
 
 export function LoginTestPage() {
@@ -41,7 +44,7 @@ export function LoginTestPage() {
               <Card
                 size="small"
                 title={meta.label}
-                extra={persona === option.value ? <Tag color="green">当前登录</Tag> : null}
+                extra={persona === option.value ? <Tag color="processing">当前登录</Tag> : null}
                 actions={[
                   <Button type={persona === option.value ? "default" : "primary"} onClick={() => switchPersona(option.value)}>
                     {persona === option.value ? "已登录" : "切换登录"}
@@ -52,8 +55,8 @@ export function LoginTestPage() {
                   <Typography.Text type="secondary">{meta.description}</Typography.Text>
                   <Typography.Text type="secondary">默认入口：{meta.defaultPath}</Typography.Text>
                   <Space wrap>
-                    {meta.actions.map((action) => (
-                      <Tag key={action}>{actionLabelMap[action] ?? action}</Tag>
+                    {meta.resourcePaths.map((resourcePath) => (
+                      <Tag key={resourcePath}>{resourceLabelMap[resourcePath] ?? resourcePath}</Tag>
                     ))}
                   </Space>
                 </Space>

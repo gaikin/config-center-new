@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { getRoleTypeRecommendedResourcePaths } from "../permissionPolicy";
 import { configCenterService } from "../services/configCenterService";
 import { ROLE_PERMISSIONS_CHANGED_EVENT } from "./sessionEvents";
-import type { ActionType, RoleItem } from "../types";
+import type { RoleItem } from "../types";
 
 export type MockUserPersona =
   | "CONFIG_OPERATOR_BRANCH"
@@ -20,9 +21,13 @@ export type MockUserPersonaMeta = {
   roleType: RoleItem["roleType"];
   orgScopeId: string;
   operatorId: string;
-  actions: ActionType[];
+  resourcePaths: string[];
   deprecated?: boolean;
 };
+
+function buildPersonaResourcePaths(roleType: RoleItem["roleType"], orgScopeId: string) {
+  return getRoleTypeRecommendedResourcePaths(roleType, orgScopeId);
+}
 
 export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta> = {
   CONFIG_OPERATOR_BRANCH: {
@@ -32,7 +37,7 @@ export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta
     roleType: "CONFIG_OPERATOR",
     orgScopeId: "branch-east",
     operatorId: "person-zhao-yi",
-    actions: ["VIEW", "CONFIG", "VALIDATE", "PUBLISH"]
+    resourcePaths: buildPersonaResourcePaths("CONFIG_OPERATOR", "branch-east")
   },
   PERMISSION_ADMIN_BRANCH: {
     label: "权限管理人员-华东",
@@ -41,7 +46,7 @@ export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta
     roleType: "PERMISSION_ADMIN",
     orgScopeId: "branch-east",
     operatorId: "person-wu-zhuguan",
-    actions: ["VIEW", "ROLE_MANAGE"]
+    resourcePaths: buildPersonaResourcePaths("PERMISSION_ADMIN", "branch-east")
   },
   PERMISSION_ADMIN_HEAD: {
     label: "权限管理人员-总行",
@@ -50,7 +55,7 @@ export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta
     roleType: "PERMISSION_ADMIN",
     orgScopeId: "head-office",
     operatorId: "person-head-admin-a",
-    actions: ["VIEW", "ROLE_MANAGE", "MENU_ENABLE_MANAGE"]
+    resourcePaths: buildPersonaResourcePaths("PERMISSION_ADMIN", "head-office")
   },
   CONFIG_OPERATOR_HEAD: {
     label: "配置人员-总行",
@@ -59,7 +64,7 @@ export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta
     roleType: "CONFIG_OPERATOR",
     orgScopeId: "head-office",
     operatorId: "person-head-config-a",
-    actions: ["VIEW", "CONFIG", "VALIDATE", "PUBLISH", "MENU_ENABLE_MANAGE"]
+    resourcePaths: buildPersonaResourcePaths("CONFIG_OPERATOR", "head-office")
   },
   TECH_SUPPORT_HEAD: {
     label: "技术支持人员-总行",
@@ -68,7 +73,7 @@ export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta
     roleType: "TECH_SUPPORT",
     orgScopeId: "head-office",
     operatorId: "person-platform-support-a",
-    actions: ["VIEW", "VALIDATE", "AUDIT_VIEW"]
+    resourcePaths: buildPersonaResourcePaths("TECH_SUPPORT", "head-office")
   },
   CONFIG_USER: {
     label: "业务配置人员",
@@ -77,7 +82,7 @@ export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta
     roleType: "CONFIG_OPERATOR",
     orgScopeId: "branch-east",
     operatorId: "person-zhao-yi",
-    actions: ["VIEW", "CONFIG", "VALIDATE", "PUBLISH"],
+    resourcePaths: buildPersonaResourcePaths("CONFIG_OPERATOR", "branch-east"),
     deprecated: true
   },
   PUBLISH_MANAGER: {
@@ -87,7 +92,7 @@ export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta
     roleType: "CONFIG_OPERATOR",
     orgScopeId: "head-office",
     operatorId: "person-head-config-a",
-    actions: ["VIEW", "VALIDATE", "PUBLISH", "DISABLE", "DEFER", "ROLLBACK", "RISK_CONFIRM", "AUDIT_VIEW"],
+    resourcePaths: buildPersonaResourcePaths("CONFIG_OPERATOR", "head-office"),
     deprecated: true
   },
   MENU_ADMIN: {
@@ -97,7 +102,7 @@ export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta
     roleType: "PERMISSION_ADMIN",
     orgScopeId: "head-office",
     operatorId: "person-head-admin-a",
-    actions: ["VIEW", "MENU_ENABLE_MANAGE"],
+    resourcePaths: buildPersonaResourcePaths("PERMISSION_ADMIN", "head-office"),
     deprecated: true
   }
 };
@@ -105,7 +110,7 @@ export const mockUserPersonaMetaMap: Record<MockUserPersona, MockUserPersonaMeta
 type MockSessionContextValue = {
   persona: MockUserPersona;
   setPersona: (persona: MockUserPersona) => void;
-  effectiveActions: ActionType[];
+  effectiveResourcePaths: string[];
 };
 
 export const mockUserPersonaOptions = (Object.entries(mockUserPersonaMetaMap) as Array<
@@ -127,31 +132,58 @@ export function MockSessionProvider({
   children: React.ReactNode;
 }) {
   const baseMeta = mockUserPersonaMetaMap[value.persona];
-  const [effectiveActions, setEffectiveActions] = useState<ActionType[]>(baseMeta.actions);
+  const [effectiveResourcePaths, setEffectiveResourcePaths] = useState<string[]>(baseMeta.resourcePaths);
 
   useEffect(() => {
     let alive = true;
 
-    async function loadEffectiveActions() {
-      const roles = await configCenterService.listRoles();
-      const activeRoles = roles.filter((role) => role.status === "ACTIVE");
-      const matchedRoles: RoleItem[] = [];
-      for (const role of activeRoles) {
-        const members = await configCenterService.listRoleMembers(role.id);
-        if (members.includes(baseMeta.operatorId)) {
-          matchedRoles.push(role);
+    async function loadEffectiveResourcePaths() {
+      try {
+        const [roles, bindings, resources] = await Promise.all([
+          configCenterService.listRoles(),
+          configCenterService.listUserRoleBindings(),
+          configCenterService.listPermissionResources()
+        ]);
+        const activeRoleIds = new Set(roles.filter((role) => role.status === "ACTIVE").map((role) => role.id));
+        const matchedRoleIds = Array.from(
+          new Set(
+            bindings
+              .filter(
+                (binding) =>
+                  binding.status === "ACTIVE" &&
+                  binding.userId === baseMeta.operatorId &&
+                  activeRoleIds.has(binding.roleId)
+              )
+              .map((binding) => binding.roleId)
+          )
+        );
+        const grantGroups = await Promise.all(
+          matchedRoleIds.map((roleId) => configCenterService.listRoleResourceGrants(roleId))
+        );
+        const activeResourcePathByCode = new Map(
+          resources
+            .filter((resource) => resource.status === "ACTIVE")
+            .map((resource) => [resource.resourceCode, resource.resourcePath] as const)
+        );
+        const grantedPaths = grantGroups
+          .flat()
+          .map((grant) => activeResourcePathByCode.get(grant.resourceCode))
+          .filter((resourcePath): resourcePath is string => Boolean(resourcePath));
+        const merged = Array.from(new Set([...baseMeta.resourcePaths, ...grantedPaths]));
+        if (alive) {
+          setEffectiveResourcePaths(merged);
         }
-      }
-      const merged = Array.from(new Set([...baseMeta.actions, ...matchedRoles.flatMap((role) => role.actions)]));
-      if (alive) {
-        setEffectiveActions(merged);
+      } catch {
+        if (alive) {
+          setEffectiveResourcePaths(baseMeta.resourcePaths);
+        }
       }
     }
 
-    void loadEffectiveActions();
+    void loadEffectiveResourcePaths();
 
     const handleRolesChanged = () => {
-      void loadEffectiveActions();
+      void loadEffectiveResourcePaths();
     };
     if (typeof window !== "undefined") {
       window.addEventListener(ROLE_PERMISSIONS_CHANGED_EVENT, handleRolesChanged);
@@ -163,14 +195,14 @@ export function MockSessionProvider({
         window.removeEventListener(ROLE_PERMISSIONS_CHANGED_EVENT, handleRolesChanged);
       }
     };
-  }, [baseMeta.actions, baseMeta.operatorId, value.persona]);
+  }, [baseMeta.operatorId, baseMeta.resourcePaths, value.persona]);
 
   const contextValue = useMemo(
     () => ({
       ...value,
-      effectiveActions
+      effectiveResourcePaths
     }),
-    [effectiveActions, value]
+    [effectiveResourcePaths, value]
   );
 
   return <MockSessionContext.Provider value={contextValue}>{children}</MockSessionContext.Provider>;
@@ -182,9 +214,10 @@ export function useMockSession() {
     throw new Error("useMockSession must be used within MockSessionProvider");
   }
   const meta = mockUserPersonaMetaMap[context.persona];
+  const hasResource = (resourcePath: string) => context.effectiveResourcePaths.includes(resourcePath);
   return {
     ...context,
     meta,
-    hasAction: (action: ActionType) => context.effectiveActions.includes(action)
+    hasResource
   };
 }

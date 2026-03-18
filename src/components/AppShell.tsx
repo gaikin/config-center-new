@@ -12,33 +12,31 @@ import { Button, Drawer, Layout, Menu, Select, Space, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
-import { MockSessionProvider, mockUserPersonaMetaMap, mockUserPersonaOptions, type MockUserPersona } from "../session/mockSession";
+import {
+  MockSessionProvider,
+  mockUserPersonaMetaMap,
+  mockUserPersonaOptions,
+  type MockUserPersona,
+  useMockSession
+} from "../session/mockSession";
 
 const { Header, Sider, Content } = Layout;
-
-const activePersonas: MockUserPersona[] = [
-  "CONFIG_OPERATOR_BRANCH",
-  "PERMISSION_ADMIN_BRANCH",
-  "PERMISSION_ADMIN_HEAD",
-  "CONFIG_OPERATOR_HEAD",
-  "TECH_SUPPORT_HEAD"
-];
 
 type NavItem = {
   key: string;
   label: string;
   icon: React.ReactNode;
-  personas: MockUserPersona[];
+  menuResourcePath: string;
 };
 
 const navItems: NavItem[] = [
-  { key: "/", label: "我的工作台", icon: <HomeOutlined />, personas: activePersonas },
-  { key: "/page-management", label: "菜单管理", icon: <AppstoreOutlined />, personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
-  { key: "/prompts", label: "智能提示", icon: <BulbOutlined />, personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
-  { key: "/jobs", label: "智能作业", icon: <RobotOutlined />, personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
-  { key: "/interfaces", label: "API注册", icon: <ApiOutlined />, personas: ["CONFIG_OPERATOR_BRANCH", "CONFIG_OPERATOR_HEAD"] },
-  { key: "/stats", label: "运行统计", icon: <BarChartOutlined />, personas: activePersonas },
-  { key: "/advanced", label: "高级配置", icon: <SettingOutlined />, personas: activePersonas }
+  { key: "/", label: "我的工作台", icon: <HomeOutlined />, menuResourcePath: "/menu/dashboard" },
+  { key: "/page-management", label: "菜单管理", icon: <AppstoreOutlined />, menuResourcePath: "/menu/page-management" },
+  { key: "/prompts", label: "智能提示", icon: <BulbOutlined />, menuResourcePath: "/menu/prompts" },
+  { key: "/jobs", label: "智能作业", icon: <RobotOutlined />, menuResourcePath: "/menu/jobs" },
+  { key: "/interfaces", label: "API注册", icon: <ApiOutlined />, menuResourcePath: "/menu/interfaces" },
+  { key: "/stats", label: "运行统计", icon: <BarChartOutlined />, menuResourcePath: "/menu/stats" },
+  { key: "/advanced", label: "高级配置", icon: <SettingOutlined />, menuResourcePath: "/menu/advanced" }
 ];
 
 const compatiblePathToBizPath: Array<{ from: string; to: string }> = [
@@ -49,6 +47,7 @@ const compatiblePathToBizPath: Array<{ from: string; to: string }> = [
   { from: "/rule-templates", to: "/prompts" },
   { from: "/job-scenes", to: "/jobs" },
   { from: "/sdk-version-center", to: "/advanced" },
+  { from: "/permission-resources", to: "/advanced" },
   { from: "/audit-metrics", to: "/stats" },
   { from: "/preprocessors", to: "/advanced" },
   { from: "/roles", to: "/advanced" },
@@ -240,8 +239,6 @@ function renderMenuItems(items: NavItem[]) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const navigate = useNavigate();
-  const location = useLocation();
   const [persona, setPersona] = useState<MockUserPersona>(() => {
     const cached = window.localStorage.getItem("config-center:mock-persona");
     const legacyMap: Record<string, MockUserPersona> = {
@@ -257,13 +254,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     return "CONFIG_OPERATOR_BRANCH";
   });
+
+  return (
+    <MockSessionProvider value={{ persona, setPersona }}>
+      <AppShellLayout>{children}</AppShellLayout>
+    </MockSessionProvider>
+  );
+}
+
+function AppShellLayout({ children }: { children: React.ReactNode }) {
+  const { persona, setPersona, hasResource, meta: currentMeta } = useMockSession();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const selected = getSelectedKey(location.pathname);
-  const currentMeta = mockUserPersonaMetaMap[persona];
 
   const visibleNavItems = useMemo(() => {
-    return navItems.filter((item) => item.personas.includes(persona));
-  }, [persona]);
+    return navItems.filter((item) => hasResource(item.menuResourcePath));
+  }, [hasResource]);
 
   useEffect(() => {
     window.localStorage.setItem("config-center:mock-persona", persona);
@@ -286,50 +294,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [currentMeta.defaultPath, location.pathname, navigate, visibleNavItems]);
 
   return (
-    <MockSessionProvider value={{ persona, setPersona }}>
-      <MainLayout style={{ minHeight: "100vh" }}>
-        <HeaderBar>
-          <LogoBlock>
-            <LogoPill>CONFIG CENTER</LogoPill>
-            <LogoTitle className="type-20">营小助配置中心（新版）</LogoTitle>
-            <LogoSubtitle className="type-12">
-              模拟登录：{currentMeta.label} · {currentMeta.description}
-            </LogoSubtitle>
-          </LogoBlock>
-          <HeaderActions size={8}>
-            <HeaderActionButton size="small" onClick={() => navigate("/login-test")}>
-              登录测试
-            </HeaderActionButton>
-            <Select
-              value={persona}
-              size="small"
-              style={{ minWidth: 172 }}
-              onChange={(next) => setPersona(next as MockUserPersona)}
-              options={mockUserPersonaOptions}
-            />
-            <MobileNavButton icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)}>
-              导航
-            </MobileNavButton>
-          </HeaderActions>
-        </HeaderBar>
-        <ShellBody>
-          <StyledSider width={248} theme="light">
-            <SiderInner>
-              <SideTitle className="type-12">业务导航</SideTitle>
-              <SideMenu mode="inline" selectedKeys={[selected]} items={renderMenuItems(visibleNavItems)} style={{ height: "100%" }} />
-            </SiderInner>
-          </StyledSider>
-          <ContentWrap>{children}</ContentWrap>
-        </ShellBody>
-        <Drawer title="业务导航" placement="left" width={248} onClose={() => setDrawerOpen(false)} open={drawerOpen}>
-          <SideMenu
-            mode="inline"
-            selectedKeys={[selected]}
-            items={renderMenuItems(visibleNavItems)}
-            onClick={() => setDrawerOpen(false)}
+    <MainLayout style={{ minHeight: "100vh" }}>
+      <HeaderBar>
+        <LogoBlock>
+          <LogoPill>CONFIG CENTER</LogoPill>
+          <LogoTitle className="type-20">营小助配置中心（新版）</LogoTitle>
+          <LogoSubtitle className="type-12">
+            模拟登录：{currentMeta.label} · {currentMeta.description}
+          </LogoSubtitle>
+        </LogoBlock>
+        <HeaderActions size={8}>
+          <HeaderActionButton size="small" onClick={() => navigate("/login-test")}>
+            登录测试
+          </HeaderActionButton>
+          <Select
+            value={persona}
+            size="small"
+            style={{ minWidth: 172 }}
+            onChange={(next) => setPersona(next as MockUserPersona)}
+            options={mockUserPersonaOptions}
           />
-        </Drawer>
-      </MainLayout>
-    </MockSessionProvider>
+          <MobileNavButton icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)}>
+            导航
+          </MobileNavButton>
+        </HeaderActions>
+      </HeaderBar>
+      <ShellBody>
+        <StyledSider width={248} theme="light">
+          <SiderInner>
+            <SideTitle className="type-12">业务导航</SideTitle>
+            <SideMenu mode="inline" selectedKeys={[selected]} items={renderMenuItems(visibleNavItems)} style={{ height: "100%" }} />
+          </SiderInner>
+        </StyledSider>
+        <ContentWrap>{children}</ContentWrap>
+      </ShellBody>
+      <Drawer title="业务导航" placement="left" width={248} onClose={() => setDrawerOpen(false)} open={drawerOpen}>
+        <SideMenu mode="inline" selectedKeys={[selected]} items={renderMenuItems(visibleNavItems)} onClick={() => setDrawerOpen(false)} />
+      </Drawer>
+    </MainLayout>
   );
 }

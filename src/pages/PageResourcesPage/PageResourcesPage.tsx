@@ -460,7 +460,7 @@ export function PageResourcesPage() {
           <Tag color="blue">站点数：{sites.length}</Tag>
           <Tag color="cyan">专区数：{regions.length}</Tag>
           <Tag color="geekblue">菜单数：{menus.length}</Tag>
-          <Tag color="green">页面资源：{resources.length}</Tag>
+          <Tag color="processing">页面资源：{resources.length}</Tag>
         </Space>
       </Card>
 

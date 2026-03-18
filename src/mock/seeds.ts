@@ -28,8 +28,8 @@
   RuleCondition,
   RuleConditionGroup,
   RuleDefinition,
+  PlatformRuntimeConfig,
   SdkArtifactVersion,
-  SdkReleaseLane,
   TriggerLogItem,
   UserRoleBinding
 } from "../types";
@@ -295,7 +295,7 @@ export const seedSdkArtifactVersions: SdkArtifactVersion[] = [
     status: "ACTIVE",
     publishedBy: "平台支持A",
     publishedAt: now(),
-    notes: "稳定版，作为 stable 槽位默认版本。"
+    notes: "智能提示正式版本。"
   },
   {
     id: 8002,
@@ -307,39 +307,42 @@ export const seedSdkArtifactVersions: SdkArtifactVersion[] = [
     status: "DRAFT",
     publishedBy: "平台支持A",
     publishedAt: now(),
-    notes: "灰度版，面向贷款专区菜单验证 loader -> menu -> lane 解析。"
+    notes: "智能提示灰度候选版本。"
+  },
+  {
+    id: 8003,
+    sdkVersion: "2.1.0",
+    sdkMajorVersion: 2,
+    loaderVersion: "1.0.2",
+    artifactManifestUrl: "/manifest/kaiyang/prod/2.1.0.json",
+    compatibility: "job-runtime 稳定版本",
+    status: "ACTIVE",
+    publishedBy: "平台支持B",
+    publishedAt: now(),
+    notes: "智能作业正式版本。"
+  },
+  {
+    id: 8004,
+    sdkVersion: "2.2.0-rc.1",
+    sdkMajorVersion: 2,
+    loaderVersion: "1.0.2",
+    artifactManifestUrl: "/manifest/kaiyang/prod/2.2.0-rc.1.json",
+    compatibility: "作业回填链路灰度增强",
+    status: "DRAFT",
+    publishedBy: "平台支持B",
+    publishedAt: now(),
+    notes: "智能作业灰度候选版本。"
   }
 ];
 
-export const seedSdkReleaseLanes: SdkReleaseLane[] = [
-  {
-    id: 8101,
-    laneCode: "stable",
-    laneName: "稳定槽位",
-    sdkArtifactVersionId: 8001,
-    sdkVersion: "1.3.0",
-    status: "ACTIVE",
-    updatedAt: now()
-  },
-  {
-    id: 8102,
-    laneCode: "gray-a",
-    laneName: "灰度槽位A",
-    sdkArtifactVersionId: 8002,
-    sdkVersion: "1.4.0-rc.2",
-    status: "DRAFT",
-    updatedAt: now()
-  },
-  {
-    id: 8103,
-    laneCode: "gray-b",
-    laneName: "灰度槽位B",
-    sdkArtifactVersionId: 8001,
-    sdkVersion: "1.3.0",
-    status: "ACTIVE",
-    updatedAt: now()
-  }
-];
+export const seedPlatformRuntimeConfig: PlatformRuntimeConfig = {
+  promptStableVersion: "1.3.0",
+  promptGrayDefaultVersion: "1.4.0-rc.2",
+  jobStableVersion: "2.1.0",
+  jobGrayDefaultVersion: "2.2.0-rc.1",
+  updatedAt: now(),
+  updatedBy: "person-platform-admin"
+};
 
 export const seedMenuSdkPolicies: MenuSdkPolicy[] = [
   {
@@ -348,15 +351,17 @@ export const seedMenuSdkPolicies: MenuSdkPolicy[] = [
     regionId: 11,
     menuId: 101,
     menuCode: "loan_apply",
-    stableLaneId: 8101,
-    grayLaneId: 8102,
-    grayOrgIds: ["branch-east", "branch-east-sub1"],
+    promptGrayEnabled: true,
+    promptGrayVersion: "1.4.0-rc.2",
+    promptGrayOrgIds: ["branch-east", "branch-east-sub1"],
+    jobGrayEnabled: false,
+    jobGrayVersion: undefined,
+    jobGrayOrgIds: [],
     effectiveStart: "2026-03-14 09:00",
     effectiveEnd: "2026-03-31 23:59",
     status: "DRAFT",
     ownerOrgId: "head-office",
-    updatedAt: now(),
-    resolutionSummary: "branch-east 命中 gray-a，其余机构回退 stable"
+    updatedAt: now()
   },
   {
     id: 8202,
@@ -364,15 +369,17 @@ export const seedMenuSdkPolicies: MenuSdkPolicy[] = [
     regionId: 21,
     menuId: 201,
     menuCode: "open_account",
-    stableLaneId: 8101,
-    grayLaneId: undefined,
-    grayOrgIds: [],
+    promptGrayEnabled: false,
+    promptGrayVersion: undefined,
+    promptGrayOrgIds: [],
+    jobGrayEnabled: true,
+    jobGrayVersion: "2.2.0-rc.1",
+    jobGrayOrgIds: ["branch-south"],
     effectiveStart: "2026-03-14 09:00",
     effectiveEnd: "2026-12-31 23:59",
     status: "ACTIVE",
     ownerOrgId: "head-office",
-    updatedAt: now(),
-    resolutionSummary: "全部机构命中 stable"
+    updatedAt: now()
   }
 ];
 

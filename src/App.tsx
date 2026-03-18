@@ -27,6 +27,12 @@ const AuditMetricsPage = lazy(() =>
 const AdvancedConfigPage = lazy(() =>
   import("./pages/AdvancedConfigPage/AdvancedConfigPage").then((m) => ({ default: m.AdvancedConfigPage }))
 );
+const PermissionResourcesPage = lazy(() =>
+  import("./pages/PermissionResourcesPage/PermissionResourcesPage").then((m) => ({ default: m.PermissionResourcesPage }))
+);
+const SdkVersionCenterPage = lazy(() =>
+  import("./pages/SdkVersionCenterPage/SdkVersionCenterPage").then((m) => ({ default: m.SdkVersionCenterPage }))
+);
 const LoginTestPage = lazy(() =>
   import("./pages/LoginTestPage/LoginTestPage").then((m) => ({ default: m.LoginTestPage }))
 );
@@ -43,6 +49,8 @@ export default function App() {
           <Route path="/interfaces" element={<InterfacesPage />} />
           <Route path="/stats" element={<AuditMetricsPage />} />
           <Route path="/advanced" element={<AdvancedConfigPage />} />
+          <Route path="/permission-resources" element={<PermissionResourcesPage />} />
+          <Route path="/sdk-version-center" element={<SdkVersionCenterPage />} />
           <Route path="/login-test" element={<LoginTestPage />} />
 
           <Route path="/page-resources" element={<PageResourcesPage />} />
@@ -51,10 +59,10 @@ export default function App() {
           <Route path="/rule-templates" element={<Navigate to="/prompts" replace />} />
           <Route path="/job-scenes" element={<Navigate to="/jobs" replace />} />
           <Route path="/publish" element={<Navigate to="/" replace />} />
-          <Route path="/sdk-version-center" element={<Navigate to="/advanced" replace />} />
           <Route path="/audit-metrics" element={<Navigate to="/stats" replace />} />
           <Route path="/preprocessors" element={<Navigate to="/advanced" replace />} />
           <Route path="/roles" element={<Navigate to="/advanced" replace />} />
+          <Route path="/permission-resources-legacy" element={<Navigate to="/advanced?tab=permission-resources" replace />} />
           <Route path="/list-data" element={<Navigate to="/advanced?tab=list-data" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

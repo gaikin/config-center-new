@@ -1,4 +1,6 @@
-import { Alert, Button,
+import {
+  Alert,
+  Button,
   Card,
   Form,
   Input,
@@ -17,9 +19,13 @@ import { useEffect, useMemo, useState } from "react";
 import { OrgSelect, OrgText, PersonMultiSelect } from "../../components/DirectoryFields";
 import { getPersonLabel, normalizePersonValue, toPersonOption } from "../../directory";
 import { lifecycleLabelMap } from "../../enumLabels";
-import { getRoleTypeDefaultActions, HEAD_OFFICE_ORG_ID, HIGH_PRIVILEGE_ACTIONS, normalizeRoleActions } from "../../permissionPolicy";
+import {
+  getRoleTypeRecommendedResourcePaths,
+  HEAD_OFFICE_ORG_ID,
+  HIGH_PRIVILEGE_RESOURCE_PATHS
+} from "../../permissionPolicy";
 import { configCenterService } from "../../services/configCenterService";
-import type { ActionType, RoleItem } from "../../types";
+import type { PermissionResource, RoleItem, ResourceType } from "../../types";
 
 const roleTypeLabel: Record<RoleItem["roleType"], string> = {
   CONFIG_OPERATOR: "配置人员",
@@ -32,61 +38,38 @@ const statusColor: Record<RoleItem["status"], string> = {
   DISABLED: "orange"
 };
 
-type RoleForm = Omit<RoleItem, "id" | "updatedAt" | "memberCount">;
+const resourceTypeLabel: Record<ResourceType, string> = {
+  MENU: "菜单资源",
+  PAGE: "页面资源",
+  ACTION: "动作资源"
+};
+
+type RoleFormValues = {
+  name: string;
+  roleType: RoleItem["roleType"];
+  status: RoleItem["status"];
+  orgScopeId: string;
+  resourceCodes: string[];
+};
+
 type StatusFilter = "ALL" | RoleItem["status"];
 
-const allActions: ActionType[] = [
-  "VIEW",
-  "CONFIG",
-  "VALIDATE",
-  "PUBLISH",
-  "DISABLE",
-  "DEFER",
-  "ROLLBACK",
-  "AUDIT_VIEW",
-  "RISK_CONFIRM",
-  "ROLE_MANAGE",
-  "MENU_ENABLE_MANAGE"
-];
-
-const actionLabelMap: Record<ActionType, string> = {
-  VIEW: "查看",
-  CONFIG: "配置",
-  VALIDATE: "发布检查",
-  PUBLISH: "发布",
-  DISABLE: "停用",
-  DEFER: "延期",
-  ROLLBACK: "回滚",
-  AUDIT_VIEW: "审计查看",
-  RISK_CONFIRM: "风险确认",
-  ROLE_MANAGE: "角色维护",
-  MENU_ENABLE_MANAGE: "菜单启用"
-};
-
-const actionDescriptions: Record<ActionType, string> = {
-  VIEW: "查看配置与运行结果",
-  CONFIG: "创建和编辑业务对象",
-  VALIDATE: "查看发布检查结果并处理阻断项",
-  PUBLISH: "发布待生效对象",
-  DISABLE: "停用已生效对象",
-  DEFER: "延期即将到期对象",
-  ROLLBACK: "回滚到待发布状态",
-  AUDIT_VIEW: "查看审计与日志",
-  RISK_CONFIRM: "确认自动化风险责任",
-  ROLE_MANAGE: "维护角色与成员和操作权限",
-  MENU_ENABLE_MANAGE: "高权限操作：菜单启用（仅总行分配）"
-};
+function uniqueStringList(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
 
 export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<RoleItem[]>([]);
+  const [resources, setResources] = useState<PermissionResource[]>([]);
+  const [roleGrantCodeMap, setRoleGrantCodeMap] = useState<Record<number, string[]>>({});
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<RoleItem | null>(null);
-  const [form] = Form.useForm<RoleForm>();
+  const [form] = Form.useForm<RoleFormValues>();
   const selectedRoleType = Form.useWatch("roleType", form);
   const selectedOrgScopeId = Form.useWatch("orgScopeId", form);
-  const selectedActions = Form.useWatch("actions", form) as ActionType[] | undefined;
+  const selectedResourceCodes = (Form.useWatch("resourceCodes", form) as string[] | undefined) ?? [];
 
   const [memberOpen, setMemberOpen] = useState(false);
   const [memberRole, setMemberRole] = useState<RoleItem | null>(null);
@@ -94,6 +77,56 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   const [memberOptions, setMemberOptions] = useState<string[]>([]);
 
   const [msgApi, holder] = message.useMessage();
+
+  const resourceByCode = useMemo(
+    () => new Map(resources.map((resource) => [resource.resourceCode, resource] as const)),
+    [resources]
+  );
+
+  const resourceOptionsByType = useMemo(() => {
+    const typedEntries: Array<[ResourceType, PermissionResource[]]> = [
+      ["MENU", []],
+      ["PAGE", []],
+      ["ACTION", []]
+    ];
+    for (const resource of resources) {
+      const entry = typedEntries.find(([resourceType]) => resourceType === resource.resourceType);
+      entry?.[1].push(resource);
+    }
+    return typedEntries.map(([resourceType, rowsByType]) => ({
+      label: resourceTypeLabel[resourceType],
+      options: rowsByType
+        .sort((left, right) => left.orderNo - right.orderNo || left.id - right.id)
+        .map((resource) => ({
+          value: resource.resourceCode,
+          label: `${resource.resourceName} (${resource.resourcePath})`,
+          disabled: resource.status !== "ACTIVE"
+        }))
+    }));
+  }, [resources]);
+
+  const selectedResourceSummary = useMemo(() => {
+    const summary: Record<ResourceType, number> = {
+      MENU: 0,
+      PAGE: 0,
+      ACTION: 0
+    };
+    for (const resourceCode of selectedResourceCodes) {
+      const resource = resourceByCode.get(resourceCode);
+      if (resource) {
+        summary[resource.resourceType] += 1;
+      }
+    }
+    return summary;
+  }, [resourceByCode, selectedResourceCodes]);
+
+  function resolveRecommendedResourceCodes(roleType: RoleItem["roleType"], orgScopeId: string) {
+    const recommendedPaths = getRoleTypeRecommendedResourcePaths(roleType, orgScopeId);
+    const codes = resources
+      .filter((resource) => resource.status === "ACTIVE" && recommendedPaths.includes(resource.resourcePath))
+      .map((resource) => resource.resourceCode);
+    return uniqueStringList(codes);
+  }
 
   async function loadMemberOptions(roleRows: RoleItem[]) {
     const memberGroups = await Promise.all(roleRows.map((role) => configCenterService.listRoleMembers(role.id)));
@@ -110,9 +143,21 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   async function loadData() {
     setLoading(true);
     try {
-      const data = await configCenterService.listRoles();
-      setRows(data);
-      await loadMemberOptions(data);
+      const [roleRows, resourceRows] = await Promise.all([
+        configCenterService.listRoles(),
+        configCenterService.listPermissionResources()
+      ]);
+      const grantGroups = await Promise.all(
+        roleRows.map((role) => configCenterService.listRoleResourceGrants(role.id))
+      );
+      const nextGrantMap: Record<number, string[]> = {};
+      grantGroups.forEach((grants, index) => {
+        nextGrantMap[roleRows[index].id] = uniqueStringList(grants.map((grant) => grant.resourceCode));
+      });
+      setRows(roleRows);
+      setResources(resourceRows);
+      setRoleGrantCodeMap(nextGrantMap);
+      await loadMemberOptions(roleRows);
     } finally {
       setLoading(false);
     }
@@ -123,17 +168,19 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
   }, []);
 
   useEffect(() => {
-    if (!open || !selectedOrgScopeId || !selectedRoleType || !selectedActions) {
+    if (!open || !selectedOrgScopeId) {
       return;
     }
-    const normalized = normalizeRoleActions(selectedRoleType, selectedOrgScopeId, selectedActions);
-    if (normalized.join("|") !== selectedActions.join("|")) {
-      form.setFieldValue("actions", normalized);
-      if (selectedOrgScopeId !== HEAD_OFFICE_ORG_ID && selectedActions.some((action) => HIGH_PRIVILEGE_ACTIONS.includes(action))) {
-        msgApi.warning("非总行范围角色不可配置高权限操作。");
-      }
+    const highPrivilegeCodes = selectedResourceCodes.filter((resourceCode) => {
+      const resourcePath = resourceByCode.get(resourceCode)?.resourcePath;
+      return resourcePath ? HIGH_PRIVILEGE_RESOURCE_PATHS.includes(resourcePath) : false;
+    });
+    if (selectedOrgScopeId !== HEAD_OFFICE_ORG_ID && highPrivilegeCodes.length > 0) {
+      const filtered = selectedResourceCodes.filter((resourceCode) => !highPrivilegeCodes.includes(resourceCode));
+      form.setFieldValue("resourceCodes", filtered);
+      msgApi.warning("非总行范围角色不可配置高权限资源。");
     }
-  }, [form, msgApi, open, selectedActions, selectedOrgScopeId, selectedRoleType]);
+  }, [form, msgApi, open, resourceByCode, selectedOrgScopeId, selectedResourceCodes]);
 
   useEffect(() => {
     if (!open || selectedRoleType !== "TECH_SUPPORT") {
@@ -154,13 +201,14 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
 
   function openCreate() {
     setEditing(null);
+    const defaultRoleType: RoleItem["roleType"] = "CONFIG_OPERATOR";
     const defaultOrgScope = "branch-east";
     form.setFieldsValue({
       name: "",
-      roleType: "CONFIG_OPERATOR",
+      roleType: defaultRoleType,
       status: "ACTIVE",
       orgScopeId: defaultOrgScope,
-      actions: getRoleTypeDefaultActions("CONFIG_OPERATOR", defaultOrgScope)
+      resourceCodes: resolveRecommendedResourceCodes(defaultRoleType, defaultOrgScope)
     });
     setOpen(true);
   }
@@ -172,21 +220,31 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
       roleType: row.roleType,
       status: row.status,
       orgScopeId: row.orgScopeId,
-      actions: row.actions
+      resourceCodes: roleGrantCodeMap[row.id] ?? []
     });
     setOpen(true);
+  }
+
+  function applyRolePreset() {
+    if (!selectedRoleType || !selectedOrgScopeId) {
+      return;
+    }
+    form.setFieldValue("resourceCodes", resolveRecommendedResourceCodes(selectedRoleType, selectedOrgScopeId));
+    msgApi.success("已按角色类型填充推荐资源");
   }
 
   async function submit() {
     try {
       const values = await form.validateFields();
-      await configCenterService.upsertRole(
-        {
-          ...values,
-          actions: normalizeRoleActions(values.roleType, values.orgScopeId, values.actions),
-          id: editing?.id ?? Date.now()
-        }
-      );
+      const roleId = editing?.id ?? Date.now();
+      await configCenterService.upsertRole({
+        id: roleId,
+        name: values.name.trim(),
+        roleType: values.roleType,
+        status: values.status,
+        orgScopeId: values.orgScopeId.trim()
+      });
+      await configCenterService.saveRoleResourceGrants(roleId, values.resourceCodes);
       msgApi.success(editing ? "角色已更新" : "角色已创建");
       setOpen(false);
       await loadData();
@@ -209,14 +267,6 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
       cancelText: "继续编辑",
       onOk: () => setOpen(false)
     });
-  }
-
-  function applyRolePreset() {
-    if (!selectedRoleType || !selectedOrgScopeId) {
-      return;
-    }
-    form.setFieldValue("actions", getRoleTypeDefaultActions(selectedRoleType, selectedOrgScopeId));
-    msgApi.success("已按角色类型填充推荐权限");
   }
 
   async function cloneRole(role: RoleItem) {
@@ -252,9 +302,7 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
     <div>
       {holder}
       {!embedded ? (
-        <>
-          <Typography.Title level={4}>权限管理</Typography.Title>
-        </>
+        <Typography.Title level={4}>权限管理</Typography.Title>
       ) : null}
 
       <Card
@@ -287,14 +335,21 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
             },
             { title: "组织范围", dataIndex: "orgScopeId", width: 140, render: (value: string) => <OrgText value={value} /> },
             {
-              title: "权限点",
-              render: (_, row) => (
-                <Space size={[4, 4]} wrap>
-                  {row.actions.map((action) => (
-                    <Tag key={action}>{actionLabelMap[action]}</Tag>
-                  ))}
-                </Space>
-              )
+              title: "授权资源",
+              render: (_, row) => {
+                const codes = roleGrantCodeMap[row.id] ?? [];
+                const names = codes
+                  .map((resourceCode) => resourceByCode.get(resourceCode)?.resourceName ?? resourceCode)
+                  .slice(0, 4);
+                return (
+                  <Space size={[4, 4]} wrap>
+                    {names.map((name) => (
+                      <Tag key={`${row.id}-${name}`}>{name}</Tag>
+                    ))}
+                    {codes.length > 4 ? <Tag>+{codes.length - 4}</Tag> : null}
+                  </Space>
+                );
+              }
             },
             { title: "成员数", dataIndex: "memberCount", width: 90 },
             {
@@ -330,28 +385,9 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
         />
       </Card>
 
-      <Modal
-        title={editing ? "编辑角色" : "新建角色"}
-        open={open}
-        onCancel={closeRoleModal}
-          onOk={() => void submit()}
-          width={760}
-      >
+      <Modal title={editing ? "编辑角色" : "新建角色"} open={open} onCancel={closeRoleModal} onOk={() => void submit()} width={860}>
         <Form form={form} layout="vertical">
-          <Alert
-            showIcon
-            type="info"
-            style={{ marginBottom: 12 }}
-            message="高权限分配规则"
-          />
-          {selectedRoleType && selectedOrgScopeId ? (
-            <Alert
-              showIcon
-              type="success"
-              style={{ marginBottom: 12 }}
-              message="默认权限"
-            />
-          ) : null}
+          <Alert showIcon type="info" style={{ marginBottom: 12 }} message="角色授权将基于资源路径生效（菜单/页面/动作互不自动继承）。" />
           <Form.Item name="name" label="角色名称" rules={[{ required: true, message: "请输入角色名称" }]}>
             <Input maxLength={128} />
           </Form.Item>
@@ -365,33 +401,19 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
           </Form.Item>
 
           <Button size="small" onClick={applyRolePreset} style={{ marginBottom: 12 }}>
-            按角色类型重置默认权限
+            按角色类型填充推荐资源
           </Button>
 
           <Form.Item name="orgScopeId" label="组织范围" rules={[{ required: true, message: "请选择组织范围" }]}>
             <OrgSelect />
           </Form.Item>
-          <Form.Item
-            name="actions"
-            label="操作类型"
-            rules={[{ required: true, message: "请选择操作类型" }]}
-          >
-            <Select
-              mode="multiple"
-              options={allActions.map((action) => ({
-                value: action,
-                label: `${actionLabelMap[action]} - ${actionDescriptions[action]}`,
-                disabled: selectedOrgScopeId !== HEAD_OFFICE_ORG_ID && HIGH_PRIVILEGE_ACTIONS.includes(action)
-              }))}
-              placeholder="可多选"
-            />
+          <Form.Item name="resourceCodes" label="授权资源" rules={[{ required: true, message: "请选择至少一个资源" }]}>
+            <Select mode="multiple" options={resourceOptionsByType} placeholder="可多选，支持按资源类型分组查看" />
           </Form.Item>
           <Space size={[8, 8]} wrap style={{ marginBottom: 12 }}>
-            {allActions.map((action) => (
-              <Tag key={action} color={HIGH_PRIVILEGE_ACTIONS.includes(action) ? "magenta" : undefined}>
-                {`${actionLabelMap[action]}：${actionDescriptions[action]}`}
-              </Tag>
-            ))}
+            <Tag>菜单 {selectedResourceSummary.MENU}</Tag>
+            <Tag>页面 {selectedResourceSummary.PAGE}</Tag>
+            <Tag>动作 {selectedResourceSummary.ACTION}</Tag>
           </Space>
           <Form.Item name="status" label="状态" rules={[{ required: true, message: "请选择状态" }]}>
             <Select options={[{ label: lifecycleLabelMap.ACTIVE, value: "ACTIVE" }, { label: lifecycleLabelMap.DISABLED, value: "DISABLED" }]} />
@@ -399,12 +421,7 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
         </Form>
       </Modal>
 
-      <Modal
-        title={memberRole ? `批量分配成员：${memberRole.name}` : "批量分配成员"}
-        open={memberOpen}
-        onCancel={() => setMemberOpen(false)}
-        onOk={() => void saveMembers()}
-      >
+      <Modal title={memberRole ? `批量分配成员：${memberRole.name}` : "批量分配成员"} open={memberOpen} onCancel={() => setMemberOpen(false)} onOk={() => void saveMembers()}>
         <PersonMultiSelect
           style={{ width: "100%" }}
           value={memberValues}
@@ -416,4 +433,3 @@ export function RolesPage({ embedded = false }: { embedded?: boolean }) {
     </div>
   );
 }
-

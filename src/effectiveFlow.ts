@@ -1,5 +1,5 @@
 import { configCenterService } from "./services/configCenterService";
-import type { ActionType, LifecycleState, PublishPendingItem, PublishValidationReport } from "./types";
+import type { LifecycleState, PublishPendingItem, PublishValidationReport } from "./types";
 
 export type EffectiveActionType = "PUBLISH" | "DISABLE" | "RESTORE";
 export type EffectiveScopeMode = "ALL_ORGS" | "CUSTOM_ORGS";
@@ -36,24 +36,17 @@ export function getEffectiveActionMeta(status: LifecycleState): EffectiveActionM
   };
 }
 
-const actionRequiredPermissions: Record<EffectiveActionType, ActionType[]> = {
-  PUBLISH: ["PUBLISH", "VALIDATE"],
-  DISABLE: ["DISABLE"],
-  RESTORE: ["PUBLISH", "VALIDATE"]
+type EffectivePermissionResourcePath = string;
+
+const actionRequiredPermissions: Record<EffectiveActionType, EffectivePermissionResourcePath[]> = {
+  PUBLISH: ["/action/common/base/publish", "/action/common/base/validate"],
+  DISABLE: ["/action/common/base/publish"],
+  RESTORE: ["/action/common/base/publish", "/action/common/base/validate"]
 };
 
-const actionLabelByPermission: Record<ActionType, string> = {
-  VIEW: "查看",
-  CONFIG: "配置",
-  VALIDATE: "校验",
-  PUBLISH: "生效",
-  DISABLE: "停用",
-  DEFER: "延期",
-  ROLLBACK: "回滚",
-  AUDIT_VIEW: "审计查看",
-  RISK_CONFIRM: "风险确认",
-  ROLE_MANAGE: "角色授权管理",
-  MENU_ENABLE_MANAGE: "菜单启用管理"
+const actionLabelByPermission: Record<EffectivePermissionResourcePath, string> = {
+  "/action/common/base/validate": "校验",
+  "/action/common/base/publish": "发布"
 };
 
 const actionLabelByType: Record<EffectiveActionType, string> = {
@@ -64,20 +57,20 @@ const actionLabelByType: Record<EffectiveActionType, string> = {
 
 export function getEffectiveMissingPermissions(
   actionType: EffectiveActionType,
-  hasAction: (action: ActionType) => boolean
-): ActionType[] {
-  return actionRequiredPermissions[actionType].filter((action) => !hasAction(action));
+  hasPermission: (resourcePath: string) => boolean
+): EffectivePermissionResourcePath[] {
+  return actionRequiredPermissions[actionType].filter((resourcePath) => !hasPermission(resourcePath));
 }
 
 export function getEffectivePermissionBlockedMessage(
   actionType: EffectiveActionType,
-  hasAction: (action: ActionType) => boolean
+  hasPermission: (resourcePath: string) => boolean
 ): string | null {
-  const missing = getEffectiveMissingPermissions(actionType, hasAction);
+  const missing = getEffectiveMissingPermissions(actionType, hasPermission);
   if (missing.length === 0) {
     return null;
   }
-  const labels = missing.map((action) => actionLabelByPermission[action] ?? action).join("、");
+  const labels = missing.map((resourcePath) => actionLabelByPermission[resourcePath] ?? resourcePath).join("、");
   return `缺少${labels}权限，暂不可执行${actionLabelByType[actionType]}。`;
 }
 

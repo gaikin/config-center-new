@@ -40,7 +40,7 @@ export const resourceTypeLabelMap: Record<PublishPendingItem["resourceType"] | "
   INTERFACE: "API",
   LIST_DATA: "名单",
   PREPROCESSOR: "数据转换规则",
-  MENU_SDK_POLICY: "版本灰度策略",
+  MENU_SDK_POLICY: "菜单能力灰度策略",
   PAGE_ACTIVATION_POLICY: "页面开通设置",
   ROLE: "角色"
 };

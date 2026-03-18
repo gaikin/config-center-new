@@ -255,7 +255,7 @@ export function InterfacesPage() {
     publishInterfaceNow,
     restoreInterfaceNow
   } = useInterfacesPageModel();
-  const { hasAction } = useMockSession();
+  const { hasResource } = useMockSession();
   const [msgApi, msgHolder] = message.useMessage();
   const [effectiveTarget, setEffectiveTarget] = useState<EffectiveTarget | null>(null);
   const [effectiveLoading, setEffectiveLoading] = useState(false);
@@ -270,7 +270,7 @@ export function InterfacesPage() {
     []
   );
   const effectivePermissionBlockedMessage = effectiveMeta
-    ? getEffectivePermissionBlockedMessage(effectiveMeta.type, hasAction)
+    ? getEffectivePermissionBlockedMessage(effectiveMeta.type, hasResource)
     : null;
   const modalBlockedMessage = effectiveBlockedMessage ?? effectivePermissionBlockedMessage;
   const canEffectiveConfirm =
@@ -444,7 +444,7 @@ export function InterfacesPage() {
 
   async function openEffectiveAction(target: EffectiveTarget) {
     const action = getEffectiveActionMeta(target.status);
-    const permissionBlocked = getEffectivePermissionBlockedMessage(action.type, hasAction);
+    const permissionBlocked = getEffectivePermissionBlockedMessage(action.type, hasResource);
     if (permissionBlocked) {
       msgApi.warning(permissionBlocked);
       return;
@@ -646,8 +646,8 @@ export function InterfacesPage() {
           objectName={publishNotice.objectName}
           warningCount={publishNotice.warningCount}
           actionLabel={getEffectiveActionMeta("DRAFT").label}
-          actionDisabled={Boolean(getEffectivePermissionBlockedMessage("PUBLISH", hasAction))}
-          actionDisabledReason={getEffectivePermissionBlockedMessage("PUBLISH", hasAction) ?? undefined}
+          actionDisabled={Boolean(getEffectivePermissionBlockedMessage("PUBLISH", hasResource))}
+          actionDisabledReason={getEffectivePermissionBlockedMessage("PUBLISH", hasResource) ?? undefined}
           onGoPublish={() =>
             void openEffectiveAction({
               id: publishNotice.resourceId,
@@ -776,7 +776,7 @@ export function InterfacesPage() {
               width: 220,
               render: (_, row) => {
                 const actionMeta = getEffectiveActionMeta(row.status);
-                const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasAction);
+                const actionBlocked = getEffectivePermissionBlockedMessage(actionMeta.type, hasResource);
                 return (
                   <Space>
                     <Button size="small" onClick={() => openEdit(row)}>

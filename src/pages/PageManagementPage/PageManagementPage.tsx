@@ -29,11 +29,13 @@ import { OrgSelect } from "../../components/DirectoryFields";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
 import { toOrgOption } from "../../orgOptions";
 import { configCenterService } from "../../services/configCenterService";
+import { resolveEffectiveVersion } from "../../sdkGovernance";
 import { createId } from "../../utils";
 import type {
   BusinessFieldDefinition,
   CapabilityOpenStatus,
   JobSceneDefinition,
+  MenuSdkPolicy,
   MenuCapabilityPolicy,
   PageActivationPolicy,
   PageElement,
@@ -41,6 +43,7 @@ import type {
   PageMenu,
   PageRegion,
   PageResource,
+  PlatformRuntimeConfig,
   RuleDefinition
 } from "../../types";
 
@@ -165,6 +168,8 @@ export function PageManagementPage() {
   const [resources, setResources] = useState<PageResource[]>([]);
   const [policies, setPolicies] = useState<PageActivationPolicy[]>([]);
   const [menuCapabilities, setMenuCapabilities] = useState<MenuCapabilityPolicy[]>([]);
+  const [menuSdkPolicies, setMenuSdkPolicies] = useState<MenuSdkPolicy[]>([]);
+  const [platformRuntimeConfig, setPlatformRuntimeConfig] = useState<PlatformRuntimeConfig | null>(null);
   const [rules, setRules] = useState<RuleDefinition[]>([]);
   const [scenes, setScenes] = useState<JobSceneDefinition[]>([]);
   const [pageFieldBindingCounts, setPageFieldBindingCounts] = useState<Record<number, number>>({});
@@ -199,12 +204,14 @@ export function PageManagementPage() {
     void (async () => {
       try {
         setLoading(true);
-        const [regionRows, menuRows, resourceRows, policyRows, capabilityRows, ruleRows, sceneRows] = await Promise.all([
+        const [regionRows, menuRows, resourceRows, policyRows, capabilityRows, sdkPolicyRows, runtimeConfig, ruleRows, sceneRows] = await Promise.all([
           configCenterService.listPageRegions(),
           configCenterService.listPageMenus(),
           configCenterService.listPageResources(),
           configCenterService.listPageActivationPolicies(),
           configCenterService.listMenuCapabilityPolicies(),
+          configCenterService.listMenuSdkPolicies(),
+          configCenterService.getPlatformRuntimeConfig(),
           configCenterService.listRules(),
           configCenterService.listJobScenes()
         ]);
@@ -222,6 +229,8 @@ export function PageManagementPage() {
         setResources(resourceRows);
         setPolicies(policyRows);
         setMenuCapabilities(capabilityRows);
+        setMenuSdkPolicies(sdkPolicyRows);
+        setPlatformRuntimeConfig(runtimeConfig);
         setRules(ruleRows);
         setScenes(sceneRows);
         setPageFieldBindingCounts(Object.fromEntries(bindingRows.map((item) => [item.pageResourceId, item.count])));
@@ -249,6 +258,10 @@ export function PageManagementPage() {
   const menuCapabilityMap = useMemo(
     () => Object.fromEntries(menuCapabilities.map((item) => [item.menuId, item])),
     [menuCapabilities]
+  );
+  const menuSdkPolicyMap = useMemo(
+    () => Object.fromEntries(menuSdkPolicies.map((item) => [item.menuId, item])),
+    [menuSdkPolicies]
   );
 
   const sharedTemplateId = useMemo(
@@ -387,6 +400,27 @@ export function PageManagementPage() {
   const selectedMenuPending = selectedMenu
     ? selectedMenu.promptStatus === "PENDING" || selectedMenu.jobStatus === "PENDING"
     : false;
+  const runtimeNowAt = useMemo(() => new Date().toISOString().slice(0, 16).replace("T", " "), []);
+  const selectedMenuSdkPolicy = selectedMenu ? menuSdkPolicyMap[selectedMenu.id] : undefined;
+  const selectedMenuRuntimeOrgId = selectedMenu?.ownerOrgIds[0] ?? "head-office";
+  const selectedMenuPromptVersion = selectedMenu && platformRuntimeConfig
+    ? resolveEffectiveVersion({
+        policy: selectedMenuSdkPolicy,
+        capability: "PROMPT",
+        orgId: selectedMenuRuntimeOrgId,
+        nowAt: runtimeNowAt,
+        platformConfig: platformRuntimeConfig
+      })
+    : null;
+  const selectedMenuJobVersion = selectedMenu && platformRuntimeConfig
+    ? resolveEffectiveVersion({
+        policy: selectedMenuSdkPolicy,
+        capability: "JOB",
+        orgId: selectedMenuRuntimeOrgId,
+        nowAt: runtimeNowAt,
+        platformConfig: platformRuntimeConfig
+      })
+    : null;
 
   const selectedRules = useMemo(
     () => rules.filter((item) => item.pageResourceId === selectedPage?.id),
@@ -921,6 +955,43 @@ export function PageManagementPage() {
                     </Space>
                   }
                 />
+                <Card
+                  size="small"
+                  title="SDK 版本结果态"
+                  extra={
+                    <Button
+                      size="small"
+                      onClick={() =>
+                        navigate(
+                          `/sdk-version-center?menuId=${selectedMenu.id}&siteId=${menuMap[selectedMenu.id]?.siteId ?? ""}&regionId=${
+                            menuMap[selectedMenu.id]?.regionId ?? ""
+                          }`
+                        )
+                      }
+                    >
+                      去 SDK版本中心配置
+                    </Button>
+                  }
+                >
+                  <Space direction="vertical" size={8}>
+                    <Space wrap size={[8, 8]}>
+                      <Tag color={selectedMenuSdkPolicy?.promptGrayEnabled ? "orange" : "default"}>
+                        提示灰度: {selectedMenuSdkPolicy?.promptGrayEnabled ? "已配置" : "未配置"}
+                      </Tag>
+                      <Tag color={selectedMenuSdkPolicy?.jobGrayEnabled ? "purple" : "default"}>
+                        作业灰度: {selectedMenuSdkPolicy?.jobGrayEnabled ? "已配置" : "未配置"}
+                      </Tag>
+                    </Space>
+                    <Typography.Text>
+                      提示生效版本：{selectedMenuPromptVersion?.version ?? "-"}
+                      <Typography.Text type="secondary">（{selectedMenuPromptVersion?.source === "MENU_GRAY" ? "命中菜单灰度" : "平台正式版本"}）</Typography.Text>
+                    </Typography.Text>
+                    <Typography.Text>
+                      作业生效版本：{selectedMenuJobVersion?.version ?? "-"}
+                      <Typography.Text type="secondary">（{selectedMenuJobVersion?.source === "MENU_GRAY" ? "命中菜单灰度" : "平台正式版本"}）</Typography.Text>
+                    </Typography.Text>
+                  </Space>
+                </Card>
                 {selectedPage ? (
                   <Space direction="vertical" style={{ width: "100%" }} size={12}>
                     {selectedPageActionState?.needRequest ? (
