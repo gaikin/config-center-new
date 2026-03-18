@@ -132,7 +132,7 @@ export function MockSessionProvider({
   children: React.ReactNode;
 }) {
   const baseMeta = mockUserPersonaMetaMap[value.persona];
-  const [effectiveResourcePaths, setEffectiveResourcePaths] = useState<string[]>(baseMeta.resourcePaths);
+  const [effectiveResourcePaths, setEffectiveResourcePaths] = useState<string[]>([]);
 
   useEffect(() => {
     let alive = true;
@@ -169,13 +169,13 @@ export function MockSessionProvider({
           .flat()
           .map((grant) => activeResourcePathByCode.get(grant.resourceCode))
           .filter((resourcePath): resourcePath is string => Boolean(resourcePath));
-        const merged = Array.from(new Set([...baseMeta.resourcePaths, ...grantedPaths]));
+        const merged = Array.from(new Set(grantedPaths));
         if (alive) {
           setEffectiveResourcePaths(merged);
         }
       } catch {
         if (alive) {
-          setEffectiveResourcePaths(baseMeta.resourcePaths);
+          setEffectiveResourcePaths([]);
         }
       }
     }
@@ -195,7 +195,7 @@ export function MockSessionProvider({
         window.removeEventListener(ROLE_PERMISSIONS_CHANGED_EVENT, handleRolesChanged);
       }
     };
-  }, [baseMeta.operatorId, baseMeta.resourcePaths, value.persona]);
+  }, [baseMeta.operatorId, value.persona]);
 
   const contextValue = useMemo(
     () => ({

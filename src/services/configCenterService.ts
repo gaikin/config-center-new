@@ -84,7 +84,6 @@ import {
 import {
   HEAD_OFFICE_ORG_ID,
   hasHighPrivilegeResource,
-  normalizeRoleResourcePaths,
   isHeadOfficeOnlyRole,
   isHeadOfficePermissionAdmin
 } from "../permissionPolicy";
@@ -1794,16 +1793,17 @@ export const configCenterService = {
     if (invalidCodes.length > 0) {
       throw new Error(`存在未定义资源编码：${invalidCodes.join("、")}`);
     }
-    const requestedPaths = getResourcePathsByCodes(requestedCodes);
-    const normalizedPaths = normalizeRoleResourcePaths(role.roleType, role.orgScopeId, requestedPaths);
-    const normalizedCodes = normalizeStringList(
-      normalizedPaths
-        .map((resourcePath) =>
-          store.permissionResources.find((resource) => resource.resourcePath === resourcePath)?.resourceCode
-        )
-        .filter((resourceCode): resourceCode is string => Boolean(resourceCode))
-    );
-    const hasHighPrivilege = hasHighPrivilegeResource(normalizedPaths);
+    const requestedResources = requestedCodes
+      .map((resourceCode) => store.permissionResources.find((resource) => resource.resourceCode === resourceCode))
+      .filter((resource): resource is PermissionResource => Boolean(resource));
+    const disabledResourceCodes = requestedResources
+      .filter((resource) => resource.status !== "ACTIVE")
+      .map((resource) => resource.resourceCode);
+    if (disabledResourceCodes.length > 0) {
+      throw new Error(`包含已停用资源，无法授权：${disabledResourceCodes.join("、")}`);
+    }
+    const requestedPaths = requestedResources.map((resource) => resource.resourcePath);
+    const hasHighPrivilege = hasHighPrivilegeResource(requestedPaths);
     if (hasHighPrivilege && role.orgScopeId !== HEAD_OFFICE_ORG_ID) {
       throw new Error("高权限操作仅允许分配到总行范围角色。");
     }
@@ -1813,7 +1813,7 @@ export const configCenterService = {
     store.roleResourceGrants = store.roleResourceGrants.filter((grant) => grant.roleId !== roleId);
     const grantBaseId = nextId(store.roleResourceGrants);
     const createdAt = nowIso();
-    const nextGrants: RoleResourceGrant[] = normalizedCodes.map((resourceCode, index) => ({
+    const nextGrants: RoleResourceGrant[] = requestedCodes.map((resourceCode, index) => ({
       id: grantBaseId + index,
       roleId,
       resourceCode,
@@ -1895,25 +1895,6 @@ export const configCenterService = {
       updatedAt: payload.updatedAt ?? nowIso()
     };
     store.roles = exists ? store.roles.map((item) => (item.id === next.id ? next : item)) : [next, ...store.roles];
-    if (!exists) {
-      const defaultResourcePaths = normalizeRoleResourcePaths(next.roleType, next.orgScopeId, []);
-      const defaultResourceCodes = normalizeStringList(
-        defaultResourcePaths
-          .map((resourcePath) =>
-            store.permissionResources.find((resource) => resource.resourcePath === resourcePath)?.resourceCode
-          )
-          .filter((resourceCode): resourceCode is string => Boolean(resourceCode))
-      );
-      const grantBaseId = nextId(store.roleResourceGrants);
-      const createdAt = nowIso();
-      const defaultGrants = defaultResourceCodes.map((resourceCode, index) => ({
-        id: grantBaseId + index,
-        roleId: next.id,
-        resourceCode,
-        createdAt
-      }));
-      store.roleResourceGrants = [...defaultGrants, ...store.roleResourceGrants];
-    }
     appendAuditLog("ROLE_UPDATE", "ROLE", next.name, effectiveOperator.operatorId, next.id, approvalMeta);
     notifyRolePermissionsChanged();
     return clone(next);
