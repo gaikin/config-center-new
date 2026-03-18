@@ -963,7 +963,7 @@ export function PageManagementPage() {
                       size="small"
                       onClick={() =>
                         navigate(
-                          `/sdk-version-center?menuId=${selectedMenu.id}&siteId=${menuMap[selectedMenu.id]?.siteId ?? ""}&regionId=${
+                          `/sdk-version-center?action=edit&menuId=${selectedMenu.id}&siteId=${menuMap[selectedMenu.id]?.siteId ?? ""}&regionId=${
                             menuMap[selectedMenu.id]?.regionId ?? ""
                           }`
                         )

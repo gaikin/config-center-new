@@ -1,6 +1,6 @@
 import { PlusOutlined } from "@ant-design/icons";
 import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { OrgSelect } from "../../components/DirectoryFields";
 import { lifecycleLabelMap, lifecycleOptions } from "../../enumLabels";
@@ -50,6 +50,7 @@ export function SdkVersionCenterPage() {
   const [editing, setEditing] = useState<MenuSdkPolicy | null>(null);
   const [form] = Form.useForm<PolicyForm>();
   const [msgApi, holder] = message.useMessage();
+  const autoOpenKeyRef = useRef("");
 
   const selectedSiteId = siteFilter === "ALL" ? undefined : Number(siteFilter);
   const selectedRegionId = regionFilter === "ALL" ? undefined : Number(regionFilter);
@@ -141,6 +142,7 @@ export function SdkVersionCenterPage() {
     const siteId = searchParams.get("siteId");
     const regionId = searchParams.get("regionId");
     const menuIdRaw = searchParams.get("menuId");
+    const action = searchParams.get("action");
     const menuId = menuIdRaw ? Number(menuIdRaw) : undefined;
 
     if (siteId) {
@@ -161,7 +163,25 @@ export function SdkVersionCenterPage() {
     if (matchedPolicy && !regionId) {
       setRegionFilter(String(matchedPolicy.regionId));
     }
-  }, [policies, searchParams]);
+    if (loading || action !== "edit") {
+      return;
+    }
+    const autoOpenKey = `${action}:${menuId}`;
+    if (autoOpenKeyRef.current === autoOpenKey) {
+      return;
+    }
+    autoOpenKeyRef.current = autoOpenKey;
+    if (matchedPolicy) {
+      openEdit(matchedPolicy);
+      msgApi.info("已定位到目标菜单，并打开灰度策略编辑弹窗");
+      return;
+    }
+    const targetMenu = menus.find((menu) => menu.id === menuId);
+    if (targetMenu) {
+      openCreate(targetMenu);
+      msgApi.info("目标菜单暂无策略，已打开新建弹窗并预填菜单");
+    }
+  }, [loading, menus, policies, searchParams]);
 
   useEffect(() => {
     if (!focusedPolicyId) {
@@ -175,8 +195,8 @@ export function SdkVersionCenterPage() {
     setTablePage(Math.floor(index / tablePageSize) + 1);
   }, [filteredPolicies, focusedPolicyId, tablePageSize]);
 
-  function openCreate() {
-    const defaultMenu = filteredMenus[0] ?? menus[0];
+  function openCreate(targetMenu?: PageMenu) {
+    const defaultMenu = targetMenu ?? filteredMenus[0] ?? menus[0];
     setEditing(null);
     form.setFieldsValue({
       siteId: defaultMenu?.siteId ?? sites[0]?.id ?? 0,
@@ -237,7 +257,7 @@ export function SdkVersionCenterPage() {
         : undefined
     });
     if (!validation.ok) {
-      msgApi.error(validation.errors[0] ?? "菜单灰度策略校验失败");
+      msgApi.error(validation.errors.join("；") || "菜单灰度策略校验失败");
       return;
     }
 
@@ -450,6 +470,8 @@ export function SdkVersionCenterPage() {
             {() => {
               const currentSiteId = form.getFieldValue("siteId");
               const currentRegionId = form.getFieldValue("regionId");
+              const currentMenuId = form.getFieldValue("menuId");
+              const capability = menuCapabilityMap[currentMenuId];
               const regionOptions = regions
                 .filter((region) => !currentSiteId || region.siteId === currentSiteId)
                 .map((region) => ({ label: region.regionName, value: region.id }));
@@ -473,6 +495,14 @@ export function SdkVersionCenterPage() {
                       }}
                     />
                   </Form.Item>
+                  <Space size={[6, 6]} wrap style={{ marginBottom: 8 }}>
+                    <Tag color={capability?.promptStatus === "ENABLED" ? "green" : "default"}>
+                      提示能力: {capability?.promptStatus === "ENABLED" ? "已开通" : capability?.promptStatus === "PENDING" ? "开通中" : "未开通"}
+                    </Tag>
+                    <Tag color={capability?.jobStatus === "ENABLED" ? "green" : "default"}>
+                      作业能力: {capability?.jobStatus === "ENABLED" ? "已开通" : capability?.jobStatus === "PENDING" ? "开通中" : "未开通"}
+                    </Tag>
+                  </Space>
                 </>
               );
             }}
@@ -482,28 +512,65 @@ export function SdkVersionCenterPage() {
           </Form.Item>
 
           <Card size="small" title="智能提示灰度" style={{ marginBottom: 12 }}>
-            <Form.Item name="promptGrayEnabled" label="开启提示灰度" valuePropName="checked">
-              <Switch
-                onChange={(checked) => {
-                  if (checked && !form.getFieldValue("promptGrayVersion")) {
-                    form.setFieldValue("promptGrayVersion", platformConfig?.promptGrayDefaultVersion);
-                  }
-                  if (!checked) {
-                    form.setFieldValue("promptGrayVersion", undefined);
-                    form.setFieldValue("promptGrayOrgIds", []);
-                  }
-                }}
-              />
+            <Form.Item noStyle shouldUpdate>
+              {() => {
+                const menuId = form.getFieldValue("menuId");
+                const capability = menuCapabilityMap[menuId];
+                const promptCapabilityEnabled = capability?.promptStatus === "ENABLED";
+                return (
+                  <Form.Item
+                    name="promptGrayEnabled"
+                    label="开启提示灰度"
+                    valuePropName="checked"
+                    extra={promptCapabilityEnabled ? "开启后需配置灰度版本和灰度机构。" : "菜单提示能力未开通，暂不可配置提示灰度。"}
+                  >
+                    <Switch
+                      disabled={!promptCapabilityEnabled}
+                      onChange={(checked) => {
+                        if (checked && !form.getFieldValue("promptGrayVersion")) {
+                          form.setFieldValue("promptGrayVersion", platformConfig?.promptGrayDefaultVersion);
+                        }
+                        if (!checked) {
+                          form.setFieldValue("promptGrayVersion", undefined);
+                          form.setFieldValue("promptGrayOrgIds", []);
+                        }
+                      }}
+                    />
+                  </Form.Item>
+                );
+              }}
             </Form.Item>
             <Form.Item noStyle shouldUpdate>
               {() => {
                 const enabled = Boolean(form.getFieldValue("promptGrayEnabled"));
                 return (
                   <>
-                    <Form.Item name="promptGrayVersion" label="提示灰度版本" rules={enabled ? [{ required: true, message: "请选择提示灰度版本" }] : []}>
+                    <Form.Item
+                      name="promptGrayVersion"
+                      label="提示灰度版本"
+                      rules={
+                        enabled
+                          ? [
+                              { required: true, message: "请先选择提示灰度版本" },
+                              () => ({
+                                validator(_, value) {
+                                  if (!value || !platformConfig || value !== platformConfig.promptStableVersion) {
+                                    return Promise.resolve();
+                                  }
+                                  return Promise.reject(new Error("提示灰度版本不能与提示正式版本相同"));
+                                }
+                              })
+                            ]
+                          : []
+                      }
+                    >
                       <Select allowClear disabled={!enabled} options={artifactVersionOptions} />
                     </Form.Item>
-                    <Form.Item name="promptGrayOrgIds" label="提示灰度机构" rules={enabled ? [{ required: true, type: "array", min: 1, message: "请选择灰度机构" }] : []}>
+                    <Form.Item
+                      name="promptGrayOrgIds"
+                      label="提示灰度机构"
+                      rules={enabled ? [{ required: true, type: "array", min: 1, message: "请至少选择 1 个提示灰度机构" }] : []}
+                    >
                       <OrgSelect mode="multiple" disabled={!enabled} placeholder="请选择提示灰度机构" />
                     </Form.Item>
                   </>
@@ -513,28 +580,65 @@ export function SdkVersionCenterPage() {
           </Card>
 
           <Card size="small" title="智能作业灰度" style={{ marginBottom: 12 }}>
-            <Form.Item name="jobGrayEnabled" label="开启作业灰度" valuePropName="checked">
-              <Switch
-                onChange={(checked) => {
-                  if (checked && !form.getFieldValue("jobGrayVersion")) {
-                    form.setFieldValue("jobGrayVersion", platformConfig?.jobGrayDefaultVersion);
-                  }
-                  if (!checked) {
-                    form.setFieldValue("jobGrayVersion", undefined);
-                    form.setFieldValue("jobGrayOrgIds", []);
-                  }
-                }}
-              />
+            <Form.Item noStyle shouldUpdate>
+              {() => {
+                const menuId = form.getFieldValue("menuId");
+                const capability = menuCapabilityMap[menuId];
+                const jobCapabilityEnabled = capability?.jobStatus === "ENABLED";
+                return (
+                  <Form.Item
+                    name="jobGrayEnabled"
+                    label="开启作业灰度"
+                    valuePropName="checked"
+                    extra={jobCapabilityEnabled ? "开启后需配置灰度版本和灰度机构。" : "菜单作业能力未开通，暂不可配置作业灰度。"}
+                  >
+                    <Switch
+                      disabled={!jobCapabilityEnabled}
+                      onChange={(checked) => {
+                        if (checked && !form.getFieldValue("jobGrayVersion")) {
+                          form.setFieldValue("jobGrayVersion", platformConfig?.jobGrayDefaultVersion);
+                        }
+                        if (!checked) {
+                          form.setFieldValue("jobGrayVersion", undefined);
+                          form.setFieldValue("jobGrayOrgIds", []);
+                        }
+                      }}
+                    />
+                  </Form.Item>
+                );
+              }}
             </Form.Item>
             <Form.Item noStyle shouldUpdate>
               {() => {
                 const enabled = Boolean(form.getFieldValue("jobGrayEnabled"));
                 return (
                   <>
-                    <Form.Item name="jobGrayVersion" label="作业灰度版本" rules={enabled ? [{ required: true, message: "请选择作业灰度版本" }] : []}>
+                    <Form.Item
+                      name="jobGrayVersion"
+                      label="作业灰度版本"
+                      rules={
+                        enabled
+                          ? [
+                              { required: true, message: "请先选择作业灰度版本" },
+                              () => ({
+                                validator(_, value) {
+                                  if (!value || !platformConfig || value !== platformConfig.jobStableVersion) {
+                                    return Promise.resolve();
+                                  }
+                                  return Promise.reject(new Error("作业灰度版本不能与作业正式版本相同"));
+                                }
+                              })
+                            ]
+                          : []
+                      }
+                    >
                       <Select allowClear disabled={!enabled} options={artifactVersionOptions} />
                     </Form.Item>
-                    <Form.Item name="jobGrayOrgIds" label="作业灰度机构" rules={enabled ? [{ required: true, type: "array", min: 1, message: "请选择灰度机构" }] : []}>
+                    <Form.Item
+                      name="jobGrayOrgIds"
+                      label="作业灰度机构"
+                      rules={enabled ? [{ required: true, type: "array", min: 1, message: "请至少选择 1 个作业灰度机构" }] : []}
+                    >
                       <OrgSelect mode="multiple" disabled={!enabled} placeholder="请选择作业灰度机构" />
                     </Form.Item>
                   </>

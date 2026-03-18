@@ -60,21 +60,63 @@ function PlatformRuntimeConfigPanel() {
   return (
     <Card size="small" title="平台级运行参数">
       {holder}
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 12 }}
+        message="正式版本是全平台默认口径，默认灰度版本只用于新建菜单灰度时自动带入。"
+      />
       <Form form={form} layout="vertical" disabled={loading}>
         <Card size="small" title="智能提示" style={{ marginBottom: 12 }}>
-          <Form.Item name="promptStableVersion" label="正式版本" rules={[{ required: true, message: "请选择提示正式版本" }]}>
+          <Form.Item
+            name="promptStableVersion"
+            label="正式版本"
+            rules={[{ required: true, message: "请选择智能提示正式版本（必填）" }]}
+          >
             <Select showSearch optionFilterProp="label" options={versionOptions} />
           </Form.Item>
-          <Form.Item name="promptGrayDefaultVersion" label="默认灰度版本">
+          <Form.Item
+            name="promptGrayDefaultVersion"
+            label="默认灰度版本"
+            rules={[
+              () => ({
+                validator(_, value) {
+                  const stableVersion = form.getFieldValue("promptStableVersion");
+                  if (!value || !stableVersion || value !== stableVersion) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error("默认灰度版本建议与正式版本不同，避免配置时误选"));
+                }
+              })
+            ]}
+          >
             <Select allowClear showSearch optionFilterProp="label" options={versionOptions} />
           </Form.Item>
         </Card>
 
         <Card size="small" title="智能作业" style={{ marginBottom: 12 }}>
-          <Form.Item name="jobStableVersion" label="正式版本" rules={[{ required: true, message: "请选择作业正式版本" }]}>
+          <Form.Item
+            name="jobStableVersion"
+            label="正式版本"
+            rules={[{ required: true, message: "请选择智能作业正式版本（必填）" }]}
+          >
             <Select showSearch optionFilterProp="label" options={versionOptions} />
           </Form.Item>
-          <Form.Item name="jobGrayDefaultVersion" label="默认灰度版本">
+          <Form.Item
+            name="jobGrayDefaultVersion"
+            label="默认灰度版本"
+            rules={[
+              () => ({
+                validator(_, value) {
+                  const stableVersion = form.getFieldValue("jobStableVersion");
+                  if (!value || !stableVersion || value !== stableVersion) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error("默认灰度版本建议与正式版本不同，避免配置时误选"));
+                }
+              })
+            ]}
+          >
             <Select allowClear showSearch optionFilterProp="label" options={versionOptions} />
           </Form.Item>
         </Card>
