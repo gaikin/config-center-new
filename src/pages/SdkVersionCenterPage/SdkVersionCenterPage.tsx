@@ -327,7 +327,7 @@ export function SdkVersionCenterPage() {
               ]}
               onChange={(value) => setRegionFilter(value)}
             />
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>
               新建灰度策略
             </Button>
           </Space>
