@@ -11,6 +11,7 @@ import {
   List,
   Modal,
   Popconfirm,
+  Progress,
   Row,
   Select,
   Space,
@@ -120,6 +121,12 @@ const FilterActions = styled(Space)`
   justify-content: flex-end;
 `;
 
+const FilterLabel = styled(Typography.Text)`
+  display: block;
+  margin-bottom: 6px;
+  color: #475467;
+`;
+
 const MenuListCard = styled(Card)`
   height: 100%;
 
@@ -139,6 +146,13 @@ const MenuItemCard = styled(Card)<{ $active: boolean }>`
 const DetailCard = styled(Card)`
   height: 100%;
 `;
+
+function calcCoverage(configured: number, total: number) {
+  if (total <= 0) {
+    return 0;
+  }
+  return Math.round((configured / total) * 100);
+}
 
 export function PageManagementPage() {
   const navigate = useNavigate();
@@ -378,6 +392,12 @@ export function PageManagementPage() {
     () => rules.filter((item) => item.pageResourceId === selectedPage?.id),
     [rules, selectedPage?.id]
   );
+  const selectedPagePosition = useMemo(() => {
+    if (!selectedPage) {
+      return 0;
+    }
+    return selectedMenuPages.findIndex((item) => item.id === selectedPage.id) + 1;
+  }, [selectedMenuPages, selectedPage]);
   const selectedPageFieldBindingCount = selectedPage ? pageFieldBindingCounts[selectedPage.id] ?? 0 : 0;
   const selectedPageActionState = selectedPage ? getPageActionState(selectedPage) : null;
   const pageSpecificFields = useMemo(
@@ -684,6 +704,9 @@ export function PageManagementPage() {
       {holder}
       <PageHeader>
         <Typography.Title level={4}>菜单管理</Typography.Title>
+        <Typography.Text style={{ color: "#475467" }}>
+          以菜单为入口查看能力开通状态、页面配置覆盖率和下一步动作，减少在多个页面之间切换。
+        </Typography.Text>
       </PageHeader>
 
       {pendingMenus > 0 ? (
@@ -712,56 +735,68 @@ export function PageManagementPage() {
           </SummaryCard>
         </Col>
         <Col xs={24} sm={12} xl={6}>
-          <SummaryCard $accent="linear-gradient(90deg, #8f52ec 0%, #be8bff 100%)">
+          <SummaryCard $accent="linear-gradient(90deg, #475467 0%, #667085 100%)">
             <Statistic title="筛选结果" value={filteredMenuRows.length} />
           </SummaryCard>
         </Col>
       </Row>
 
-      <FilterCard>
+      <FilterCard title="筛选条件">
         <Row gutter={[10, 10]} align="middle">
           <Col xs={24} lg={6}>
-            <Select
-              value={regionFilter}
-              style={{ width: "100%" }}
-              onChange={setRegionFilter}
-              options={[
-                { label: "全部专区", value: "ALL" },
-                ...regions.map((item) => ({ label: item.regionName, value: String(item.id) }))
-              ]}
-            />
+            <div>
+              <FilterLabel>专区</FilterLabel>
+              <Select
+                value={regionFilter}
+                style={{ width: "100%" }}
+                onChange={setRegionFilter}
+                options={[
+                  { label: "全部专区", value: "ALL" },
+                  ...regions.map((item) => ({ label: item.regionName, value: String(item.id) }))
+                ]}
+              />
+            </div>
           </Col>
           <Col xs={24} lg={7}>
-            <Input.Search
-              value={keyword}
-              allowClear
-              style={{ width: "100%" }}
-              placeholder="搜索菜单 / 页面"
-              onChange={(event) => setKeyword(event.target.value)}
-              onSearch={(value) => setKeyword(value)}
-            />
+            <div>
+              <FilterLabel>关键词</FilterLabel>
+              <Input.Search
+                value={keyword}
+                allowClear
+                style={{ width: "100%" }}
+                placeholder="搜索菜单 / 页面"
+                onChange={(event) => setKeyword(event.target.value)}
+                onSearch={(value) => setKeyword(value)}
+              />
+            </div>
           </Col>
           <Col xs={24} lg={5}>
-            <OrgSelect
-              includeAll
-              value={orgFilter}
-              style={{ width: "100%" }}
-              onChange={setOrgFilter}
-              options={orgOptions}
-            />
+            <div>
+              <FilterLabel>组织</FilterLabel>
+              <OrgSelect
+                includeAll
+                value={orgFilter}
+                style={{ width: "100%" }}
+                onChange={setOrgFilter}
+                options={orgOptions}
+              />
+            </div>
           </Col>
           <Col xs={24} lg={4}>
-            <Select
-              value={workFilter}
-              style={{ width: "100%" }}
-              onChange={(value) => setWorkFilter(value as WorkFilter)}
-              options={[
-                { label: "全部状态", value: "ALL" },
-                { label: "能力已开通", value: "READY" },
-                { label: "待开通", value: "NEED_REQUEST" },
-                { label: "开通中", value: "PENDING" }
-              ]}
-            />
+            <div>
+              <FilterLabel>工作状态</FilterLabel>
+              <Select
+                value={workFilter}
+                style={{ width: "100%" }}
+                onChange={(value) => setWorkFilter(value as WorkFilter)}
+                options={[
+                  { label: "全部状态", value: "ALL" },
+                  { label: "能力已开通", value: "READY" },
+                  { label: "待开通", value: "NEED_REQUEST" },
+                  { label: "开通中", value: "PENDING" }
+                ]}
+              />
+            </div>
           </Col>
           <Col xs={24} lg={2}>
             <FilterActions>
@@ -781,6 +816,8 @@ export function PageManagementPage() {
               locale={{ emptyText: "暂无符合条件的菜单" }}
               renderItem={(row) => {
                 const active = row.id === selectedMenuId;
+                const promptCoverage = calcCoverage(row.configuredPromptPages, row.pageCount);
+                const jobCoverage = calcCoverage(row.configuredJobPages, row.pageCount);
                 return (
                   <List.Item style={{ paddingInline: 0 }}>
                     <MenuItemCard hoverable size="small" onClick={() => setSelectedMenuId(row.id)} $active={active}>
@@ -794,8 +831,18 @@ export function PageManagementPage() {
                           <Tag color={capabilityStatusMeta[row.jobStatus].color}>作业：{capabilityStatusMeta[row.jobStatus].label}</Tag>
                           <Tag>页面 {row.pageCount}</Tag>
                           <Tag color={row.promptRuleTotal > 0 ? "blue" : "default"}>智能提示 {row.promptRuleTotal}</Tag>
-                          <Tag color={row.jobSceneTotal > 0 ? "purple" : "default"}>作业数 {row.jobSceneTotal}</Tag>
+                          <Tag color={row.jobSceneTotal > 0 ? "processing" : "default"}>作业数 {row.jobSceneTotal}</Tag>
                         </Space>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          <div>
+                            <Typography.Text type="secondary">提示覆盖 {row.configuredPromptPages}/{row.pageCount}</Typography.Text>
+                            <Progress percent={promptCoverage} size="small" showInfo={false} strokeColor="#1677ff" />
+                          </div>
+                          <div>
+                            <Typography.Text type="secondary">作业覆盖 {row.configuredJobPages}/{row.pageCount}</Typography.Text>
+                            <Progress percent={jobCoverage} size="small" showInfo={false} strokeColor="#0c7a43" />
+                          </div>
+                        </div>
                       </Space>
                     </MenuItemCard>
                   </List.Item>
@@ -822,6 +869,7 @@ export function PageManagementPage() {
                   ) : null}
                   {selectedMenuPages.length > 1 ? (
                     <>
+                      <Tag>{selectedPagePosition}/{selectedMenuPages.length}</Tag>
                       <Select
                         value={selectedPageId}
                         style={{ width: 280 }}
@@ -853,13 +901,13 @@ export function PageManagementPage() {
               <Space direction="vertical" style={{ width: "100%" }} size={12}>
                 <Alert
                   showIcon
-                  type={selectedMenuPending ? "warning" : selectedMenuNeedRequest ? "info" : "success"}
+                  type={selectedMenuPending ? "warning" : "info"}
                   message={
                     selectedMenuPending
                       ? "当前菜单能力申请处理中"
                       : selectedMenuNeedRequest
                         ? "当前菜单部分能力尚未开通"
-                        : "当前菜单能力已开通，可直接配置"
+                        : "当前菜单能力已就绪，可直接配置"
                   }
                   description={
                     <Space size={[6, 6]} wrap>
@@ -922,9 +970,12 @@ export function PageManagementPage() {
                       size="small"
                       title={`当前页面：${selectedPage.name}`}
                       extra={
-                        <Button size="small" onClick={() => void openFieldMaintenance(selectedPage)}>
-                          元素映射
-                        </Button>
+                        <Space>
+                          <Tag>{selectedPagePosition}/{selectedMenuPages.length}</Tag>
+                          <Button size="small" onClick={() => void openFieldMaintenance(selectedPage)}>
+                            元素映射
+                          </Button>
+                        </Space>
                       }
                     >
                       <Descriptions size="small" column={2}>
