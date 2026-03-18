@@ -1,37 +1,82 @@
-import type { ActionType, RoleItem } from "./types";
+import type { RoleItem } from "./types";
 
 export const HEAD_OFFICE_ORG_ID = "head-office";
 
-// Future high-privilege actions should be added here.
-export const HIGH_PRIVILEGE_ACTIONS: ActionType[] = ["MENU_ENABLE_MANAGE"];
+export const HIGH_PRIVILEGE_RESOURCE_PATHS: string[] = ["/action/page-management/capability/manage"];
 
-export function getRoleTypeDefaultActions(roleType: RoleItem["roleType"], orgScopeId: string): ActionType[] {
+const BASE_RESOURCE_PATHS: string[] = [
+  "/menu/dashboard",
+  "/menu/stats",
+  "/page/dashboard/list",
+  "/page/stats/list",
+  "/action/common/base/view"
+];
+
+const CONFIG_OPERATOR_RESOURCE_PATHS: string[] = [
+  ...BASE_RESOURCE_PATHS,
+  "/menu/page-management",
+  "/menu/prompts",
+  "/menu/jobs",
+  "/menu/interfaces",
+  "/menu/advanced",
+  "/page/page-management/list",
+  "/page/prompts/list",
+  "/page/jobs/list",
+  "/page/interfaces/list",
+  "/page/advanced/list",
+  "/action/common/base/config",
+  "/action/common/base/validate",
+  "/action/common/base/publish"
+];
+
+const PERMISSION_ADMIN_RESOURCE_PATHS: string[] = [
+  ...BASE_RESOURCE_PATHS,
+  "/menu/advanced",
+  "/page/advanced/list",
+  "/action/roles/list/manage"
+];
+
+const TECH_SUPPORT_RESOURCE_PATHS: string[] = [
+  ...BASE_RESOURCE_PATHS,
+  "/menu/advanced",
+  "/page/advanced/list",
+  "/action/common/base/validate",
+  "/action/common/base/audit-view"
+];
+
+export function getRoleTypeRecommendedResourcePaths(roleType: RoleItem["roleType"], orgScopeId: string): string[] {
   if (roleType === "CONFIG_OPERATOR") {
-    return ["VIEW", "CONFIG", "VALIDATE", "PUBLISH"];
+    const withHighPrivilege =
+      orgScopeId === HEAD_OFFICE_ORG_ID
+        ? [...CONFIG_OPERATOR_RESOURCE_PATHS, ...HIGH_PRIVILEGE_RESOURCE_PATHS]
+        : CONFIG_OPERATOR_RESOURCE_PATHS;
+    return Array.from(new Set(withHighPrivilege));
   }
   if (roleType === "PERMISSION_ADMIN") {
-    return orgScopeId === HEAD_OFFICE_ORG_ID
-      ? ["VIEW", "ROLE_MANAGE", "MENU_ENABLE_MANAGE"]
-      : ["VIEW", "ROLE_MANAGE"];
+    const withHighPrivilege =
+      orgScopeId === HEAD_OFFICE_ORG_ID
+        ? [...PERMISSION_ADMIN_RESOURCE_PATHS, ...HIGH_PRIVILEGE_RESOURCE_PATHS]
+        : PERMISSION_ADMIN_RESOURCE_PATHS;
+    return Array.from(new Set(withHighPrivilege));
   }
-  return ["VIEW", "VALIDATE", "AUDIT_VIEW"];
+  return Array.from(new Set(TECH_SUPPORT_RESOURCE_PATHS));
 }
 
-export function normalizeRoleActions(
+export function normalizeRoleResourcePaths(
   roleType: RoleItem["roleType"],
   orgScopeId: string,
-  actions: ActionType[]
-): ActionType[] {
-  const defaultActions = getRoleTypeDefaultActions(roleType, orgScopeId);
-  const merged = Array.from(new Set([...defaultActions, ...actions]));
+  resourcePaths: string[]
+): string[] {
+  const recommended = getRoleTypeRecommendedResourcePaths(roleType, orgScopeId);
+  const merged = Array.from(new Set([...recommended, ...resourcePaths]));
   if (orgScopeId !== HEAD_OFFICE_ORG_ID) {
-    return merged.filter((action) => !HIGH_PRIVILEGE_ACTIONS.includes(action));
+    return merged.filter((resourcePath) => !HIGH_PRIVILEGE_RESOURCE_PATHS.includes(resourcePath));
   }
   return merged;
 }
 
-export function hasHighPrivilegeAction(actions: ActionType[]): boolean {
-  return actions.some((action) => HIGH_PRIVILEGE_ACTIONS.includes(action));
+export function hasHighPrivilegeResource(resourcePaths: string[]): boolean {
+  return resourcePaths.some((resourcePath) => HIGH_PRIVILEGE_RESOURCE_PATHS.includes(resourcePath));
 }
 
 export function isHeadOfficePermissionAdmin(operator: {

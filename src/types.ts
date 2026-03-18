@@ -586,18 +586,21 @@ export interface MetricsOverview {
   expiringSoonResourceCount: number;
 }
 
-export type ActionType =
-  | "VIEW"
-  | "CONFIG"
-  | "VALIDATE"
-  | "PUBLISH"
-  | "DISABLE"
-  | "DEFER"
-  | "ROLLBACK"
-  | "AUDIT_VIEW"
-  | "RISK_CONFIRM"
-  | "ROLE_MANAGE"
-  | "MENU_ENABLE_MANAGE";
+export type ResourceType = "MENU" | "PAGE" | "ACTION";
+export type PermissionResourceStatus = "ACTIVE" | "DISABLED";
+
+export interface PermissionResource {
+  id: number;
+  resourceCode: string;
+  resourceName: string;
+  resourceType: ResourceType;
+  resourcePath: string;
+  pagePath?: string;
+  status: PermissionResourceStatus;
+  orderNo: number;
+  description?: string;
+  updatedAt: string;
+}
 
 export interface RoleItem {
   id: number;
@@ -605,9 +608,23 @@ export interface RoleItem {
   roleType: "CONFIG_OPERATOR" | "PERMISSION_ADMIN" | "TECH_SUPPORT";
   status: "ACTIVE" | "DISABLED";
   orgScopeId: string;
-  actions: ActionType[];
   memberCount: number;
   updatedAt: string;
+}
+
+export interface RoleResourceGrant {
+  id: number;
+  roleId: number;
+  resourceCode: string;
+  createdAt: string;
+}
+
+export interface UserRoleBinding {
+  id: number;
+  userId: string;
+  roleId: number;
+  status: "ACTIVE" | "DISABLED";
+  createdAt: string;
 }
 
 export interface RolePermissionOperator {

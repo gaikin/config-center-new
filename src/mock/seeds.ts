@@ -22,13 +22,16 @@
   PageSite,
   PageActivationPolicy,
   PreprocessorDefinition,
+  PermissionResource,
   RoleItem,
+  RoleResourceGrant,
   RuleCondition,
   RuleConditionGroup,
   RuleDefinition,
   SdkArtifactVersion,
   SdkReleaseLane,
-  TriggerLogItem
+  TriggerLogItem,
+  UserRoleBinding
 } from "../types";
 
 const now = () => new Date().toISOString();
@@ -1128,7 +1131,6 @@ export const seedRoles: RoleItem[] = [
     roleType: "CONFIG_OPERATOR",
     status: "ACTIVE",
     orgScopeId: "branch-east",
-    actions: ["VIEW", "CONFIG", "VALIDATE", "PUBLISH"],
     memberCount: 16,
     updatedAt: now()
   },
@@ -1138,7 +1140,6 @@ export const seedRoles: RoleItem[] = [
     roleType: "PERMISSION_ADMIN",
     status: "ACTIVE",
     orgScopeId: "branch-east",
-    actions: ["VIEW", "ROLE_MANAGE"],
     memberCount: 8,
     updatedAt: now()
   },
@@ -1148,7 +1149,6 @@ export const seedRoles: RoleItem[] = [
     roleType: "PERMISSION_ADMIN",
     status: "ACTIVE",
     orgScopeId: "head-office",
-    actions: ["VIEW", "ROLE_MANAGE", "MENU_ENABLE_MANAGE"],
     memberCount: 5,
     updatedAt: now()
   },
@@ -1158,7 +1158,6 @@ export const seedRoles: RoleItem[] = [
     roleType: "TECH_SUPPORT",
     status: "ACTIVE",
     orgScopeId: "head-office",
-    actions: ["VIEW", "VALIDATE", "AUDIT_VIEW"],
     memberCount: 4,
     updatedAt: now()
   },
@@ -1168,10 +1167,331 @@ export const seedRoles: RoleItem[] = [
     roleType: "CONFIG_OPERATOR",
     status: "ACTIVE",
     orgScopeId: "head-office",
-    actions: ["VIEW", "CONFIG", "VALIDATE", "PUBLISH", "MENU_ENABLE_MANAGE"],
     memberCount: 3,
     updatedAt: now()
   }
+];
+
+export const seedPermissionResources: PermissionResource[] = [
+  {
+    id: 91001,
+    resourceCode: "menu_dashboard",
+    resourceName: "工作台菜单",
+    resourceType: "MENU",
+    resourcePath: "/menu/dashboard",
+    status: "ACTIVE",
+    orderNo: 10,
+    description: "导航入口：我的工作台",
+    updatedAt: now()
+  },
+  {
+    id: 91002,
+    resourceCode: "menu_page_management",
+    resourceName: "菜单管理菜单",
+    resourceType: "MENU",
+    resourcePath: "/menu/page-management",
+    status: "ACTIVE",
+    orderNo: 20,
+    description: "导航入口：菜单管理",
+    updatedAt: now()
+  },
+  {
+    id: 91003,
+    resourceCode: "menu_prompts",
+    resourceName: "智能提示菜单",
+    resourceType: "MENU",
+    resourcePath: "/menu/prompts",
+    status: "ACTIVE",
+    orderNo: 30,
+    description: "导航入口：智能提示",
+    updatedAt: now()
+  },
+  {
+    id: 91004,
+    resourceCode: "menu_jobs",
+    resourceName: "智能作业菜单",
+    resourceType: "MENU",
+    resourcePath: "/menu/jobs",
+    status: "ACTIVE",
+    orderNo: 40,
+    description: "导航入口：智能作业",
+    updatedAt: now()
+  },
+  {
+    id: 91005,
+    resourceCode: "menu_interfaces",
+    resourceName: "API注册菜单",
+    resourceType: "MENU",
+    resourcePath: "/menu/interfaces",
+    status: "ACTIVE",
+    orderNo: 50,
+    description: "导航入口：API注册",
+    updatedAt: now()
+  },
+  {
+    id: 91006,
+    resourceCode: "menu_stats",
+    resourceName: "运行统计菜单",
+    resourceType: "MENU",
+    resourcePath: "/menu/stats",
+    status: "ACTIVE",
+    orderNo: 60,
+    description: "导航入口：运行统计",
+    updatedAt: now()
+  },
+  {
+    id: 91007,
+    resourceCode: "menu_advanced",
+    resourceName: "高级配置菜单",
+    resourceType: "MENU",
+    resourcePath: "/menu/advanced",
+    status: "ACTIVE",
+    orderNo: 70,
+    description: "导航入口：高级配置",
+    updatedAt: now()
+  },
+  {
+    id: 91101,
+    resourceCode: "page_dashboard_list",
+    resourceName: "工作台页面",
+    resourceType: "PAGE",
+    resourcePath: "/page/dashboard/list",
+    pagePath: "/",
+    status: "ACTIVE",
+    orderNo: 110,
+    description: "页面访问：我的工作台",
+    updatedAt: now()
+  },
+  {
+    id: 91102,
+    resourceCode: "page_page_management_list",
+    resourceName: "菜单管理页面",
+    resourceType: "PAGE",
+    resourcePath: "/page/page-management/list",
+    pagePath: "/page-management",
+    status: "ACTIVE",
+    orderNo: 120,
+    description: "页面访问：菜单管理",
+    updatedAt: now()
+  },
+  {
+    id: 91103,
+    resourceCode: "page_prompts_list",
+    resourceName: "智能提示页面",
+    resourceType: "PAGE",
+    resourcePath: "/page/prompts/list",
+    pagePath: "/prompts",
+    status: "ACTIVE",
+    orderNo: 130,
+    description: "页面访问：智能提示",
+    updatedAt: now()
+  },
+  {
+    id: 91104,
+    resourceCode: "page_jobs_list",
+    resourceName: "智能作业页面",
+    resourceType: "PAGE",
+    resourcePath: "/page/jobs/list",
+    pagePath: "/jobs",
+    status: "ACTIVE",
+    orderNo: 140,
+    description: "页面访问：智能作业",
+    updatedAt: now()
+  },
+  {
+    id: 91105,
+    resourceCode: "page_interfaces_list",
+    resourceName: "API注册页面",
+    resourceType: "PAGE",
+    resourcePath: "/page/interfaces/list",
+    pagePath: "/interfaces",
+    status: "ACTIVE",
+    orderNo: 150,
+    description: "页面访问：API注册",
+    updatedAt: now()
+  },
+  {
+    id: 91106,
+    resourceCode: "page_stats_list",
+    resourceName: "运行统计页面",
+    resourceType: "PAGE",
+    resourcePath: "/page/stats/list",
+    pagePath: "/stats",
+    status: "ACTIVE",
+    orderNo: 160,
+    description: "页面访问：运行统计",
+    updatedAt: now()
+  },
+  {
+    id: 91107,
+    resourceCode: "page_advanced_list",
+    resourceName: "高级配置页面",
+    resourceType: "PAGE",
+    resourcePath: "/page/advanced/list",
+    pagePath: "/advanced",
+    status: "ACTIVE",
+    orderNo: 170,
+    description: "页面访问：高级配置",
+    updatedAt: now()
+  },
+  {
+    id: 91201,
+    resourceCode: "action_common_view",
+    resourceName: "查看能力",
+    resourceType: "ACTION",
+    resourcePath: "/action/common/base/view",
+    status: "ACTIVE",
+    orderNo: 210,
+    description: "基础查看权限",
+    updatedAt: now()
+  },
+  {
+    id: 91202,
+    resourceCode: "action_common_config",
+    resourceName: "配置能力",
+    resourceType: "ACTION",
+    resourcePath: "/action/common/base/config",
+    status: "ACTIVE",
+    orderNo: 220,
+    description: "配置与编辑相关能力",
+    updatedAt: now()
+  },
+  {
+    id: 91203,
+    resourceCode: "action_common_validate",
+    resourceName: "校验能力",
+    resourceType: "ACTION",
+    resourcePath: "/action/common/base/validate",
+    status: "ACTIVE",
+    orderNo: 230,
+    description: "校验和验证能力",
+    updatedAt: now()
+  },
+  {
+    id: 91204,
+    resourceCode: "action_common_publish",
+    resourceName: "发布能力",
+    resourceType: "ACTION",
+    resourcePath: "/action/common/base/publish",
+    status: "ACTIVE",
+    orderNo: 240,
+    description: "发布能力",
+    updatedAt: now()
+  },
+  {
+    id: 91205,
+    resourceCode: "action_common_audit_view",
+    resourceName: "审计查看能力",
+    resourceType: "ACTION",
+    resourcePath: "/action/common/base/audit-view",
+    status: "ACTIVE",
+    orderNo: 250,
+    description: "审计查看能力",
+    updatedAt: now()
+  },
+  {
+    id: 91206,
+    resourceCode: "action_roles_manage",
+    resourceName: "角色授权管理",
+    resourceType: "ACTION",
+    resourcePath: "/action/roles/list/manage",
+    status: "ACTIVE",
+    orderNo: 260,
+    description: "角色管理与授权能力",
+    updatedAt: now()
+  },
+  {
+    id: 91207,
+    resourceCode: "action_menu_capability_manage",
+    resourceName: "菜单启用管理",
+    resourceType: "ACTION",
+    resourcePath: "/action/page-management/capability/manage",
+    status: "ACTIVE",
+    orderNo: 270,
+    description: "菜单启用/停用等高权限操作",
+    updatedAt: now()
+  }
+];
+
+export const seedRoleResourceGrants: RoleResourceGrant[] = [
+  { id: 92001, roleId: 7001, resourceCode: "menu_dashboard", createdAt: now() },
+  { id: 92002, roleId: 7001, resourceCode: "menu_page_management", createdAt: now() },
+  { id: 92003, roleId: 7001, resourceCode: "menu_prompts", createdAt: now() },
+  { id: 92004, roleId: 7001, resourceCode: "menu_jobs", createdAt: now() },
+  { id: 92005, roleId: 7001, resourceCode: "menu_interfaces", createdAt: now() },
+  { id: 92006, roleId: 7001, resourceCode: "menu_stats", createdAt: now() },
+  { id: 92007, roleId: 7001, resourceCode: "menu_advanced", createdAt: now() },
+  { id: 92008, roleId: 7001, resourceCode: "page_dashboard_list", createdAt: now() },
+  { id: 92009, roleId: 7001, resourceCode: "page_page_management_list", createdAt: now() },
+  { id: 92010, roleId: 7001, resourceCode: "page_prompts_list", createdAt: now() },
+  { id: 92011, roleId: 7001, resourceCode: "page_jobs_list", createdAt: now() },
+  { id: 92012, roleId: 7001, resourceCode: "page_interfaces_list", createdAt: now() },
+  { id: 92013, roleId: 7001, resourceCode: "page_stats_list", createdAt: now() },
+  { id: 92014, roleId: 7001, resourceCode: "page_advanced_list", createdAt: now() },
+  { id: 92015, roleId: 7001, resourceCode: "action_common_view", createdAt: now() },
+  { id: 92016, roleId: 7001, resourceCode: "action_common_config", createdAt: now() },
+  { id: 92017, roleId: 7001, resourceCode: "action_common_validate", createdAt: now() },
+  { id: 92018, roleId: 7001, resourceCode: "action_common_publish", createdAt: now() },
+
+  { id: 92101, roleId: 7002, resourceCode: "menu_dashboard", createdAt: now() },
+  { id: 92102, roleId: 7002, resourceCode: "menu_stats", createdAt: now() },
+  { id: 92103, roleId: 7002, resourceCode: "menu_advanced", createdAt: now() },
+  { id: 92104, roleId: 7002, resourceCode: "page_dashboard_list", createdAt: now() },
+  { id: 92105, roleId: 7002, resourceCode: "page_stats_list", createdAt: now() },
+  { id: 92106, roleId: 7002, resourceCode: "page_advanced_list", createdAt: now() },
+  { id: 92107, roleId: 7002, resourceCode: "action_common_view", createdAt: now() },
+  { id: 92108, roleId: 7002, resourceCode: "action_roles_manage", createdAt: now() },
+
+  { id: 92201, roleId: 7003, resourceCode: "menu_dashboard", createdAt: now() },
+  { id: 92202, roleId: 7003, resourceCode: "menu_stats", createdAt: now() },
+  { id: 92203, roleId: 7003, resourceCode: "menu_advanced", createdAt: now() },
+  { id: 92204, roleId: 7003, resourceCode: "page_dashboard_list", createdAt: now() },
+  { id: 92205, roleId: 7003, resourceCode: "page_stats_list", createdAt: now() },
+  { id: 92206, roleId: 7003, resourceCode: "page_advanced_list", createdAt: now() },
+  { id: 92207, roleId: 7003, resourceCode: "action_common_view", createdAt: now() },
+  { id: 92208, roleId: 7003, resourceCode: "action_roles_manage", createdAt: now() },
+  { id: 92209, roleId: 7003, resourceCode: "action_menu_capability_manage", createdAt: now() },
+
+  { id: 92301, roleId: 7004, resourceCode: "menu_dashboard", createdAt: now() },
+  { id: 92302, roleId: 7004, resourceCode: "menu_stats", createdAt: now() },
+  { id: 92303, roleId: 7004, resourceCode: "page_dashboard_list", createdAt: now() },
+  { id: 92304, roleId: 7004, resourceCode: "page_stats_list", createdAt: now() },
+  { id: 92305, roleId: 7004, resourceCode: "action_common_view", createdAt: now() },
+  { id: 92306, roleId: 7004, resourceCode: "action_common_validate", createdAt: now() },
+  { id: 92307, roleId: 7004, resourceCode: "action_common_audit_view", createdAt: now() },
+
+  { id: 92401, roleId: 7005, resourceCode: "menu_dashboard", createdAt: now() },
+  { id: 92402, roleId: 7005, resourceCode: "menu_page_management", createdAt: now() },
+  { id: 92403, roleId: 7005, resourceCode: "menu_prompts", createdAt: now() },
+  { id: 92404, roleId: 7005, resourceCode: "menu_jobs", createdAt: now() },
+  { id: 92405, roleId: 7005, resourceCode: "menu_interfaces", createdAt: now() },
+  { id: 92406, roleId: 7005, resourceCode: "menu_stats", createdAt: now() },
+  { id: 92407, roleId: 7005, resourceCode: "menu_advanced", createdAt: now() },
+  { id: 92408, roleId: 7005, resourceCode: "page_dashboard_list", createdAt: now() },
+  { id: 92409, roleId: 7005, resourceCode: "page_page_management_list", createdAt: now() },
+  { id: 92410, roleId: 7005, resourceCode: "page_prompts_list", createdAt: now() },
+  { id: 92411, roleId: 7005, resourceCode: "page_jobs_list", createdAt: now() },
+  { id: 92412, roleId: 7005, resourceCode: "page_interfaces_list", createdAt: now() },
+  { id: 92413, roleId: 7005, resourceCode: "page_stats_list", createdAt: now() },
+  { id: 92414, roleId: 7005, resourceCode: "page_advanced_list", createdAt: now() },
+  { id: 92415, roleId: 7005, resourceCode: "action_common_view", createdAt: now() },
+  { id: 92416, roleId: 7005, resourceCode: "action_common_config", createdAt: now() },
+  { id: 92417, roleId: 7005, resourceCode: "action_common_validate", createdAt: now() },
+  { id: 92418, roleId: 7005, resourceCode: "action_common_publish", createdAt: now() },
+  { id: 92419, roleId: 7005, resourceCode: "action_menu_capability_manage", createdAt: now() }
+];
+
+export const seedUserRoleBindings: UserRoleBinding[] = [
+  { id: 93001, userId: "person-zhao-yi", roleId: 7001, status: "ACTIVE", createdAt: now() },
+  { id: 93002, userId: "person-qian-er", roleId: 7001, status: "ACTIVE", createdAt: now() },
+  { id: 93003, userId: "person-sun-san", roleId: 7001, status: "ACTIVE", createdAt: now() },
+  { id: 93004, userId: "person-zhou-zong", roleId: 7002, status: "ACTIVE", createdAt: now() },
+  { id: 93005, userId: "person-wu-zhuguan", roleId: 7002, status: "ACTIVE", createdAt: now() },
+  { id: 93006, userId: "person-head-admin-a", roleId: 7003, status: "ACTIVE", createdAt: now() },
+  { id: 93007, userId: "person-head-admin-b", roleId: 7003, status: "ACTIVE", createdAt: now() },
+  { id: 93008, userId: "person-platform-support-a", roleId: 7004, status: "ACTIVE", createdAt: now() },
+  { id: 93009, userId: "person-head-config-a", roleId: 7005, status: "ACTIVE", createdAt: now() },
+  { id: 93010, userId: "person-head-config-b", roleId: 7005, status: "ACTIVE", createdAt: now() }
 ];
 
 export const seedRoleMembers: Record<number, string[]> = {
